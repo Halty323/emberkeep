@@ -2,6 +2,7 @@ extends Node
 signal changed
 signal item_gained(item: Dictionary)
 const SAVE_VERSION := 1
+const ALL_RELICS_CODE := "ALLRELICS"
 const PROFILE_PATH := "user://profile.json"
 const SAVE_PATH := "user://run.json"
 var rng = RandomNumberGenerator.new()
@@ -85,6 +86,29 @@ func gain_item(id: String) -> void:
 	save_run()
 	item_gained.emit(Content.item_by_id[id])
 	changed.emit()
+
+func grant_all_relics() -> int:
+	if not active:
+		return 0
+	var old_max: float = stats.max_hp
+	var added = 0
+	var discoveries_changed = false
+	for item in Content.items:
+		if item.id not in inventory:
+			inventory.append(item.id)
+			added += 1
+		if item.id not in profile.discovered:
+			profile.discovered.append(item.id)
+			discoveries_changed = true
+	if discoveries_changed:
+		save_profile()
+	if added > 0:
+		rebuild_stats()
+		hp = clampf(hp + maxf(0, stats.max_hp - old_max), 0, stats.max_hp)
+		# Batch the grant: one rebuild and save, without sixty item popups.
+		save_run()
+		changed.emit()
+	return added
 
 func heal(amount: float) -> void:
 	hp = minf(stats.max_hp, hp + amount)

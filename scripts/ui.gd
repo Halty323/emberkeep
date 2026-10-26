@@ -33,6 +33,10 @@ var right_vector = Vector2.ZERO
 var touch_used = false
 var journal_page = 0
 var elapsed_ui = 0.0
+var secret_taps = 0
+var secret_key_buffer = ""
+var secret_field: LineEdit
+var secret_feedback = ""
 
 func setup(owner_game: Node3D) -> void:
 	game = owner_game
@@ -69,6 +73,10 @@ func local_point(at: Vector2) -> Vector2:
 
 func show_screen(screen: String) -> void:
 	mode = screen
+	secret_taps = 0
+	secret_key_buffer = ""
+	secret_feedback = ""
+	secret_field = null
 	left_touch = -1
 	right_touch = -1
 	left_vector = Vector2.ZERO
@@ -86,6 +94,16 @@ func show_screen(screen: String) -> void:
 			button("Relic journal", Rect2(455, 345, 370, 48), func(): open_journal("pause"))
 			button("Settings", Rect2(455, 406, 370, 48), func(): open_settings("pause"))
 			button("Return to title", Rect2(455, 467, 370, 48), func(): game.return_to_title())
+			var trigger = Button.new()
+			trigger.name = "SecretTrigger"
+			trigger.position = Vector2(425, 160)
+			trigger.size = Vector2(430, 65)
+			trigger.focus_mode = Control.FOCUS_NONE
+			for state in ["normal", "hover", "pressed", "focus"]:
+				trigger.add_theme_stylebox_override(state, StyleBoxEmpty.new())
+			trigger.pressed.connect(register_secret_tap)
+			content.add_child(trigger)
+		"secret": build_secret_code()
 		"reward": build_rewards()
 		"journal": build_journal()
 		"settings": build_settings()
@@ -93,6 +111,52 @@ func show_screen(screen: String) -> void:
 			button("One more little light", Rect2(455, 441, 370, 56), func(): game.start_run(Content.weapons[starter_index].id, 0, false), true)
 			button("Return to title", Rect2(455, 511, 370, 48), func(): game.return_to_title())
 	queue_redraw()
+
+func register_secret_tap() -> void:
+	if mode != "pause" or not Run.active:
+		return
+	secret_taps += 1
+	if secret_taps >= 5:
+		show_screen("secret")
+
+func build_secret_code() -> void:
+	secret_field = LineEdit.new()
+	secret_field.name = "SecretCode"
+	secret_field.position = Vector2(455, 310)
+	secret_field.size = Vector2(370, 54)
+	secret_field.placeholder_text = "Whisper a secret…"
+	secret_field.max_length = 32
+	secret_field.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_PASSWORD
+	secret_field.add_theme_font_override("font", bold)
+	secret_field.add_theme_font_size_override("font_size", 20)
+	secret_field.add_theme_color_override("font_color", GOLD)
+	secret_field.add_theme_stylebox_override("normal", style(Color("192428"), EDGE))
+	secret_field.add_theme_stylebox_override("focus", style(Color("192428"), GOLD))
+	secret_field.text_submitted.connect(submit_secret_code)
+	content.add_child(secret_field)
+	secret_field.grab_focus.call_deferred()
+	button("Make a wish", Rect2(455, 412, 370, 52), func(): submit_secret_code(secret_field.text), true)
+	button("← Back", Rect2(455, 482, 370, 44), close_secret_code)
+
+func close_secret_code() -> void:
+	if secret_field and is_instance_valid(secret_field):
+		secret_field.release_focus()
+	if DisplayServer.has_feature(DisplayServer.FEATURE_VIRTUAL_KEYBOARD):
+		DisplayServer.virtual_keyboard_hide()
+	show_screen("pause")
+
+func submit_secret_code(code: String) -> void:
+	if not Run.active or game.in_menu:
+		return
+	if not game.redeem_secret_code(code):
+		secret_feedback = "That secret did not catch a spark."
+		if secret_field and is_instance_valid(secret_field):
+			secret_field.select_all()
+		queue_redraw()
+		return
+	if DisplayServer.has_feature(DisplayServer.FEATURE_VIRTUAL_KEYBOARD):
+		DisplayServer.virtual_keyboard_hide()
+	game.resume_game()
 
 func build_menu() -> void:
 	seed_field = LineEdit.new()
@@ -217,6 +281,17 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 func _input(event: InputEvent) -> void:
+	if mode == "secret" and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		close_secret_code()
+		get_viewport().set_input_as_handled()
+		return
+	if mode == "pause" and event is InputEventKey and event.pressed and not event.echo:
+		if event.unicode > 0 and not event.ctrl_pressed and not event.alt_pressed and not event.meta_pressed:
+			secret_key_buffer = (secret_key_buffer + String.chr(event.unicode).to_upper()).right(Run.ALL_RELICS_CODE.length())
+			if secret_key_buffer == Run.ALL_RELICS_CODE:
+				submit_secret_code(secret_key_buffer)
+				get_viewport().set_input_as_handled()
+		return
 	if mode != "play":
 		return
 	if event is InputEventScreenTouch:
@@ -288,6 +363,12 @@ func _draw() -> void:
 			centered("Catch your breath", 640, 203, 29, INK, heading)
 			centered("Even a little flame needs a moment.", 640, 241, 15, MUTED)
 			centered("Your last safe room is saved automatically.", 640, 548, 13, MUTED)
+		"secret":
+			shade()
+			card(Rect2(405, 165, 470, 400))
+			centered("A whispered wish", 640, 228, 30, INK, heading)
+			centered("Some little sparks know a secret.", 640, 270, 15, MUTED)
+			centered(secret_feedback, 640, 391, 14, Color("e9b398"))
 		"reward": draw_rewards()
 		"settings":
 			shade()

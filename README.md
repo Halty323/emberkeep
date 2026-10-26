@@ -44,6 +44,12 @@ The sticks float to the initial touch position. Release the aiming stick to stop
 
 This is a playable first implementation, not a balanced release. Device performance, touch comfort and long-run item combinations still need testing on real Android hardware. Co-op, accounts, leaderboards and cloud saves are planned, not implemented; see [docs/ONLINE.md](docs/ONLINE.md).
 
+## Secret code
+
+During a run, pause and type **ALLRELICS** on a physical keyboard. On Android (or with a mouse), tap/click the **Catch your breath** pause title five times, enter **ALLRELICS**, and choose **Make a wish** or submit from the keyboard.
+
+The code adds one of every missing relic, preserves existing stacks, activates their effects immediately and saves the collection. Repeating it does not add duplicates or refill health/guards. It works only during an active run. Codes ignore letter case and surrounding spaces; Back/Escape cancels the hidden entry.
+
 ## Saves
 
 `user://profile.json` stores settings, discovered relics and local lifetime counters. `user://run.json` stores the active run checkpoint: seed, floor map, health, inventory, weapon, coins and gameplay RNG state. Godot chooses the platform-specific application data directory.
@@ -69,7 +75,7 @@ XDG_DATA_HOME=/tmp/emberkeep-test-data godot --headless --path . --script res://
 python3 tools/make_content.py
 ```
 
-The suites check dungeon connectivity and seed repeatability, catalog effect names, saves, combat, rewards, progression, and the lighting quality lifecycle. All 1,400 headless checks pass. Lantern shadows on/off were also checked with the OpenGL Compatibility renderer using Mesa software rendering; the bright halo-plane regression is fixed. See [docs/TESTING.md](docs/TESTING.md). Android performance and touch ergonomics still require device testing.
+The suites check dungeon connectivity and seed repeatability, catalog effect names, saves, combat, rewards, progression, the lighting quality lifecycle, and secret-code entry/grants. All 1,684 headless checks pass. Lantern shadows on/off and the hidden code form were also checked with the OpenGL Compatibility renderer using Mesa software rendering. See [docs/TESTING.md](docs/TESTING.md). Android performance and touch ergonomics still require device testing.
 
 | Location | Purpose |
 | --- | --- |

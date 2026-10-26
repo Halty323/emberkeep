@@ -2,7 +2,7 @@
 
 Verified with Godot 4.6.3 Standard in a headless Linux environment.
 
-`./tools/test.sh` completed with **1,400 checks, zero failures**: 1,033 gameplay checks and 367 lighting checks, with no runtime script errors or shutdown leak warnings. The wrapper imports the project, runs both suites with disposable user storage, and rejects script errors even if Godot returns a successful exit status.
+`./tools/test.sh` completed with **1,684 checks, zero failures**: 1,033 gameplay checks, 367 lighting checks and 284 secret-code checks, with no runtime script errors or shutdown leak warnings. The wrapper imports the project, runs all suites with disposable user storage, and rejects script errors even if Godot returns a successful exit status.
 
 The suite covers:
 
@@ -18,6 +18,9 @@ The suite covers:
 - 180 frames of simulated combat and an additional 90 frames with every relic equipped; projectile and orbital limits remain bounded.
 - Death and victory transitions and active-save cleanup.
 - Lighting quality at room startup, repeated setting transitions, preservation of warm fills, the single local shadow-map budget, and isolation of unlit glow geometry from real lights and shadow casters.
+- Secret-code validation, case/space normalization, active-run gating, one-time bulk effect updates, existing stacks, repeat safety, health/guards/orbitals, persistence, invalid entries, cancellation, five native button taps and paused desktop typing.
+
+The hidden secret form was also opened with five mouse clicks routed through Godot's actual GUI, rendered, and submitted via the LineEdit signal. The game resumed with all 60 relics. This checks desktop GUI routing and rendering; Android's physical keyboard/IME path still needs on-device validation.
 
 ## Lantern shadow regression
 

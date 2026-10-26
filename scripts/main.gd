@@ -104,6 +104,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if ui.mode == "play": pause_game()
 		elif ui.mode == "pause": resume_game()
 		elif ui.mode in ["journal", "settings"]: ui.close_subscreen()
+		elif ui.mode == "secret": ui.close_secret_code()
 	elif event.is_action_pressed("dash") and is_playing():
 		request_dash = true
 	elif event.is_action_pressed("interact") and is_playing():
@@ -124,6 +125,7 @@ func _notification(what: int) -> void:
 			if ui.mode == "play": pause_game()
 			elif ui.mode == "pause": resume_game()
 			elif ui.mode in ["settings", "journal"]: ui.close_subscreen()
+			elif ui.mode == "secret": ui.close_secret_code()
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		get_tree().quit()
 
@@ -511,6 +513,20 @@ func on_item_gained(item: Dictionary) -> void:
 	if player and is_instance_valid(player): player.refresh_orbitals()
 	Audio.play_sound("item")
 	ui.notify(item.name, item.description, Content.RARITY_COLORS[item.rarity])
+
+func redeem_secret_code(code: String) -> bool:
+	if not Run.active or in_menu or code.strip_edges().to_upper() != Run.ALL_RELICS_CODE:
+		return false
+	var added = Run.grant_all_relics()
+	if added > 0 and player and is_instance_valid(player):
+		player.refresh_orbitals()
+		player.shield = maxi(player.shield, int(Run.stats.shield))
+	Audio.play_sound("item")
+	if added > 0:
+		ui.notify("Every little light, all at once", "%d relics awakened. You carry all %d." % [added, Content.items.size()])
+	else:
+		ui.notify("Every little light is already yours", "You already carry all %d relics." % Content.items.size())
+	return true
 
 func pause_game() -> void:
 	if not Run.active or in_menu: return

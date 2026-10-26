@@ -59,6 +59,8 @@ tests/lighting.gd
 tests/lighting.gd.uid
 tests/render_lighting.gd
 tests/render_lighting.gd.uid
+tests/secret_codes.gd
+tests/secret_codes.gd.uid
 tests/smoke.gd
 tests/smoke.gd.uid
 tools/configure_android.gd
