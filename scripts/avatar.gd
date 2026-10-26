@@ -39,7 +39,7 @@ func setup(owner_game: Node3D) -> void:
 	Geo.box(visual, Vector3(.16, .12, 0), Vector3(.21, .22, .3), Color("645b4e"))
 	Geo.ring(self, Vector3(0, .045, 0), .47, Color("e9ca8e"), .025)
 	Geo.halo(self, Vector3(0, .025, 0), 4.2, Color(1, .64, .25, .16))
-	Geo.light(self, Vector3(0, 1.5, 0), Color("ffcb88"), 1.5, 5.5)
+	Geo.light(self, Vector3(0, 1.5, 0), Color("ffcb88"), .65, 3.8)
 	gun = Node3D.new()
 	add_child(gun)
 	Geo.box(gun, Vector3(0, .7, -.43), Vector3(.17, .18, .5), Color("b6a080"))

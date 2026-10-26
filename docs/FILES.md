@@ -57,6 +57,8 @@ shaders/vignette.gdshader
 shaders/vignette.gdshader.uid
 tests/lighting.gd
 tests/lighting.gd.uid
+tests/presentation.gd
+tests/presentation.gd.uid
 tests/render_lighting.gd
 tests/render_lighting.gd.uid
 tests/secret_codes.gd

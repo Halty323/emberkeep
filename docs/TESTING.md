@@ -2,7 +2,7 @@
 
 Verified with Godot 4.6.3 Standard in a headless Linux environment.
 
-`./tools/test.sh` completed with **1,684 checks, zero failures**: 1,033 gameplay checks, 367 lighting checks and 284 secret-code checks, with no runtime script errors or shutdown leak warnings. The wrapper imports the project, runs all suites with disposable user storage, and rejects script errors even if Godot returns a successful exit status.
+`./tools/test.sh` completed with **1,886 checks, zero failures**: 1,033 gameplay checks, 367 lighting checks, 284 secret-code checks and 202 presentation checks, with no runtime script errors or shutdown leak warnings. The wrapper imports the project, runs all suites with disposable user storage, and rejects script errors even if Godot returns a successful exit status.
 
 The suite covers:
 
@@ -19,8 +19,19 @@ The suite covers:
 - Death and victory transitions and active-save cleanup.
 - Lighting quality at room startup, repeated setting transitions, preservation of warm fills, the single local shadow-map budget, and isolation of unlit glow geometry from real lights and shadow casters.
 - Secret-code validation, case/space normalization, active-run gating, one-time bulk effect updates, existing stacks, repeat safety, health/guards/orbitals, persistence, invalid entries, cancellation, five native button taps and paused desktop typing.
+- Camera zoom, fixed orientation during bounded follow, room-entry snaps, actual player-limit corner/door visibility, taller meshes, foreground cutaway/recovery, unchanged collider footprints, static full-height wall shadow casters, and dimmer fill lighting.
 
 The hidden secret form was also opened with five mouse clicks routed through Godot's actual GUI, rendered, and submitted via the LineEdit signal. The game resumed with all 60 relics. This checks desktop GUI routing and rendering; Android's physical keyboard/IME path still needs on-device validation.
+
+## Closer framing and contrast
+
+Gameplay uses an orthographic size of 14.4 instead of 18.8, making world objects about 31% larger. The title keeps its original wider overview. Camera follow translates without rotating, follows 45% of player movement, and clamps to ±3.6 X / ±2.8 Z; room transitions snap the camera to the new entrance.
+
+Rear walls are 2.8 units high, foreground walls 1.8. Near players or enemies, the visible foreground wall lowers to 0.45; a separate static shadow-only mesh and the collider retain full height. This keeps actors visible and avoids translucent-wall passes or continuous shadow-caster animation.
+
+Ambient, directional fill, lantern fill, and player/marker lights are dimmer. The warm shadow key is stronger, shadow opacity is increased, and conservative depth/normal biases avoid the self-shadow striping exposed by darker surfaces. The existing single local-shadow-map budget and cached quality transitions are preserved.
+
+OpenGL on/off captures were inspected at the closer zoom. Headless checks cover player feet/head visibility at all four doors/corners, including the actual movement limits ±8.7 / ±6.7, and verify camera orientation is unchanged throughout follow and room transitions.
 
 ## Lantern shadow regression
 
@@ -28,7 +39,7 @@ The reported yellow planes were reproduced with Godot 4.6.3's OpenGL Compatibili
 
 The original room assigned `shadow_enabled` every frame, invalidating the lantern shadow caches. Quality changes are now applied only on transitions. Four cube-shadow lanterns have been replaced by four unshadowed warm fills and one optional inward-facing spotlight shadow. The positional shadow atlas is 1024px, with a 512px key-light tile. Positional filtering explicitly uses the one-lookup mobile preset on desktop too (GLES3 still provides hardware bilinear comparison filtering); Android already defaults to this preset. Emissive effects and tiny candle/cage details do not cast shadows. Pedestal lights and bases remain stationary while only their emissive relic animates.
 
-Before/after captures used the same seed, room, camera, actors and screenshot size. With lantern shadows on, measured draw calls decreased from **975 to 405** (about 58%). This is a renderer workload comparison, not an Android FPS claim. Both setting states were visually inspected; no bright glow rectangles remain outside the floor.
+Before/after captures for the original halo fix used the same seed, room, wider camera, actors and screenshot size. With lantern shadows on, measured draw calls decreased from **975 to 405** (about 58%). This is a renderer workload comparison, not an Android FPS claim. Both setting states were visually inspected; no bright glow rectangles remain outside the floor.
 
 Run `./tools/render_lighting.sh` with a working display to produce on/off PNGs, sample the pixels where the original planes extended beyond the floor, and print frame time/draw calls. It isolates its run/profile files in temporary storage. This display test is opt-in and is separate from the headless suites.
 

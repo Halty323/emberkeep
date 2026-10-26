@@ -1,6 +1,13 @@
 extends Node3D
+const CAMERA_GAME_SIZE = 14.4
+const CAMERA_MENU_SIZE = 18.8
+const CAMERA_FOLLOW_GAIN = .45
+const CAMERA_FOCUS_LIMIT = Vector2(3.6, 2.8)
 var room: DungeonRoom
 var camera: Camera3D
+var camera_focus = Vector3.ZERO
+var room_environment: WorldEnvironment
+var key_light: DirectionalLight3D
 var player: Adventurer
 var ui: GameInterface
 var scene_root: Node3D
@@ -31,33 +38,37 @@ func _ready() -> void:
 	setup_inputs()
 	# Reserve a useful 512px tile for the single optional lantern shadow.
 	get_viewport().positional_shadow_atlas_quad_0 = Viewport.SHADOW_ATLAS_QUADRANT_SUBDIV_1
-	var environment = WorldEnvironment.new()
+	room_environment = WorldEnvironment.new()
 	var env = Environment.new()
 	env.background_mode = Environment.BG_COLOR
 	env.background_color = Color("111d26")
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color("9aaec2")
-	env.ambient_light_energy = .36
+	env.ambient_light_energy = .12
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	env.fog_enabled = true
-	env.fog_light_color = Color("223743")
-	env.fog_density = .004
+	env.fog_light_color = Color("142330")
+	env.fog_density = .002
 	env.fog_sky_affect = 0
-	environment.environment = env
-	add_child(environment)
-	var moon = DirectionalLight3D.new()
-	moon.light_color = Color("aec9e2")
-	moon.light_cull_mask = 1
-	moon.light_energy = .45
-	moon.rotation_degrees = Vector3(-65, -35, 0)
-	moon.shadow_enabled = true
-	add_child(moon)
+	room_environment.environment = env
+	add_child(room_environment)
+	key_light = DirectionalLight3D.new()
+	key_light.light_color = Color("99b4cf")
+	key_light.light_cull_mask = 1
+	key_light.light_energy = .22
+	key_light.rotation_degrees = Vector3(-53, -35, 0)
+	key_light.shadow_enabled = true
+	key_light.shadow_bias = .1
+	key_light.shadow_normal_bias = 1.0
+	key_light.shadow_opacity = .95
+	key_light.directional_shadow_max_distance = 50.0
+	add_child(key_light)
 	camera = Camera3D.new()
 	add_child(camera)
 	camera.position = camera_home
 	camera.look_at(Vector3.ZERO)
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
-	camera.size = 18.8
+	camera.size = CAMERA_MENU_SIZE
 	camera.near = .1
 	camera.far = 100
 	camera.current = true
@@ -193,15 +204,28 @@ func _physics_process(delta: float) -> void:
 func _process(delta: float) -> void:
 	shake = maxf(0, shake - delta * .9)
 	hurt_flash = maxf(0, hurt_flash - delta * 1.6)
-	if camera:
-		var amount = shake if Run.profile.shake else 0.0
-		# Cosmetic motion never consumes the seeded gameplay RNG.
-		camera.position = camera_home + Vector3(sin(Time.get_ticks_msec() * .081), cos(Time.get_ticks_msec() * .067), 0) * amount
+	update_camera(delta)
 	vignette.set_shader_parameter("hurt", hurt_flash)
 	if marker_visual and is_instance_valid(marker_visual):
 		# Animate the luminous relic alone; its pedestal and light stay static,
 		# allowing the room's shadow maps to remain cached while idle.
 		marker_visual.rotation.y += delta * .5
+
+func update_camera(delta: float, snap := false) -> void:
+	if not camera:
+		return
+	var target = Vector3.ZERO
+	if not in_menu and is_instance_valid(player):
+		target = Vector3(clampf(player.position.x * CAMERA_FOLLOW_GAIN, -CAMERA_FOCUS_LIMIT.x, CAMERA_FOCUS_LIMIT.x),
+			0, clampf(player.position.z * CAMERA_FOLLOW_GAIN, -CAMERA_FOCUS_LIMIT.y, CAMERA_FOCUS_LIMIT.y))
+		var actors: Array = []
+		for enemy in enemies:
+			if is_instance_valid(enemy) and enemy.alive: actors.append(enemy.position)
+		if is_instance_valid(room): room.update_wall_visibility(player.position, 0.0 if snap else delta, actors)
+	camera_focus = target if snap else camera_focus.lerp(target, 1.0 - exp(-7.0 * delta))
+	var amount = shake if Run.profile.shake else 0.0
+	# Translate the camera without rotating it: movement and aiming axes stay fixed.
+	camera.position = camera_home + camera_focus + Vector3(sin(Time.get_ticks_msec() * .081), cos(Time.get_ticks_msec() * .067), 0) * amount
 
 func clean_room() -> void:
 	for shot in shots:
@@ -227,6 +251,7 @@ func show_title_room() -> void:
 	in_menu = true
 	paused = true
 	camera.h_offset = -4.5
+	camera.size = CAMERA_MENU_SIZE
 	clean_room()
 	room = DungeonRoom.new()
 	scene_root.add_child(room)
@@ -237,12 +262,14 @@ func show_title_room() -> void:
 	player.position = Vector3(0, 0, .1)
 	player.visual.rotation_degrees.y = 150
 	make_marker("treasure", Vector3(2.3, 0, -1.5))
+	update_camera(0.0, true)
 
 func start_run(weapon: String, seed_input: int, is_daily: bool) -> void:
 	Run.start_run(weapon, seed_input, is_daily)
 	in_menu = false
 	paused = false
 	camera.h_offset = 0
+	camera.size = CAMERA_GAME_SIZE
 	sim_time = 0
 	enter_room(Vector3(0, 0, 2.0))
 	ui.show_screen("play")
@@ -255,6 +282,7 @@ func continue_run() -> void:
 	in_menu = false
 	paused = false
 	camera.h_offset = 0
+	camera.size = CAMERA_GAME_SIZE
 	enter_room(Vector3(0, 0, 2.0))
 	ui.show_screen("play")
 	ui.notify("Welcome back, little light", "Your last safe room remembers you.")
@@ -307,6 +335,7 @@ func enter_room(spawn: Vector3) -> void:
 		Run.save_run()
 	if data.type == "boss" and not data.cleared:
 		ui.notify("The hearth is stirring", "Watch the windup. Dash through danger.", Color("e0a18b"))
+	update_camera(0.0, true)
 
 func check_doors() -> void:
 	var direction = Vector2i.ZERO
@@ -430,7 +459,7 @@ func make_marker(kind: String, at := Vector3.ZERO) -> void:
 	if kind == "exit":
 		Geo.ring(marker, Vector3(0, .09, 0), 1.05, Color("a3d5c2"), .09)
 		Geo.halo(marker, Vector3(0, .02, 0), 5.0, Color(.35, .8, .6, .32))
-		Geo.light(marker, Vector3(0, .6, 0), Color("a7d8bd"), 1.3, 4.0)
+		Geo.light(marker, Vector3(0, .6, 0), Color("a7d8bd"), .65, 3.5)
 	elif kind == "rest":
 		Geo.cylinder(marker, Vector3(0, .2, 0), .65, .4, Color("86775f"))
 		Geo.sphere(marker, Vector3(0, .75, 0), .25, Color("ffd28d"), 1.8)
@@ -442,7 +471,7 @@ func make_marker(kind: String, at := Vector3.ZERO) -> void:
 		relic.rotation_degrees = Vector3(45, 35, 30)
 		Geo.ring(marker, Vector3(0, .035, 0), .95, Color("d9b97a"), .035)
 		Geo.halo(marker, Vector3(0, .03, 0), 4, Color(1, .65, .22, .22))
-		Geo.light(marker, Vector3(0, 1.5, 0), Color("f0c68c"), 1.2, 4.0)
+		Geo.light(marker, Vector3(0, 1.5, 0), Color("f0c68c"), .55, 3.5)
 
 func update_interaction() -> void:
 	interaction_text = ""

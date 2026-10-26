@@ -1,6 +1,9 @@
 class_name DungeonRoom
 extends Node3D
 const MAX_LANTERN_SHADOWS = 1
+const WALL_BACK_HEIGHT = 2.8
+const WALL_FRONT_HEIGHT = 1.8
+const WALL_CUTAWAY_HEIGHT = .45
 var game: Node3D
 var decor_rng = RandomNumberGenerator.new()
 var lamps: Array[OmniLight3D] = []
@@ -12,6 +15,7 @@ var time = 0.0
 var ember_mesh: MultiMeshInstance3D
 var ember_origins: Array[Vector3] = []
 var obstacles: Array[Dictionary] = []
+var front_walls: Array[Dictionary] = []
 
 func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 	game = owner_game
@@ -38,19 +42,18 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 		add_child(mesh)
 	Geo.box(self, Vector3(0, -.55, 0), Vector3(18.6, .7, 14.6), Color("242d31"))
 	Geo.box(self, Vector3(0, -.96, 0), Vector3(17.9, .25, 13.9), Color("19232b"))
-	# Deliberately low front walls preserve readability of the isometric playfield.
+	# Tall perimeter walls; the near sides cut away when an actor is behind them.
 	for side in 4:
 		var horizontal = side < 2
 		var sign_value = -1.0 if side % 2 == 0 else 1.0
-		var height = 1.7 if sign_value < 0 else .48
+		var height = WALL_BACK_HEIGHT if sign_value < 0 else WALL_FRONT_HEIGHT
 		var length = 9.0 if horizontal else 7.0
 		for part in [-1, 1]:
 			var center = float(part) * (length + 1.2) / 2.0
 			var pos = Vector3(center, height / 2.0, sign_value * 7.2) if horizontal else Vector3(sign_value * 9.2, height / 2.0, center)
 			var dims = Vector3(length - 1.2, height, .45) if horizontal else Vector3(.45, height, length - 1.2)
-			Geo.box(self, pos, dims, Color("394148"))
-			Geo.collider(self, pos, dims + Vector3(0, 2, 0))
-			Geo.box(self, pos + Vector3(0, height / 2.0 + .035, 0), Vector3(dims.x + .06, .09, dims.z + .06), Color("656358"))
+			var front_side = (Vector2i(0, 1) if horizontal else Vector2i(1, 0)) if sign_value > 0 else Vector2i.ZERO
+			make_wall(pos, dims, front_side)
 	var connected = [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]
 	for i in connected.size():
 		var direction: Vector2i = connected[i]
@@ -61,15 +64,19 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 			add_child(gate)
 			gate.position = at
 			var rotated = direction.x != 0
+			var post_height = WALL_BACK_HEIGHT - .25 if direction.x + direction.y < 0 else 1.5
 			Geo.box(gate, Vector3(0, -.015, 0), Vector3(.8, .08, 2.25) if rotated else Vector3(2.25, .08, .8), Color("b69c6a"))
 			for s in [-1, 1]:
-				Geo.box(gate, Vector3(0, .75, s * 1.1) if rotated else Vector3(s * 1.1, .75, 0), Vector3(.25, 1.5, .25), Color("797263"))
+				Geo.box(gate, Vector3(0, post_height / 2, s * 1.1) if rotated else Vector3(s * 1.1, post_height / 2, 0), Vector3(.25, post_height, .25), Color("797263"))
+			if post_height > 1.5:
+				Geo.box(gate, Vector3(0, post_height, 0), Vector3(.3, .18, 2.5) if rotated else Vector3(2.5, .18, .3), Color("797263"))
 			var barrier = Geo.box(gate, Vector3(0, .75, 0), Vector3(.16, 1.45, 2.0) if rotated else Vector3(2.0, 1.45, .16), Color("b85e4c"), .7)
 			barrier.name = "Barrier"
 			Geo.halo(gate, Vector3(0, .035, 0), 3.5, Color(.92, .62, .25, .28))
 			gates.append(gate)
 		else:
-			Geo.box(self, at + Vector3(0, .5, 0), Vector3(.5, 1.0, 2.5) if direction.x != 0 else Vector3(2.5, 1.0, .5), Color("394148"))
+			var height = WALL_BACK_HEIGHT if direction.x + direction.y < 0 else WALL_FRONT_HEIGHT
+			make_wall(at + Vector3(0, height / 2, 0), Vector3(.45, height, 2.5) if direction.x != 0 else Vector3(2.5, height, .45), direction if direction.x + direction.y > 0 else Vector2i.ZERO)
 	for x in [-7.65, 7.65]:
 		for z in [-5.65, 5.65]:
 			make_lantern(Vector3(x, 0, z))
@@ -99,18 +106,47 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 	set_open(true)
 	apply_lighting_quality()
 
+func make_wall(at: Vector3, dimensions: Vector3, front_side := Vector2i.ZERO) -> void:
+	var body = Geo.box(self, at, dimensions, Color("394148"))
+	var cap = Geo.box(self, at + Vector3(0, dimensions.y / 2 + .035, 0), Vector3(dimensions.x + .06, .09, dimensions.z + .06), Color("656358"))
+	var collider = Geo.collider(self, at, dimensions + Vector3(0, 2, 0))
+	if front_side != Vector2i.ZERO:
+		# Keep a static full-height occluder while the visible wall cuts away.
+		# This avoids transparent wall passes and moving shadow-map casters.
+		body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		cap.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var caster = Geo.box(self, at, dimensions, Color("394148"))
+		caster.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+		front_walls.append({"body": body, "cap": cap, "shadow_caster": caster,
+			"collider": collider, "side": front_side, "height": dimensions.y})
+
+func update_wall_visibility(focus: Vector3, delta: float, others: Array = []) -> void:
+	for wall in front_walls:
+		var near = focus.x > 6.0 if wall.side.x > 0 else focus.z > 4.0
+		for actor in others:
+			if (actor.x > 6.0 if wall.side.x > 0 else actor.z > 4.0):
+				near = true
+				break
+		var target = WALL_CUTAWAY_HEIGHT if near else WALL_FRONT_HEIGHT
+		var height = target if delta <= 0 else move_toward(wall.height, target, delta * 7.0)
+		if is_equal_approx(height, wall.height): continue
+		wall.height = height
+		wall.body.scale.y = height / WALL_FRONT_HEIGHT
+		wall.body.position.y = height / 2
+		wall.cap.position.y = height + .035
+
 func make_lantern(p: Vector3) -> void:
 	Geo.box(self, p + Vector3(0, .28, 0), Vector3(.85, .55, .85), Color("424d4c"))
 	Geo.box(self, p + Vector3(0, .61, 0), Vector3(1.0, .12, 1.0), Color("716f5d"))
 	Geo.cylinder(self, p + Vector3(0, 1.03, 0), .14, .8, Color("ac9061"))
-	Geo.box(self, p + Vector3(0, 1.6, 0), Vector3(.5, .55, .5), Color("ffca79"), 1.6)
+	Geo.box(self, p + Vector3(0, 1.6, 0), Vector3(.5, .55, .5), Color("f7bb6d"), 1.05)
 	Geo.box(self, p + Vector3(0, 1.94, 0), Vector3(.68, .12, .68), Color("826d51"))
 	for x in [-.22, .22]:
 		for z in [-.22, .22]:
 			var bar = Geo.box(self, p + Vector3(x, 1.6, z), Vector3(.035, .65, .035), Color("6e6654"))
 			bar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# Unshadowed fills preserve warm lantern pools in both quality modes.
-	var light = Geo.light(self, p + Vector3(0, 2.2, 0), Color("ffbc71"), 2.0, 8.5)
+	var light = Geo.light(self, p + Vector3(0, 2.2, 0), Color("ffbc71"), .6, 7.0)
 	lamps.append(light)
 	# Keep one warm key shadow; the other lanterns are inexpensive fills. Four
 	# overlapping shadow lights still cost too much on mobile GLES3 renderers.
@@ -125,13 +161,13 @@ func make_shadow_light(p: Vector3) -> void:
 	var shadow_light = SpotLight3D.new()
 	shadow_light.light_color = Color("ffbc71")
 	shadow_light.light_cull_mask = 1
-	shadow_light.light_energy = .85
+	shadow_light.light_energy = 1.5
 	shadow_light.spot_range = 13.0
 	shadow_light.spot_angle = 58.0
 	shadow_light.spot_angle_attenuation = 1.5
 	shadow_light.shadow_bias = .06
 	shadow_light.shadow_normal_bias = .7
-	shadow_light.shadow_opacity = .65
+	shadow_light.shadow_opacity = 1.0
 	shadow_light.visible = false
 	add_child(shadow_light)
 	shadow_light.position = p + Vector3(0, 2.2, 0)
@@ -181,7 +217,7 @@ func _process(delta: float) -> void:
 	time += delta
 	apply_lighting_quality()
 	for i in lamps.size():
-		lamps[i].light_energy = 2.0 + sin(time * 3.1 + i * 2.4) * .07 + sin(time * 7.2 + i) * .035
+		lamps[i].light_energy = .6 + sin(time * 3.1 + i * 2.4) * .025 + sin(time * 7.2 + i) * .012
 	if ember_mesh:
 		for i in ember_origins.size():
 			var p: Vector3 = ember_origins[i]

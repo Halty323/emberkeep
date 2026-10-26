@@ -36,6 +36,8 @@ The sticks float to the initial touch position. Release the aiming stick to stop
 ## Current content
 
 - Three seeded floors with connected, branching room layouts; combat, treasure, merchant, rest and boss rooms.
+- Closer isometric gameplay framing with smooth, bounded player follow. Tall foreground walls cut away near players/enemies while retaining their full-height shadows and collision boundaries.
+- Dim, warm lantern pools and darker ambient fill, with a directional shadow caster and one optional warm spotlight for stronger contrast.
 - Ten weapon types and 60 stackable relics, with effects including homing, piercing, ricochets, elemental status, chain lightning, split shots, explosions, orbitals and dash attacks.
 - Six regular enemy types including splitter offspring, plus a boss encounter on each floor. Bosses share a base design with floor scaling and attack variations.
 - One relic or weapon selection per reward pedestal or merchant visit. Defeat the floor boss, claim its reward and use the revealed exit to descend; the third exit completes the run.
@@ -75,7 +77,7 @@ XDG_DATA_HOME=/tmp/emberkeep-test-data godot --headless --path . --script res://
 python3 tools/make_content.py
 ```
 
-The suites check dungeon connectivity and seed repeatability, catalog effect names, saves, combat, rewards, progression, the lighting quality lifecycle, and secret-code entry/grants. All 1,684 headless checks pass. Lantern shadows on/off and the hidden code form were also checked with the OpenGL Compatibility renderer using Mesa software rendering. See [docs/TESTING.md](docs/TESTING.md). Android performance and touch ergonomics still require device testing.
+The suites check dungeon connectivity and seed repeatability, catalog effect names, saves, combat, rewards, progression, lighting quality, secret codes, and camera/wall presentation. All 1,886 headless checks pass. Lantern shadows on/off, the closer framing, and the hidden code form were also checked with the OpenGL Compatibility renderer using Mesa software rendering. See [docs/TESTING.md](docs/TESTING.md). Android performance and touch ergonomics still require device testing.
 
 | Location | Purpose |
 | --- | --- |
