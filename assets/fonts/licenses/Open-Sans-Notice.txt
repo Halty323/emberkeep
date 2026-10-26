@@ -1,0 +1,5 @@
+Open Sans Regular and Open Sans Semibold
+Digitized data copyright (c) 2010-2011, Google Corporation.
+Licensed under the Apache License, Version 2.0.
+See Apache-2.0.txt for the complete license.
+The bundled font binaries are unmodified.

@@ -1,0 +1,786 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "id": "warm_wax",
+      "name": "Warm Wax",
+      "description": "Each ember hits 22% harder.",
+      "rarity": "common",
+      "tag": "POWER",
+      "effects": {
+        "damage": 0.22
+      }
+    },
+    {
+      "id": "quick_wick",
+      "name": "Quick Wick",
+      "description": "Fire 18% faster.",
+      "rarity": "common",
+      "tag": "TEMPO",
+      "effects": {
+        "rate": 0.18
+      }
+    },
+    {
+      "id": "soft_boots",
+      "name": "Soft Boots",
+      "description": "Move 14% faster.",
+      "rarity": "common",
+      "tag": "MOTION",
+      "effects": {
+        "speed": 0.14
+      }
+    },
+    {
+      "id": "heartstone",
+      "name": "Heartstone",
+      "description": "Gain a heart container and heal 2.",
+      "rarity": "common",
+      "tag": "VITALITY",
+      "effects": {
+        "max_hp": 2
+      }
+    },
+    {
+      "id": "long_match",
+      "name": "Long Match",
+      "description": "Projectiles travel 35% farther.",
+      "rarity": "common",
+      "tag": "REACH",
+      "effects": {
+        "range": 0.35
+      }
+    },
+    {
+      "id": "brass_barrel",
+      "name": "Brass Barrel",
+      "description": "25% faster projectiles; 8% more damage.",
+      "rarity": "common",
+      "tag": "POWER",
+      "effects": {
+        "shot_speed": 0.25,
+        "damage": 0.08
+      }
+    },
+    {
+      "id": "heavy_ember",
+      "name": "Heavy Ember",
+      "description": "35% more damage; fire 10% slower.",
+      "rarity": "common",
+      "tag": "POWER",
+      "effects": {
+        "damage": 0.35,
+        "rate": -0.1
+      }
+    },
+    {
+      "id": "lucky_penny",
+      "name": "Lucky Penny",
+      "description": "More critical hits and better loot.",
+      "rarity": "common",
+      "tag": "FORTUNE",
+      "effects": {
+        "crit": 0.08,
+        "luck": 1
+      }
+    },
+    {
+      "id": "lodestone",
+      "name": "Lodestone",
+      "description": "Pickups are pulled in from much farther away.",
+      "rarity": "common",
+      "tag": "FORTUNE",
+      "effects": {
+        "magnet": 3
+      }
+    },
+    {
+      "id": "pocket_change",
+      "name": "Pocket Change",
+      "description": "Enemies drop 35% more coins.",
+      "rarity": "common",
+      "tag": "FORTUNE",
+      "effects": {
+        "coin_bonus": 0.35
+      }
+    },
+    {
+      "id": "sugar_rush",
+      "name": "Sugar Rush",
+      "description": "Move and fire 10% faster.",
+      "rarity": "common",
+      "tag": "TEMPO",
+      "effects": {
+        "rate": 0.1,
+        "speed": 0.1
+      }
+    },
+    {
+      "id": "wide_wick",
+      "name": "Wide Wick",
+      "description": "Projectiles are 45% larger.",
+      "rarity": "common",
+      "tag": "REACH",
+      "effects": {
+        "size": 0.45
+      }
+    },
+    {
+      "id": "steady_hand",
+      "name": "Steady Hand",
+      "description": "15% more damage and stronger knockback.",
+      "rarity": "common",
+      "tag": "POWER",
+      "effects": {
+        "damage": 0.15,
+        "knockback": 0.7
+      }
+    },
+    {
+      "id": "red_thread",
+      "name": "Red Thread",
+      "description": "Critical hits deal 75% more damage.",
+      "rarity": "common",
+      "tag": "FORTUNE",
+      "effects": {
+        "crit_damage": 0.75
+      }
+    },
+    {
+      "id": "second_wind",
+      "name": "Second Wind",
+      "description": "Dash recharges 22% faster.",
+      "rarity": "common",
+      "tag": "MOTION",
+      "effects": {
+        "dash_cd": 0.22
+      }
+    },
+    {
+      "id": "dried_rose",
+      "name": "Dried Rose",
+      "description": "Heal 1 after every third room cleared.",
+      "rarity": "common",
+      "tag": "VITALITY",
+      "effects": {
+        "room_heal": 1
+      }
+    },
+    {
+      "id": "warm_soup",
+      "name": "Warm Soup",
+      "description": "Gain 2 hearts and move 6% faster.",
+      "rarity": "common",
+      "tag": "VITALITY",
+      "effects": {
+        "max_hp": 2,
+        "speed": 0.06
+      }
+    },
+    {
+      "id": "sharp_spark",
+      "name": "Sharp Spark",
+      "description": "12% critical chance; 12% faster shots.",
+      "rarity": "common",
+      "tag": "FORTUNE",
+      "effects": {
+        "crit": 0.12,
+        "shot_speed": 0.12
+      }
+    },
+    {
+      "id": "splinter",
+      "name": "Splinter",
+      "description": "Shots pierce one extra enemy.",
+      "rarity": "uncommon",
+      "tag": "PIERCE",
+      "effects": {
+        "pierce": 1
+      }
+    },
+    {
+      "id": "skipping_stone",
+      "name": "Skipping Stone",
+      "description": "Shots bounce off two walls.",
+      "rarity": "uncommon",
+      "tag": "BOUNCE",
+      "effects": {
+        "bounce": 2
+      }
+    },
+    {
+      "id": "seeking_spark",
+      "name": "Seeking Spark",
+      "description": "Embers gently seek nearby enemies.",
+      "rarity": "uncommon",
+      "tag": "HOMING",
+      "effects": {
+        "homing": 2.1
+      }
+    },
+    {
+      "id": "chili_oil",
+      "name": "Chili Oil",
+      "description": "Shots ignite enemies for damage over time.",
+      "rarity": "uncommon",
+      "tag": "FIRE",
+      "effects": {
+        "burn": 1
+      }
+    },
+    {
+      "id": "winter_mint",
+      "name": "Winter Mint",
+      "description": "Shots chill and slow enemies.",
+      "rarity": "uncommon",
+      "tag": "FROST",
+      "effects": {
+        "chill": 1
+      }
+    },
+    {
+      "id": "bitter_tea",
+      "name": "Bitter Tea",
+      "description": "Shots poison enemies for 4 seconds.",
+      "rarity": "uncommon",
+      "tag": "POISON",
+      "effects": {
+        "poison": 1
+      }
+    },
+    {
+      "id": "copper_wire",
+      "name": "Copper Wire",
+      "description": "Hits arc to one nearby enemy.",
+      "rarity": "uncommon",
+      "tag": "LIGHTNING",
+      "effects": {
+        "chain": 1
+      }
+    },
+    {
+      "id": "firecracker",
+      "name": "Firecracker",
+      "description": "Hits deal damage in a small area.",
+      "rarity": "uncommon",
+      "tag": "BLAST",
+      "effects": {
+        "explosion": 1.1
+      }
+    },
+    {
+      "id": "forked_wick",
+      "name": "Forked Wick",
+      "description": "Fire an extra ember; damage reduced 12%.",
+      "rarity": "uncommon",
+      "tag": "MULTISHOT",
+      "effects": {
+        "shots": 1,
+        "damage": -0.12
+      }
+    },
+    {
+      "id": "rear_view",
+      "name": "Rear View",
+      "description": "Also fire behind you.",
+      "rarity": "uncommon",
+      "tag": "MULTISHOT",
+      "effects": {
+        "backshot": 1
+      }
+    },
+    {
+      "id": "side_candles",
+      "name": "Side Candles",
+      "description": "Also fire an ember from each side.",
+      "rarity": "uncommon",
+      "tag": "MULTISHOT",
+      "effects": {
+        "side_shot": 1
+      }
+    },
+    {
+      "id": "moon_shard",
+      "name": "Moon Shard",
+      "description": "Shots weave gently; deal 20% more damage.",
+      "rarity": "uncommon",
+      "tag": "WEAVE",
+      "effects": {
+        "wave": 1,
+        "damage": 0.2
+      }
+    },
+    {
+      "id": "thorn_crown",
+      "name": "Thorn Crown",
+      "description": "Taking damage hurts nearby enemies.",
+      "rarity": "uncommon",
+      "tag": "DEFENSE",
+      "effects": {
+        "thorns": 3
+      }
+    },
+    {
+      "id": "cinder_steps",
+      "name": "Cinder Steps",
+      "description": "Dashing burns enemies you pass through.",
+      "rarity": "uncommon",
+      "tag": "DASH",
+      "effects": {
+        "dash_damage": 8
+      }
+    },
+    {
+      "id": "snowglobe",
+      "name": "Snowglobe",
+      "description": "Dashing releases a ring of icy sparks.",
+      "rarity": "uncommon",
+      "tag": "DASH",
+      "effects": {
+        "dash_nova": 1
+      }
+    },
+    {
+      "id": "amber_guard",
+      "name": "Amber Guard",
+      "description": "Block one hit at the start of each room.",
+      "rarity": "uncommon",
+      "tag": "DEFENSE",
+      "effects": {
+        "shield": 1
+      }
+    },
+    {
+      "id": "firefly_jar",
+      "name": "Firefly Jar",
+      "description": "A friendly ember orbits and damages enemies.",
+      "rarity": "uncommon",
+      "tag": "ORBITAL",
+      "effects": {
+        "orbitals": 1
+      }
+    },
+    {
+      "id": "hungry_flame",
+      "name": "Hungry Flame",
+      "description": "Kills briefly increase fire rate.",
+      "rarity": "uncommon",
+      "tag": "TEMPO",
+      "effects": {
+        "kill_haste": 0.12
+      }
+    },
+    {
+      "id": "hunters_mark",
+      "name": "Hunter’s Mark",
+      "description": "Deal 40% more damage to low-health foes.",
+      "rarity": "uncommon",
+      "tag": "POWER",
+      "effects": {
+        "execute": 0.4
+      }
+    },
+    {
+      "id": "last_light",
+      "name": "Last Light",
+      "description": "At half health, deal 35% more damage.",
+      "rarity": "uncommon",
+      "tag": "POWER",
+      "effects": {
+        "low_hp": 0.35
+      }
+    },
+    {
+      "id": "honeycomb",
+      "name": "Honeycomb",
+      "description": "4% chance to heal on a hit.",
+      "rarity": "uncommon",
+      "tag": "VITALITY",
+      "effects": {
+        "lifesteal": 0.04
+      }
+    },
+    {
+      "id": "old_clock",
+      "name": "Old Clock",
+      "description": "Fire 25% faster; dash recharges 15% faster.",
+      "rarity": "uncommon",
+      "tag": "TEMPO",
+      "effects": {
+        "rate": 0.25,
+        "dash_cd": 0.15
+      }
+    },
+    {
+      "id": "twin_flame",
+      "name": "Twin Flame",
+      "description": "Two extra shots; each deals 15% less damage.",
+      "rarity": "rare",
+      "tag": "MULTISHOT",
+      "effects": {
+        "shots": 2,
+        "damage": -0.15
+      }
+    },
+    {
+      "id": "shattered_star",
+      "name": "Shattered Star",
+      "description": "Hits split into two smaller embers.",
+      "rarity": "rare",
+      "tag": "SPLIT",
+      "effects": {
+        "split": 2
+      }
+    },
+    {
+      "id": "storm_lantern",
+      "name": "Storm Lantern",
+      "description": "Chain to 3 enemies and fire 10% faster.",
+      "rarity": "rare",
+      "tag": "LIGHTNING",
+      "effects": {
+        "chain": 3,
+        "rate": 0.1
+      }
+    },
+    {
+      "id": "living_coal",
+      "name": "Living Coal",
+      "description": "Strong homing and burning embers.",
+      "rarity": "rare",
+      "tag": "FIRE",
+      "effects": {
+        "homing": 3,
+        "burn": 1.5
+      }
+    },
+    {
+      "id": "deep_freeze",
+      "name": "Deep Freeze",
+      "description": "Powerful chill and 20% more damage.",
+      "rarity": "rare",
+      "tag": "FROST",
+      "effects": {
+        "chill": 2,
+        "damage": 0.2
+      }
+    },
+    {
+      "id": "sunseed",
+      "name": "Sunseed",
+      "description": "Larger explosions; 20% more damage.",
+      "rarity": "rare",
+      "tag": "BLAST",
+      "effects": {
+        "explosion": 2,
+        "damage": 0.2
+      }
+    },
+    {
+      "id": "moth_wings",
+      "name": "Moth Wings",
+      "description": "Move 25% faster; shorter dash cooldown.",
+      "rarity": "rare",
+      "tag": "MOTION",
+      "effects": {
+        "speed": 0.25,
+        "dash_cd": 0.3
+      }
+    },
+    {
+      "id": "ghost_thread",
+      "name": "Ghost Thread",
+      "description": "Pierce 4 enemies; 20% faster shots.",
+      "rarity": "rare",
+      "tag": "PIERCE",
+      "effects": {
+        "pierce": 4,
+        "shot_speed": 0.2
+      }
+    },
+    {
+      "id": "bottled_dawn",
+      "name": "Bottled Dawn",
+      "description": "Gain 4 hearts, heal, and gain 10% damage.",
+      "rarity": "rare",
+      "tag": "VITALITY",
+      "effects": {
+        "max_hp": 4,
+        "damage": 0.1
+      }
+    },
+    {
+      "id": "tiny_planets",
+      "name": "Tiny Planets",
+      "description": "Three orbiting embers protect you.",
+      "rarity": "rare",
+      "tag": "ORBITAL",
+      "effects": {
+        "orbitals": 3
+      }
+    },
+    {
+      "id": "blood_orange",
+      "name": "Blood Orange",
+      "description": "8% healing chance; 20% more damage.",
+      "rarity": "rare",
+      "tag": "VITALITY",
+      "effects": {
+        "lifesteal": 0.08,
+        "damage": 0.2
+      }
+    },
+    {
+      "id": "mirror_box",
+      "name": "Mirror Box",
+      "description": "Bounce 4 times and fire behind you.",
+      "rarity": "rare",
+      "tag": "BOUNCE",
+      "effects": {
+        "bounce": 4,
+        "backshot": 1
+      }
+    },
+    {
+      "id": "return_address",
+      "name": "Return Address",
+      "description": "Projectiles turn back toward you mid-flight.",
+      "rarity": "rare",
+      "tag": "RETURN",
+      "effects": {
+        "returning": 1,
+        "pierce": 1
+      }
+    },
+    {
+      "id": "velvet_mantle",
+      "name": "Velvet Mantle",
+      "description": "Block 2 hits in every room.",
+      "rarity": "rare",
+      "tag": "DEFENSE",
+      "effects": {
+        "shield": 2
+      }
+    },
+    {
+      "id": "glass_sun",
+      "name": "Glass Sun",
+      "description": "Double damage, but lose one heart container.",
+      "rarity": "mythic",
+      "tag": "POWER",
+      "effects": {
+        "damage": 1,
+        "max_hp": -2
+      }
+    },
+    {
+      "id": "little_supernova",
+      "name": "Little Supernova",
+      "description": "Splitting, exploding, burning embers.",
+      "rarity": "mythic",
+      "tag": "BLAST",
+      "effects": {
+        "split": 2,
+        "explosion": 1.6,
+        "burn": 1
+      }
+    },
+    {
+      "id": "aurora",
+      "name": "Aurora",
+      "description": "Homing, freezing, chaining embers.",
+      "rarity": "mythic",
+      "tag": "FROST",
+      "effects": {
+        "homing": 2.5,
+        "chill": 1.5,
+        "chain": 2
+      }
+    },
+    {
+      "id": "thousand_wicks",
+      "name": "Thousand Wicks",
+      "description": "Four extra embers and 25% faster fire.",
+      "rarity": "mythic",
+      "tag": "MULTISHOT",
+      "effects": {
+        "shots": 4,
+        "rate": 0.25,
+        "damage": -0.25
+      }
+    },
+    {
+      "id": "eternal_hearth",
+      "name": "Eternal Hearth",
+      "description": "Heal 1 in every cleared combat room and gain 4 hearts.",
+      "rarity": "mythic",
+      "tag": "VITALITY",
+      "effects": {
+        "heal_each_room": 1,
+        "max_hp": 4
+      }
+    },
+    {
+      "id": "comet_heart",
+      "name": "Comet Heart",
+      "description": "Dash blasts, three orbitals, and faster dashes.",
+      "rarity": "mythic",
+      "tag": "DASH",
+      "effects": {
+        "dash_nova": 2,
+        "dash_damage": 16,
+        "orbitals": 3,
+        "dash_cd": 0.35
+      }
+    }
+  ],
+  "weapons": [
+    {
+      "id": "candle",
+      "name": "Candlelight",
+      "description": "A faithful little flame. Balanced and precise.",
+      "color": "#ffc474",
+      "damage": 7,
+      "cooldown": 0.25,
+      "speed": 15,
+      "count": 1,
+      "spread": 0.03,
+      "effects": {
+        "burn": 0.25
+      }
+    },
+    {
+      "id": "scatter",
+      "name": "Hearthscatter",
+      "description": "A close-range fan of glowing pellets.",
+      "color": "#f3ac86",
+      "damage": 3,
+      "cooldown": 0.62,
+      "speed": 13,
+      "count": 7,
+      "spread": 0.7,
+      "effects": {
+        "knockback": 1.2
+      }
+    },
+    {
+      "id": "needle",
+      "name": "Brass Needle",
+      "description": "Rapid, piercing bolts. Keep the pressure on.",
+      "color": "#ffe5b5",
+      "damage": 3.8,
+      "cooldown": 0.115,
+      "speed": 22,
+      "count": 1,
+      "spread": 0.02,
+      "effects": {
+        "pierce": 1
+      }
+    },
+    {
+      "id": "cinder",
+      "name": "Cinder Mortar",
+      "description": "Heavy embers burst in a fiery splash.",
+      "color": "#f27951",
+      "damage": 17,
+      "cooldown": 0.8,
+      "speed": 9,
+      "count": 1,
+      "spread": 0.02,
+      "effects": {
+        "explosion": 1.8,
+        "burn": 1,
+        "size": 0.5
+      }
+    },
+    {
+      "id": "frost",
+      "name": "Winterglass",
+      "description": "A cool three-shot spread that chills foes.",
+      "color": "#a2e2e3",
+      "damage": 4.2,
+      "cooldown": 0.38,
+      "speed": 16,
+      "count": 3,
+      "spread": 0.25,
+      "effects": {
+        "chill": 1.3
+      }
+    },
+    {
+      "id": "arc",
+      "name": "Stormkeeper",
+      "description": "Charged sparks leap between enemies.",
+      "color": "#b5b0f7",
+      "damage": 6,
+      "cooldown": 0.36,
+      "speed": 19,
+      "count": 1,
+      "spread": 0.02,
+      "effects": {
+        "chain": 2
+      }
+    },
+    {
+      "id": "orbit",
+      "name": "Homecoming",
+      "description": "Piercing crescents circle back to you.",
+      "color": "#9fdbc0",
+      "damage": 11,
+      "cooldown": 0.52,
+      "speed": 12,
+      "count": 1,
+      "spread": 0.01,
+      "effects": {
+        "returning": 1,
+        "pierce": 3,
+        "size": 0.4
+      }
+    },
+    {
+      "id": "nova",
+      "name": "Sunwheel",
+      "description": "Eight sparks bloom in every direction.",
+      "color": "#f9cb65",
+      "damage": 4.5,
+      "cooldown": 0.62,
+      "speed": 13,
+      "count": 8,
+      "spread": 6.28318,
+      "effects": {
+        "radial": 1
+      }
+    },
+    {
+      "id": "comet",
+      "name": "Little Comet",
+      "description": "Slow, seeking stars with a satisfying blast.",
+      "color": "#f5aa80",
+      "damage": 16,
+      "cooldown": 0.72,
+      "speed": 10,
+      "count": 1,
+      "spread": 0.01,
+      "effects": {
+        "homing": 3.2,
+        "explosion": 1.3,
+        "size": 0.6
+      }
+    },
+    {
+      "id": "prism",
+      "name": "Prism Lance",
+      "description": "A narrow trio of fast, piercing light.",
+      "color": "#b4e8ed",
+      "damage": 6,
+      "cooldown": 0.3,
+      "speed": 27,
+      "count": 3,
+      "spread": 0.1,
+      "effects": {
+        "pierce": 3,
+        "size": -0.25
+      }
+    }
+  ]
+}
