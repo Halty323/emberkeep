@@ -38,6 +38,7 @@ The sticks float to the initial touch position. Release the aiming stick to stop
 - Three seeded floors with connected, branching room layouts; combat, treasure, merchant, rest and boss rooms.
 - Closer isometric gameplay framing with smooth, bounded player follow. Tall foreground walls cut away near players/enemies while retaining their full-height shadows and collision boundaries.
 - Dim, warm lantern pools and darker ambient fill, with a directional shadow caster and one optional warm spotlight for stronger contrast.
+- Larger stone-and-brass menus and HUD, with beveled surfaces that share the dungeon's projected lantern positions, colors and flicker. Text stays clear as the stone catches the light; touch targets and relic descriptions are larger too.
 - Ten weapon types and 60 stackable relics, with effects including homing, piercing, ricochets, elemental status, chain lightning, split shots, explosions, orbitals and dash attacks.
 - Six regular enemy types including splitter offspring, plus a boss encounter on each floor. Bosses share a base design with floor scaling and attack variations.
 - One relic or weapon selection per reward pedestal or merchant visit. Defeat the floor boss, claim its reward and use the revealed exit to descend; the third exit completes the run.
@@ -72,12 +73,13 @@ XDG_DATA_HOME=/tmp/emberkeep-test-data godot --headless --path . --script res://
 
 # Opt-in OpenGL captures and pixel checks; requires a working display.
 ./tools/render_lighting.sh
+./tools/render_ui.sh
 
 # Rebuild the inspectable content catalog after editing its authoring source.
 python3 tools/make_content.py
 ```
 
-The suites check dungeon connectivity and seed repeatability, catalog effect names, saves, combat, rewards, progression, lighting quality, secret codes, and camera/wall presentation. All 1,886 headless checks pass. Lantern shadows on/off, the closer framing, and the hidden code form were also checked with the OpenGL Compatibility renderer using Mesa software rendering. See [docs/TESTING.md](docs/TESTING.md). Android performance and touch ergonomics still require device testing.
+The suites check dungeon connectivity and seed repeatability, catalog effect names, saves, combat, rewards, progression, lighting quality, secret codes, camera/wall presentation, larger UI layout, shared lighting and input routing. All 2,514 headless checks pass. OpenGL captures also verify lantern shadows, the closer framing, native menu clicks and the stone UI's response to real room-light changes. See [docs/TESTING.md](docs/TESTING.md). Android performance and touch ergonomics still require device testing.
 
 | Location | Purpose |
 | --- | --- |
@@ -85,7 +87,7 @@ The suites check dungeon connectivity and seed repeatability, catalog effect nam
 | `scripts/run.gd` | Seeded floor graphs, run state and versioned local saves |
 | `scripts/avatar.gd`, `enemy.gd`, `shot.gd` | Combat |
 | `scripts/world.gd`, `geo.gd`, `fx.gd`, `shaders/` | Placeholder geometry, lighting and effects |
-| `scripts/ui.gd` | Menus, HUD and touch controls |
+| `scripts/ui.gd`, `ui_surface.gd`, `shaders/ui_stone.gdshader` | Larger menus, HUD, touch controls and dungeon-lit stone surfaces |
 | `tools/make_content.py`, `assets/data.json` | Content authoring and runtime catalog |
 | `scripts/session.gd` | Initial offline networking boundary |
 

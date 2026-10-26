@@ -2,7 +2,7 @@
 
 Verified with Godot 4.6.3 Standard in a headless Linux environment.
 
-`./tools/test.sh` completed with **1,886 checks, zero failures**: 1,033 gameplay checks, 367 lighting checks, 284 secret-code checks and 202 presentation checks, with no runtime script errors or shutdown leak warnings. The wrapper imports the project, runs all suites with disposable user storage, and rejects script errors even if Godot returns a successful exit status.
+`./tools/test.sh` completed with **2,514 checks, zero failures**: 1,033 gameplay checks, 367 lighting checks, 284 secret-code checks, 202 camera/wall presentation checks and 628 UI checks, with no runtime script errors or shutdown leak warnings. The wrapper imports the project, runs all suites with disposable user storage, and rejects script errors even if Godot returns a successful exit status. UI check counts depend on whether a prior suite left a resumable save, since the title then exposes an extra button.
 
 The suite covers:
 
@@ -20,8 +20,17 @@ The suite covers:
 - Lighting quality at room startup, repeated setting transitions, preservation of warm fills, the single local shadow-map budget, and isolation of unlit glow geometry from real lights and shadow casters.
 - Secret-code validation, case/space normalization, active-run gating, one-time bulk effect updates, existing stacks, repeat safety, health/guards/orbitals, persistence, invalid entries, cancellation, five native button taps and paused desktop typing.
 - Camera zoom, fixed orientation during bounded follow, room-entry snaps, actual player-limit corner/door visibility, taller meshes, foreground cutaway/recovery, unchanged collider footprints, static full-height wall shadow casters, and dimmer fill lighting.
+- Larger native controls and text, in-bounds/nonoverlapping hit targets, room-light projection through camera follow, live light-color/energy changes, preservation of the world light/shadow budget, all ten journal pages, the hidden title trigger, and scaled mouse/touch interaction and dash actions.
 
 The hidden secret form was also opened with five mouse clicks routed through Godot's actual GUI, rendered, and submitted via the LineEdit signal. The game resumed with all 60 relics. This checks desktop GUI routing and rendering; Android's physical keyboard/IME path still needs on-device validation.
+
+## Dungeon-lit interface
+
+The UI uses procedural stone relief with bevel normals, inset rims, brass pins and soft canvas shadows. Its shader receives the existing room lanterns' projected screen positions, ranges, colors and current flickering energy, together with the room directional key and ambient intensity. Camera movement changes the light projection consistently across panels. This is canvas relief shading driven by the scene's lights; it does not sample the 3D shadow atlas or place menus in the world's collision space. It adds no 3D lights, shadow maps or extra viewports. Static light uniforms are cached; the packed lantern data is shared across panels.
+
+Health markers, body text, item cards, menu controls, sticks and dash are larger. Native buttons use 20px text with at least 54px height at the 1280×720 logical layout, which retains Android safe-area scaling. The journal uses six roomy cards per page, with all 60 relics accessible. Interaction drawing, mouse clicks and touch hits share one rectangle. Text keeps a stable warm color and shadow while panel illumination changes.
+
+Run `./tools/render_ui.sh` with a working display for the opt-in UI regression. **20 renderer checks passed** with ten captures: title with a saved run, desktop/touch HUD, pause, hidden entry, settings, the last journal page, three reward offers, and a controlled room-lantern comparison. Native mouse clicks reached pause, opened the secret with five title taps, cancelled it, and navigated settings/back. Increasing an actual room lantern's energy and moving it changed a stone patch's luminance by 0.312, while text peak luminance stayed 0.920 in both captures. Full-screen inspection found no clipped reward/journal descriptions. The capture harness isolates all save/profile files.
 
 ## Closer framing and contrast
 
@@ -43,7 +52,7 @@ Before/after captures for the original halo fix used the same seed, room, wider 
 
 Run `./tools/render_lighting.sh` with a working display to produce on/off PNGs, sample the pixels where the original planes extended beyond the floor, and print frame time/draw calls. It isolates its run/profile files in temporary storage. This display test is opt-in and is separate from the headless suites.
 
-The Android preset also exported `emberkeep.pck` successfully. That packaged resource set launched with the Godot executable for 180 headless frames using `--quickstart`, with no errors. Its catalog, compiled gameplay scripts and bundled font licenses were checked in the pack.
+The Android preset also exported `emberkeep.pck` successfully. That packaged resource set launched with the Godot executable for 120 headless frames using `--quickstart`, with no errors. Its catalog, compiled gameplay scripts and bundled font licenses were checked in the pack.
 
 No APK was built: the Android SDK and matching Android export templates are absent. OpenGL lighting and UI captures have been verified using software rendering; physical touch behavior, Android installation and device performance remain unverified. These checks are necessary before calling this a device-tested release.
 

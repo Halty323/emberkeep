@@ -124,7 +124,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		ui.open_journal("pause")
 	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and is_playing():
 		var p = ui.local_point(event.position)
-		if Rect2(445, 580, 390, 58).has_point(p) and interaction_text != "":
+		if ui.INTERACTION_RECT.has_point(p) and interaction_text != "":
 			interact()
 
 func _notification(what: int) -> void:
