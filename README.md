@@ -62,11 +62,14 @@ godot --headless --editor --path . --import --quit
 # Or invoke the suite directly with separate user data:
 XDG_DATA_HOME=/tmp/emberkeep-test-data godot --headless --path . --script res://tests/smoke.gd
 
+# Opt-in OpenGL captures and pixel checks; requires a working display.
+./tools/render_lighting.sh
+
 # Rebuild the inspectable content catalog after editing its authoring source.
 python3 tools/make_content.py
 ```
 
-The test checks dungeon connectivity and seed repeatability, catalog effect names, save round-trips, projectile effects, dashing, reward claiming and run progression. The source has passed local headless import and regression checks. No GPU/display renderer was available for visual verification in the build sandbox. Headless checks do not verify rendering, touch ergonomics or Android performance.
+The suites check dungeon connectivity and seed repeatability, catalog effect names, saves, combat, rewards, progression, and the lighting quality lifecycle. All 1,400 headless checks pass. Lantern shadows on/off were also checked with the OpenGL Compatibility renderer using Mesa software rendering; the bright halo-plane regression is fixed. See [docs/TESTING.md](docs/TESTING.md). Android performance and touch ergonomics still require device testing.
 
 | Location | Purpose |
 | --- | --- |

@@ -49,6 +49,9 @@ static func add_mesh(parent: Node3D, mesh: Mesh, position: Vector3, color: Color
 	var instance = MeshInstance3D.new()
 	instance.mesh = mesh
 	instance.material_override = material(color, emission)
+	# Sparks, rings and luminous glass do not need costly shadow caster passes.
+	if emission > 0:
+		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(instance)
 	instance.position = position
 	return instance
@@ -62,6 +65,8 @@ static func halo(parent: Node3D, position: Vector3, size: float, color: Color) -
 	mat.shader = preload("res://shaders/halo.gdshader")
 	mat.set_shader_parameter("tint", color)
 	instance.material_override = mat
+	# Keep unlit effects out of the GLES3 per-light/shadow rendering passes.
+	instance.layers = 2
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(instance)
 	instance.position = position
@@ -70,6 +75,7 @@ static func halo(parent: Node3D, position: Vector3, size: float, color: Color) -
 static func light(parent: Node3D, position: Vector3, color: Color, energy: float, reach: float, shadows := false) -> OmniLight3D:
 	var light = OmniLight3D.new()
 	light.light_color = color
+	light.light_cull_mask = 1
 	light.light_energy = energy
 	light.omni_range = reach
 	light.omni_attenuation = 1.2

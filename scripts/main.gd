@@ -5,6 +5,7 @@ var player: Adventurer
 var ui: GameInterface
 var scene_root: Node3D
 var marker: Node3D
+var marker_visual: Node3D
 var enemies: Array = []
 var shots: Array = []
 var pickups: Array = []
@@ -28,6 +29,8 @@ var screen_down = Vector3(18, 0, 22).normalized()
 
 func _ready() -> void:
 	setup_inputs()
+	# Reserve a useful 512px tile for the single optional lantern shadow.
+	get_viewport().positional_shadow_atlas_quad_0 = Viewport.SHADOW_ATLAS_QUADRANT_SUBDIV_1
 	var environment = WorldEnvironment.new()
 	var env = Environment.new()
 	env.background_mode = Environment.BG_COLOR
@@ -44,6 +47,7 @@ func _ready() -> void:
 	add_child(environment)
 	var moon = DirectionalLight3D.new()
 	moon.light_color = Color("aec9e2")
+	moon.light_cull_mask = 1
 	moon.light_energy = .45
 	moon.rotation_degrees = Vector3(-65, -35, 0)
 	moon.shadow_enabled = true
@@ -192,8 +196,10 @@ func _process(delta: float) -> void:
 		# Cosmetic motion never consumes the seeded gameplay RNG.
 		camera.position = camera_home + Vector3(sin(Time.get_ticks_msec() * .081), cos(Time.get_ticks_msec() * .067), 0) * amount
 	vignette.set_shader_parameter("hurt", hurt_flash)
-	if marker and is_instance_valid(marker):
-		marker.rotation.y += delta * .5
+	if marker_visual and is_instance_valid(marker_visual):
+		# Animate the luminous relic alone; its pedestal and light stay static,
+		# allowing the room's shadow maps to remain cached while idle.
+		marker_visual.rotation.y += delta * .5
 
 func clean_room() -> void:
 	for shot in shots:
@@ -211,6 +217,7 @@ func clean_room() -> void:
 	scene_root = Node3D.new()
 	add_child(scene_root)
 	marker = null
+	marker_visual = null
 	interaction_text = ""
 	interaction_kind = ""
 
@@ -413,6 +420,7 @@ func ensure_offers(premium := false) -> void:
 
 func make_marker(kind: String, at := Vector3.ZERO) -> void:
 	if marker and is_instance_valid(marker): marker.queue_free()
+	marker_visual = null
 	marker = Node3D.new()
 	scene_root.add_child(marker)
 	marker.position = at
@@ -428,6 +436,7 @@ func make_marker(kind: String, at := Vector3.ZERO) -> void:
 	else:
 		Geo.cylinder(marker, Vector3(0, .22, 0), .5, .44, Color("656454"))
 		var relic = Geo.box(marker, Vector3(0, 1.0, 0), Vector3(.43, .43, .43), Color("d4b580") if kind == "treasure" else Color("a9c4ad"), .7)
+		marker_visual = relic
 		relic.rotation_degrees = Vector3(45, 35, 30)
 		Geo.ring(marker, Vector3(0, .035, 0), .95, Color("d9b97a"), .035)
 		Geo.halo(marker, Vector3(0, .03, 0), 4, Color(1, .65, .22, .22))

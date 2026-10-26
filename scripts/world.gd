@@ -1,8 +1,11 @@
 class_name DungeonRoom
 extends Node3D
+const MAX_LANTERN_SHADOWS = 1
 var game: Node3D
 var decor_rng = RandomNumberGenerator.new()
 var lamps: Array[OmniLight3D] = []
+var shadow_lamps: Array[SpotLight3D] = []
+var _quality_enabled = null
 var gates: Array[Node3D] = []
 var open = true
 var time = 0.0
@@ -94,6 +97,7 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 		make_candle(p, decor_rng.randf_range(.45, .85))
 	make_embers()
 	set_open(true)
+	apply_lighting_quality()
 
 func make_lantern(p: Vector3) -> void:
 	Geo.box(self, p + Vector3(0, .28, 0), Vector3(.85, .55, .85), Color("424d4c"))
@@ -103,15 +107,40 @@ func make_lantern(p: Vector3) -> void:
 	Geo.box(self, p + Vector3(0, 1.94, 0), Vector3(.68, .12, .68), Color("826d51"))
 	for x in [-.22, .22]:
 		for z in [-.22, .22]:
-			Geo.box(self, p + Vector3(x, 1.6, z), Vector3(.035, .65, .035), Color("6e6654"))
-	var light = Geo.light(self, p + Vector3(0, 2.2, 0), Color("ffbc71"), 3.0, 11.0, true)
+			var bar = Geo.box(self, p + Vector3(x, 1.6, z), Vector3(.035, .65, .035), Color("6e6654"))
+			bar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Unshadowed fills preserve warm lantern pools in both quality modes.
+	var light = Geo.light(self, p + Vector3(0, 2.2, 0), Color("ffbc71"), 2.0, 8.5)
 	lamps.append(light)
+	# Keep one warm key shadow; the other lanterns are inexpensive fills. Four
+	# overlapping shadow lights still cost too much on mobile GLES3 renderers.
+	if shadow_lamps.size() < MAX_LANTERN_SHADOWS:
+		make_shadow_light(p)
 	Geo.halo(self, p + Vector3(0, .03, 0), 7.5, Color(1, .57, .17, .2))
 	var glow = Geo.halo(self, p + Vector3(0, 1.65, 0), 2.0, Color(1, .6, .2, .4))
 	glow.rotation_degrees.x = 58
 
+func make_shadow_light(p: Vector3) -> void:
+	# A fixed inward-facing spotlight needs one map instead of six cube faces.
+	var shadow_light = SpotLight3D.new()
+	shadow_light.light_color = Color("ffbc71")
+	shadow_light.light_cull_mask = 1
+	shadow_light.light_energy = .85
+	shadow_light.spot_range = 13.0
+	shadow_light.spot_angle = 58.0
+	shadow_light.spot_angle_attenuation = 1.5
+	shadow_light.shadow_bias = .06
+	shadow_light.shadow_normal_bias = .7
+	shadow_light.shadow_opacity = .65
+	shadow_light.visible = false
+	add_child(shadow_light)
+	shadow_light.position = p + Vector3(0, 2.2, 0)
+	shadow_light.look_at(Vector3(p.x * .3, 0, p.z * .3))
+	shadow_lamps.append(shadow_light)
+
 func make_candle(p: Vector3, height: float) -> void:
-	Geo.cylinder(self, p + Vector3(0, height / 2, 0), .12, height, Color("c9ad7e"))
+	var wax = Geo.cylinder(self, p + Vector3(0, height / 2, 0), .12, height, Color("c9ad7e"))
+	wax.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var flame = Geo.sphere(self, p + Vector3(0, height + .1, 0), .11, Color("ffe0a1"), 2.0)
 	flame.scale = Vector3(.7, 1.5, .7)
 	Geo.halo(self, p + Vector3(0, .025, 0), 2.3, Color(1, .5, .13, .14))
@@ -139,11 +168,20 @@ func set_open(value: bool) -> void:
 	for gate in gates:
 		gate.get_node("Barrier").visible = not value
 
+func apply_lighting_quality() -> void:
+	var enabled: bool = Run.profile.quality
+	if _quality_enabled == enabled:
+		return
+	_quality_enabled = enabled
+	for light in shadow_lamps:
+		light.shadow_enabled = enabled
+		light.visible = enabled
+
 func _process(delta: float) -> void:
 	time += delta
+	apply_lighting_quality()
 	for i in lamps.size():
-		lamps[i].light_energy = 3.0 + sin(time * 3.1 + i * 2.4) * .12 + sin(time * 7.2 + i) * .06
-		lamps[i].shadow_enabled = Run.profile.quality
+		lamps[i].light_energy = 2.0 + sin(time * 3.1 + i * 2.4) * .07 + sin(time * 7.2 + i) * .035
 	if ember_mesh:
 		for i in ember_origins.size():
 			var p: Vector3 = ember_origins[i]

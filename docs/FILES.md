@@ -1,6 +1,6 @@
 # Completed project files
 
-Godot import caches are generated locally and are excluded from the source archive.
+Godot import caches and Git internals are generated locally and excluded from the source archive.
 
 ```text
 .gitignore
@@ -55,11 +55,16 @@ shaders/halo.gdshader
 shaders/halo.gdshader.uid
 shaders/vignette.gdshader
 shaders/vignette.gdshader.uid
+tests/lighting.gd
+tests/lighting.gd.uid
+tests/render_lighting.gd
+tests/render_lighting.gd.uid
 tests/smoke.gd
 tests/smoke.gd.uid
 tools/configure_android.gd
 tools/configure_android.gd.uid
 tools/export_android.sh
 tools/make_content.py
+tools/render_lighting.sh
 tools/test.sh
 ```
