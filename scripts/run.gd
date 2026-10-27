@@ -19,6 +19,23 @@ var weapon_id = "candle"
 var stats: Dictionary = {}
 var hp = 6.0
 var coins = 0
+var keys = 0
+var bombs = 0
+# Persistent protective hits, unlike the relic guard that refreshes per room.
+var wards = 0
+# One equipped slot: {"instance": "a3", "def": "gale_bell"}, or empty.
+var active_item: Dictionary = {}
+# Remaining gameplay seconds per active definition. Unequipped entries keep
+# ticking and duplicate instances share an entry, so swapping never resets.
+var cooldowns: Dictionary = {}
+# Timed layers over relic stats: {"source", "remaining", "effects", "flags"}.
+var modifiers: Array = []
+# Placed bombs are durable actions: debit, id, room, position and fuse.
+var pending_bombs: Array = []
+var instance_counter = 0
+var processed_events: Array = []
+const START_BOMBS := 1
+const EVENT_MEMORY := 64
 var kills = 0
 var cleared = 0
 var elapsed = 0.0
@@ -45,6 +62,15 @@ func start_run(chosen_weapon: String, seed_input := 0, is_daily := false) -> voi
 	inventory = []
 	weapon_id = chosen_weapon
 	coins = 8
+	keys = 0
+	bombs = START_BOMBS
+	wards = 0
+	active_item = {}
+	cooldowns = {}
+	modifiers = []
+	pending_bombs = []
+	instance_counter = 0
+	processed_events = []
 	kills = 0
 	cleared = 0
 	elapsed = 0.0
@@ -67,6 +93,11 @@ func rebuild_stats() -> void:
 	for id in inventory:
 		for key in Content.item_by_id[id].effects:
 			stats[key] += float(Content.item_by_id[id].effects[key])
+	# Temporary modifiers layer on top of relics; when they expire, the stats
+	# are rebuilt from the inventory, so relics gained meanwhile are kept.
+	for modifier in modifiers:
+		for key in modifier.get("effects", {}):
+			stats[key] += float(modifier.effects[key])
 	stats.max_hp = maxf(2.0, stats.max_hp)
 	stats.damage = maxf(0.3, stats.damage)
 	stats.rate = clampf(stats.rate, 0.35, 5.0)
@@ -115,6 +146,65 @@ func grant_all_relics() -> int:
 		save_run()
 		changed.emit()
 	return added
+
+func next_instance(prefix: String) -> String:
+	instance_counter += 1
+	return "%s%d" % [prefix, instance_counter]
+
+func cooldown_remaining(definition_id: String) -> float:
+	return float(cooldowns.get(definition_id, 0.0))
+
+func recharge(definition_id: String, seconds: float) -> void:
+	cooldowns[definition_id] = maxf(0.0, cooldown_remaining(definition_id) - seconds)
+
+func has_flag(flag: String) -> bool:
+	return modifiers.any(func(modifier): return modifier.get("flags", {}).has(flag))
+
+func flag_total(flag: String) -> int:
+	var total = 0
+	for modifier in modifiers:
+		total += int(modifier.get("flags", {}).get(flag, 0))
+	return total
+
+## Refresh policy: re-applying a source restarts its timer; it never stacks.
+func add_modifier(source: String, duration: float, effects := {}, flags := {}) -> void:
+	modifiers = modifiers.filter(func(modifier): return modifier.source != source)
+	modifiers.append({"source": source, "remaining": duration, "effects": effects, "flags": flags})
+	rebuild_stats()
+	hp = minf(hp, stats.max_hp)
+	changed.emit()
+
+## Advances every timer by unpaused gameplay time only; pause, menus,
+## loading and time away from the app never reach this. Returns the pending
+## bombs whose fuse has run out (the caller resolves and removes them).
+func advance(delta: float) -> Array:
+	for definition_id in cooldowns:
+		cooldowns[definition_id] = maxf(0.0, float(cooldowns[definition_id]) - delta)
+	var expired = false
+	for modifier in modifiers:
+		modifier.remaining = float(modifier.remaining) - delta
+		expired = expired or modifier.remaining <= 0
+	if expired:
+		modifiers = modifiers.filter(func(modifier): return modifier.remaining > 0)
+		rebuild_stats()
+		hp = minf(hp, stats.max_hp)
+		changed.emit()
+	var due: Array = []
+	for bomb in pending_bombs:
+		bomb.fuse = float(bomb.fuse) - delta
+		if bomb.fuse <= 0: due.append(bomb)
+	return due
+
+## Remembers handled command ids so a repeated delivery is never applied twice.
+func remember_event(event_id: String) -> bool:
+	if event_id.is_empty():
+		return true
+	if event_id in processed_events:
+		return false
+	processed_events.append(event_id)
+	if processed_events.size() > EVENT_MEMORY:
+		processed_events.pop_front()
+	return true
 
 func heal(amount: float) -> void:
 	hp = minf(stats.max_hp, hp + amount)
@@ -206,8 +296,29 @@ func snapshot() -> Dictionary:
 	return {"version": SAVE_VERSION, "generator": generator_version, "content_revision": Content.revision,
 		"seed": seed_value, "floor": floor_number, "rooms": rooms, "portals": portals,
 		"current_room": current_room, "entry": entry, "inventory": inventory, "weapon": weapon_id, "hp": hp,
-		"coins": coins, "kills": kills, "cleared": cleared, "elapsed": elapsed, "daily": daily,
+		"coins": coins, "keys": keys, "bombs": bombs, "wards": wards, "active": active_item, "cooldowns": cooldowns,
+		"modifiers": modifiers, "pending_bombs": pending_bombs, "instance_counter": instance_counter,
+		"events": processed_events, "kills": kills, "cleared": cleared, "elapsed": elapsed, "daily": daily,
 		"rng_state": str(rng.state)}
+
+## Drop records name a pickup definition. Version 1 records used a bare kind;
+## those are resolved explicitly, and an unknown kind is dropped with a
+## warning instead of silently becoming some other pickup.
+static func normalize_drops(saved_rooms: Dictionary) -> void:
+	for room in saved_rooms.values():
+		var kept: Array = []
+		for drop in room.get("pickups", []):
+			if drop.id is float or drop.id is int:
+				drop.id = "%d" % int(drop.id)
+			if not drop.has("def"):
+				drop["def"] = Content.LEGACY_PICKUPS.get(drop.get("kind", ""), "")
+				drop.erase("kind")
+			if Content.record("pickups", drop.def).is_empty():
+				push_warning("Removed a saved drop with unknown pickup '%s'." % drop.def)
+				continue
+			kept.append(drop)
+		if room.has("pickups"):
+			room.pickups = kept
 
 ## v1 saves predate multi-cell rooms. Their graph, room types, offers, drops,
 ## health, inventory, weapon and RNG state are carried over untouched; only
@@ -252,6 +363,10 @@ func load_run() -> bool:
 			return false
 	seed_value = int(d.seed)
 	floor_number = int(d.floor)
+	normalize_drops(d.rooms)
+	if not d.get("active", {}).is_empty() and Content.record("actives", d.active.get("def", "")).is_empty():
+		push_warning("The saved active item is no longer known; it was set aside.")
+		d.active = {}
 	rooms = d.rooms
 	portals = d.portals
 	current_room = d.current_room
@@ -260,6 +375,15 @@ func load_run() -> bool:
 	inventory = d.inventory
 	weapon_id = d.weapon
 	coins = int(d.coins)
+	keys = int(d.get("keys", 0))
+	bombs = int(d.get("bombs", START_BOMBS))
+	wards = int(d.get("wards", 0))
+	active_item = d.get("active", {})
+	cooldowns = d.get("cooldowns", {})
+	modifiers = d.get("modifiers", [])
+	pending_bombs = d.get("pending_bombs", [])
+	instance_counter = int(d.get("instance_counter", 0))
+	processed_events = d.get("events", [])
 	kills = int(d.kills)
 	cleared = int(d.cleared)
 	elapsed = float(d.elapsed)

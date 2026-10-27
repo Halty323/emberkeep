@@ -8,6 +8,11 @@ const EDGE := Color("9d8861")
 const INTERACTION_RECT := Rect2(410, 564, 460, 78)
 const DASH_CENTER := Vector2(973, 610)
 const DASH_RADIUS := 48.0
+# One hit-region table drives drawing, touch and mouse handling alike.
+const ACTION_BUTTONS := {"dash": {"center": Vector2(973, 610), "radius": 48.0},
+	"active": {"center": Vector2(904, 510), "radius": 44.0},
+	"bomb": {"center": Vector2(1032, 486), "radius": 38.0}}
+const HUD_RECT := Rect2(24, 24, 370, 176)
 const JOURNAL_PAGE_SIZE := 6
 const TOAST_RECT := Rect2(400, 136, 480, 92)
 const MINIMAP_RECT := Rect2(1012, 100, 244, 192)
@@ -53,6 +58,9 @@ var right_origin = Vector2(1112, 574)
 var left_vector = Vector2.ZERO
 var right_vector = Vector2.ZERO
 var touch_used = false
+# True while a mouse press that began on an action button is held, so the
+# click can never turn into weapon fire.
+var mouse_on_action = false
 var journal_page = 0
 var elapsed_ui = 0.0
 var secret_taps = 0
@@ -205,7 +213,7 @@ func build_surfaces() -> void:
 			make_surface(Rect2(36, 28, 474, 660))
 			make_surface(Rect2(762, 530, 472, 156))
 		"play":
-			make_surface(Rect2(24, 24, 370, 150))
+			make_surface(HUD_RECT)
 			make_surface(Rect2(424, 24, 420, 88), Color("3d423c"))
 			make_surface(MINIMAP_RECT, Color("363c37"))
 			toast_surface = make_surface(TOAST_RECT, Color("45483b"), GOLD)
@@ -216,10 +224,7 @@ func build_surfaces() -> void:
 		"settings": make_surface(Rect2(300, 40, 680, 640))
 		"reward":
 			for i in offers.size():
-				var offer: Dictionary = offers[i]
-				var is_weapon: bool = offer.get("kind", "item") == "weapon"
-				var item: Dictionary = Content.weapon_by_id[offer.id] if is_weapon else Content.item_by_id[offer.id]
-				make_surface(reward_rect(i), PANEL, Color(item.color) if is_weapon else Content.RARITY_COLORS[item.rarity])
+				make_surface(reward_rect(i), PANEL, offer_info(offers[i]).color)
 		"journal":
 			for slot in JOURNAL_PAGE_SIZE:
 				var index = journal_page * JOURNAL_PAGE_SIZE + slot
@@ -340,15 +345,29 @@ func cycle_weapon(step: int) -> void:
 	Audio.play_sound("coin", .75)
 	queue_redraw()
 
+## Display details for a relic, weapon or active item offer.
+func offer_info(offer: Dictionary) -> Dictionary:
+	match offer.get("kind", "item"):
+		"weapon":
+			var weapon: Dictionary = Content.weapon_by_id[offer.id]
+			return {"name": weapon.name, "description": weapon.description, "color": Color(weapon.color),
+				"label": "WEAPON", "tag": "NEW FIGHTING STYLE", "take": "Equip weapon", "buy": "%d coins · equip"}
+		"active":
+			var active: Dictionary = Content.record("actives", offer.id)
+			return {"name": active.name, "description": active.description, "color": Color(active.color),
+				"label": "ACTIVE ITEM", "tag": "RECHARGES IN %d SECONDS" % int(active.cooldown), "take": "Take this item", "buy": "%d coins · take"}
+	var item: Dictionary = Content.item_by_id[offer.id]
+	return {"name": item.name, "description": item.description, "color": Content.RARITY_COLORS[item.rarity],
+		"label": item.rarity.to_upper() + " RELIC", "tag": item.tag, "take": "Take this relic", "buy": "%d coins"}
+
 func build_rewards() -> void:
 	for i in offers.size():
 		var offer: Dictionary = offers[i]
+		var info = offer_info(offer)
 		var rect = reward_rect(i)
 		var price = int(offer.get("price", 0))
 		var affordable = not shop or Run.coins >= price
-		var label = "Take this relic" if not shop else "%d coins" % price
-		if offer.get("kind", "item") == "weapon":
-			label = "Equip weapon" if not shop else "%d coins · equip" % price
+		var label: String = info.take if not shop else info.buy % price
 		var control = button(label, Rect2(rect.position.x + 24, 478, REWARD_WIDTH - 48, 60), func(): game.choose_offer(i), affordable)
 		control.disabled = not affordable
 		if not affordable: control.get_meta("surface").modulate = Color(.7, .7, .65)
@@ -521,14 +540,26 @@ func _input(event: InputEvent) -> void:
 				submit_secret_code(secret_key_buffer)
 				get_viewport().set_input_as_handled()
 		return
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+		mouse_on_action = false
 	if mode != "play":
+		return
+	# Emulated mouse events from touches were already handled as touches.
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and event.device != InputEvent.DEVICE_ID_EMULATION:
+		var action = action_at(local_point(event.position))
+		if action != "" and touch_hud_visible():
+			mouse_on_action = true
+			trigger_action(action)
+			get_viewport().set_input_as_handled()
 		return
 	if event is InputEventScreenTouch:
 		touch_used = true
 		var p = local_point(event.position)
 		if event.pressed:
-			if p.distance_to(DASH_CENTER) < DASH_RADIUS:
-				game.request_dash = true
+			# Buttons are hit-tested before a floating stick can capture the finger.
+			var action = action_at(p)
+			if action != "":
+				trigger_action(action)
 				get_viewport().set_input_as_handled()
 			elif INTERACTION_RECT.has_point(p) and game.interaction_text != "":
 				game.interact()
@@ -560,6 +591,21 @@ func _input(event: InputEvent) -> void:
 		if event.index == right_touch:
 			right_vector = (p - right_origin).limit_length(58) / 58.0
 			get_viewport().set_input_as_handled()
+
+func touch_hud_visible() -> bool:
+	return touch_used or Settings.values.touch or is_touch_platform()
+
+func action_at(point: Vector2) -> String:
+	for action in ACTION_BUTTONS:
+		if point.distance_to(ACTION_BUTTONS[action].center) < ACTION_BUTTONS[action].radius:
+			return action
+	return ""
+
+func trigger_action(action: String) -> void:
+	match action:
+		"dash": game.request_dash = true
+		"active": game.submit({"type": "use_active"})
+		"bomb": game.submit({"type": "place_bomb"})
 
 func text(value: String, at: Vector2, size_value := 18, color := INK, font: Font = null) -> void:
 	var f = font if font else body
@@ -662,15 +708,22 @@ func draw_hud() -> void:
 	draw_circle(Vector2(55, 121), 8, Color("302f23"))
 	draw_circle(Vector2(54, 119), 7, Color("ceab68"))
 	draw_line(Vector2(54, 115), Vector2(54, 123), Color("f7dfa5"), 1.5)
-	text("%02d coins" % Run.coins, Vector2(72, 126), 21, GOLD, bold)
+	text("%02d" % Run.coins, Vector2(70, 127), 21, GOLD, bold)
+	resource_icon("key", Vector2(130, 119))
+	text("%d" % Run.keys, Vector2(146, 127), 21, INK if Run.keys > 0 else MUTED, bold)
+	resource_icon("bomb", Vector2(190, 119))
+	text("%d" % Run.bombs, Vector2(206, 127), 21, INK if Run.bombs > 0 else MUTED, bold)
+	resource_icon("ward", Vector2(250, 119))
+	text("%d" % Run.wards, Vector2(266, 127), 21, Color("b7ddc0") if Run.wards > 0 else MUTED, bold)
 	text(Content.weapon_by_id[Run.weapon_id].name, Vector2(48, 154), 19, INK)
+	draw_active_line()
 	if Run.inventory.size() > 0:
-		text("RELICS", Vector2(40, 203), 14, MUTED, bold)
+		text("RELICS", Vector2(40, 231), 14, MUTED, bold)
 		for i in mini(Run.inventory.size(), 10):
 			var item: Dictionary = Content.item_by_id[Run.inventory[i]]
-			diamond(Vector2(114 + i * 22, 197), 8, Content.RARITY_COLORS[item.rarity])
+			diamond(Vector2(114 + i * 22, 225), 8, Content.RARITY_COLORS[item.rarity])
 		if Run.inventory.size() > 10:
-			text("+%d" % (Run.inventory.size() - 10), Vector2(342, 203), 16, GOLD)
+			text("+%d" % (Run.inventory.size() - 10), Vector2(342, 231), 16, GOLD)
 	var floor_names = ["The Waking Cellar", "The Mosslit Halls", "The Last Hearth"]
 	diamond(Vector2(454, 64), 15, Color("292f29"))
 	centered(str(Run.floor_number), 454, 70, 18, GOLD, heading)
@@ -693,18 +746,77 @@ func draw_hud() -> void:
 	if game.interaction_text != "":
 		centered(game.interaction_text, 640, 596, 21, GOLD, bold)
 		centered("Tap to interact  ·  E / A", 640, 624, 16, MUTED)
-	if touch_used or Settings.values.touch or is_touch_platform():
+	if touch_hud_visible():
 		draw_stick(left_origin, left_vector, "MOVE", left_touch >= 0)
 		draw_stick(right_origin, right_vector, "AIM + FIRE", right_touch >= 0)
 		var ready: bool = game.player and game.player.dash_cooldown <= 0
-		draw_circle(DASH_CENTER + Vector2(0, 4), DASH_RADIUS, Color(.02, .03, .03, .7))
-		draw_circle(DASH_CENTER, DASH_RADIUS, Color(.18, .21, .18, .88))
-		draw_arc(DASH_CENTER, DASH_RADIUS - 2, -PI / 2, TAU - PI / 2, 48, GOLD if ready else MUTED, 2, true)
+		draw_action_ring("dash", 1.0 if ready else 0.0, GOLD if ready else MUTED)
 		centered("DASH" if ready else "%.1f" % game.player.dash_cooldown, DASH_CENTER.x, DASH_CENTER.y + 7, 18, GOLD if ready else MUTED, bold)
+		draw_active_button()
+		var bomb: Dictionary = ACTION_BUTTONS.bomb
+		draw_action_ring("bomb", 1.0 if Run.bombs > 0 else 0.0, GOLD if Run.bombs > 0 else MUTED)
+		resource_icon("bomb", bomb.center + Vector2(0, -8))
+		centered("×%d" % Run.bombs, bomb.center.x, bomb.center.y + 22, 15, INK if Run.bombs > 0 else MUTED, bold)
 	else:
-		text("WASD move · Mouse fire · Space dash", Vector2(28, 660), 16, MUTED)
+		text("WASD move · Mouse fire · Space dash · F item · B bomb", Vector2(28, 660), 16, MUTED)
 	text("SEED %d" % Run.seed_value, Vector2(28, 697), 14, MUTED)
 	text("%d:%02d" % [int(Run.elapsed) / 60, int(Run.elapsed) % 60], Vector2(1182, 697), 16, MUTED)
+
+func resource_icon(kind: String, at: Vector2) -> void:
+	match kind:
+		"key":
+			draw_arc(at + Vector2(-4, 0), 4.5, 0, TAU, 16, Color("e3c27a"), 2.2, true)
+			draw_line(at + Vector2(0, 0), at + Vector2(9, 0), Color("e3c27a"), 2.4)
+			draw_line(at + Vector2(7, 0), at + Vector2(7, 4), Color("e3c27a"), 2.2)
+		"bomb":
+			draw_circle(at + Vector2(0, 2), 7, Color("252c27"))
+			draw_circle(at + Vector2(0, 1), 6.5, Color("8f9497"))
+			draw_line(at + Vector2(3, -5), at + Vector2(6, -9), Color("c9b183"), 1.6)
+			draw_circle(at + Vector2(6.5, -9.5), 1.8, Color("ffd38a"))
+		"ward":
+			var shield = PackedVector2Array([at + Vector2(-7, -7), at + Vector2(7, -7), at + Vector2(6, 2), at + Vector2(0, 8), at + Vector2(-6, 2)])
+			draw_colored_polygon(shield, Color("a3dacf"))
+			draw_line(at + Vector2(0, -5), at + Vector2(0, 5), Color("e9f5ef"), 1.2)
+
+func active_state() -> Dictionary:
+	if Run.active_item.is_empty():
+		return {}
+	var definition: Dictionary = Content.record("actives", Run.active_item.def)
+	var remaining = Run.cooldown_remaining(definition.id)
+	return {"definition": definition, "remaining": remaining, "fraction": 1.0 - clampf(remaining / float(definition.cooldown), 0, 1)}
+
+func draw_active_line() -> void:
+	var state = active_state()
+	if state.is_empty():
+		text("No item in hand", Vector2(48, 184), 17, MUTED)
+		return
+	diamond(Vector2(56, 178), 8, Color(state.definition.color))
+	text(state.definition.name, Vector2(72, 184), 18, INK)
+	var status = "ready · F" if state.remaining <= 0 else "%ds" % ceili(state.remaining)
+	text(status, Vector2(372 - body.get_string_size(status, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x, 184), 16, GOLD if state.remaining <= 0 else MUTED, bold)
+
+func draw_action_ring(action: String, fraction: float, color: Color) -> void:
+	var button_region: Dictionary = ACTION_BUTTONS[action]
+	var center: Vector2 = button_region.center
+	var radius: float = button_region.radius
+	draw_circle(center + Vector2(0, 4), radius, Color(.02, .03, .03, .7))
+	draw_circle(center, radius, Color(.18, .21, .18, .88))
+	draw_arc(center, radius - 2, 0, TAU, 48, Color(MUTED, .45), 2, true)
+	if fraction > 0:
+		draw_arc(center, radius - 2, -PI / 2, -PI / 2 + TAU * fraction, 48, color, 2.5, true)
+
+## Item icon, cooldown ring and a seconds readout while recharging.
+func draw_active_button() -> void:
+	var center: Vector2 = ACTION_BUTTONS.active.center
+	var state = active_state()
+	if state.is_empty():
+		draw_action_ring("active", 0.0, MUTED)
+		centered("ITEM", center.x, center.y + 6, 15, MUTED, bold)
+		return
+	var ready = state.remaining <= 0
+	draw_action_ring("active", state.fraction, GOLD if ready else Color(state.definition.color))
+	diamond(center + Vector2(0, -6), 13, Color(state.definition.color), ready)
+	centered("USE" if ready else "%d" % ceili(state.remaining), center.x, center.y + 25, 15, GOLD if ready else INK, bold)
 
 func draw_stick(at: Vector2, value: Vector2, label: String, active_touch: bool) -> void:
 	draw_circle(at + Vector2(0, 4), 66, Color(.02, .03, .025, .35))
@@ -801,14 +913,12 @@ func draw_rewards() -> void:
 	centered("The candle merchant" if shop else "A small kindness", 640, 123, 38, INK, heading)
 	centered("A good find is worth a few coins. You have %d." % Run.coins if shop else "Choose one. Let it change the way you play.", 640, 165, 20, MUTED)
 	for i in offers.size():
-		var offer: Dictionary = offers[i]
-		var is_weapon: bool = offer.get("kind", "item") == "weapon"
-		var item: Dictionary = Content.weapon_by_id[offer.id] if is_weapon else Content.item_by_id[offer.id]
-		var color: Color = Color(item.color) if is_weapon else Content.RARITY_COLORS[item.rarity]
+		var item = offer_info(offers[i])
+		var color: Color = item.color
 		var rect = reward_rect(i)
 		var x = rect.position.x
 		var middle = rect.get_center().x
-		centered("WEAPON" if is_weapon else item.rarity.to_upper() + " RELIC", middle, 232, 15, color, bold)
+		centered(item.label, middle, 232, 15, color, bold)
 		draw_circle(Vector2(middle, 291), 37, Color(.08, .10, .08, .5))
 		diamond(Vector2(middle, 293), 27, Color("262f28"))
 		diamond(Vector2(middle, 288), 25, color, false)
@@ -817,7 +927,7 @@ func draw_rewards() -> void:
 		centered(item.name, middle, 361, 24, INK, heading)
 		divider(Vector2(x + 28, 379), Vector2(x + REWARD_WIDTH - 28, 379))
 		draw_multiline_string(body, Vector2(x + 26, 409), item.description, HORIZONTAL_ALIGNMENT_CENTER, REWARD_WIDTH - 52, 18, 3, MUTED)
-		centered("NEW FIGHTING STYLE" if is_weapon else item.tag, middle, 465, 13, color, bold)
+		centered(item.tag, middle, 465, 13, color, bold)
 	centered("Relics stack. Find something beautifully strange.", 640, 692, 17, MUTED)
 
 func draw_journal() -> void:

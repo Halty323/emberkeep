@@ -73,7 +73,80 @@ static func attempt_floor(seed_value: int, floor_number: int, attempt: int) -> D
 		return {}
 	if not assign_roles(floor_data):
 		return {}
+	dress_floor(floor_data, seed_value, floor_number)
 	return floor_data
+
+const CHEST_CHANCE := {"treasure": .6, "combat": .22}
+const CHEST_OFFSETS := [Vector2(0, -4.2), Vector2(0, 4.2), Vector2(-5.6, 0), Vector2(5.6, 0), Vector2(-5.4, -3.9), Vector2(5.4, 3.9), Vector2(-5.4, 3.9), Vector2(5.4, -3.9)]
+
+## The two obstacle pillars of each combat cell, as the single-cell room
+## always placed them; none crowd the pedestal or boss spawn.
+static func pillar_points(cells: Array, room_seed: int, pedestal: Vector2) -> Array:
+	var pattern = [Vector2(-3.5, -2.7), Vector2(3.5, 2.7)]
+	if room_seed % 2 == 0:
+		pattern = [Vector2(-3.8, 2.7), Vector2(3.8, -2.7)]
+	var result: Array = []
+	for cell in cells:
+		for offset in pattern:
+			var point = RoomGeometry.cell_center(cell) + offset
+			if pedestal.distance_to(point) >= 3.0: result.append(point)
+	return result
+
+## Room-local doorway lanes, entry circles and the pedestal: furniture and
+## containers never block a way in or the room's reward.
+static func reserved_zones(floor_data: Dictionary, room: Dictionary) -> Array:
+	var anchor = vec(room.anchor)
+	var zones: Array = [{"circle": vec2(room.pedestal), "radius": 2.6}]
+	for portal_id in room.portals:
+		var portal = floor_data.portals[portal_id]
+		var side = portal.a if portal.a.room == room.id else portal.b
+		var cell = vec(side.cell) - anchor
+		var direction = vec(side.dir)
+		var socket = RoomGeometry.socket_point(cell, direction)
+		var inward = socket - Vector2(direction) * 2.1
+		var size = Vector2(4.2, 3.2) if direction.x != 0 else Vector2(3.2, 4.2)
+		zones.append({"rect": Rect2(inward - size / 2, size)})
+		zones.append({"circle": RoomGeometry.entry_point(cell, direction), "radius": 2.0})
+	return zones
+
+static func vec2(value) -> Vector2:
+	return Vector2(float(value[0]), float(value[1]))
+
+static func in_zones(point: Vector2, zones: Array, grow := 0.0) -> bool:
+	for zone in zones:
+		if zone.has("rect") and zone.rect.grow(grow).has_point(point): return true
+		if zone.has("circle") and point.distance_to(zone.circle) < zone.radius + grow: return true
+	return false
+
+## Resolved dressing for every room, from its own named seed stream so it
+## never shifts topology, encounters or loot. Stored with the room, so later
+## content edits cannot move a chest onto an old saved spawn.
+static func dress_floor(floor_data: Dictionary, seed_value: int, floor_number: int) -> void:
+	for id in floor_data.rooms:
+		var room: Dictionary = floor_data.rooms[id]
+		var gen = RandomNumberGenerator.new()
+		gen.seed = Content.stable_hash("dress:%d:%d:%s" % [seed_value, floor_number, id])
+		var anchor = vec(room.anchor)
+		var cells: Array = room_cells(room).map(func(cell): return cell - anchor)
+		var geometry = RoomGeometry.new(cells)
+		var zones = reserved_zones(floor_data, room)
+		var props: Array = []
+		if room.type in ["combat", "boss"]:
+			for point in pillar_points(cells, int(room.seed), vec2(room.pedestal)):
+				props.append({"id": "%s:p%d" % [id, props.size()], "kind": "pillar", "position": point_array(point), "size": [1.3, 1.3]})
+		room["props"] = props
+		room["chests"] = []
+		if gen.randf() < CHEST_CHANCE.get(room.type, 0.0):
+			var spots: Array = []
+			for cell in cells:
+				for offset in CHEST_OFFSETS:
+					var point = RoomGeometry.cell_center(cell) + offset
+					if not geometry.contains(point, 1.4) or in_zones(point, zones, .6): continue
+					if props.any(func(prop): return vec2(prop.position).distance_to(point) < 2.2): continue
+					spots.append(point)
+			if not spots.is_empty():
+				room.chests.append({"id": "%s:c0" % id, "position": point_array(spots[gen.randi_range(0, spots.size() - 1)]),
+					"locked": true, "opened": false, "table": "locked_chest", "size": [1.0, .66]})
 
 static func pick_template(gen: RandomNumberGenerator, templates: Array, cells_left: int) -> Dictionary:
 	var choices = templates.filter(func(t): return t.cells.size() <= maxi(1, cells_left))

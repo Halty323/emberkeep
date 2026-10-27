@@ -31,6 +31,17 @@ var entity_counter = 10
 var chosen_reward_shop = false
 var snapshot_timer = 0.0
 var vignette: ShaderMaterial
+var actions: GameActions
+var interactions := InteractionRegistry.new()
+var companions: Array = []
+var bomb_views: Dictionary = {}
+var item_views: Dictionary = {}
+var chest_views: Dictionary = {}
+var command_counter = 0
+var last_result: Dictionary = {}
+const PEDESTAL_ID := "pedestal"
+const MAX_SHOTS := 200
+const HOSTILE_SHOT_RESERVE := 50
 var camera_home = Vector3(18, 23, 22)
 var screen_right = Vector3(22, 0, -18).normalized()
 var screen_down = Vector3(18, 0, 22).normalized()
@@ -90,6 +101,8 @@ func _ready() -> void:
 	layer.add_child(ui)
 	ui.setup(self)
 	Run.item_gained.connect(on_item_gained)
+	actions = GameActions.new(self)
+	Session.command_received.connect(on_command)
 	get_tree().auto_accept_quit = false
 	show_title_room()
 	if "--quickstart" in OS.get_cmdline_user_args():
@@ -98,14 +111,16 @@ func _ready() -> void:
 func setup_inputs() -> void:
 	var actions = {"move_left": [KEY_A, KEY_LEFT], "move_right": [KEY_D, KEY_RIGHT],
 		"move_up": [KEY_W, KEY_UP], "move_down": [KEY_S, KEY_DOWN],
-		"dash": [KEY_SPACE, KEY_SHIFT], "interact": [KEY_E], "pause_game": [KEY_ESCAPE, KEY_P], "journal": [KEY_TAB], "map": [KEY_M]}
+		"dash": [KEY_SPACE, KEY_SHIFT], "interact": [KEY_E], "pause_game": [KEY_ESCAPE, KEY_P], "journal": [KEY_TAB], "map": [KEY_M],
+		"use_active": [KEY_F], "place_bomb": [KEY_B]}
 	for action in actions:
 		if not InputMap.has_action(action): InputMap.add_action(action)
 		for key in actions[action]:
 			var event = InputEventKey.new()
 			event.physical_keycode = key
 			InputMap.action_add_event(action, event)
-	var joy_actions = {"dash": JOY_BUTTON_RIGHT_SHOULDER, "interact": JOY_BUTTON_A, "pause_game": JOY_BUTTON_START}
+	var joy_actions = {"dash": JOY_BUTTON_RIGHT_SHOULDER, "interact": JOY_BUTTON_A, "pause_game": JOY_BUTTON_START,
+		"use_active": JOY_BUTTON_LEFT_SHOULDER, "place_bomb": JOY_BUTTON_X}
 	for action in joy_actions:
 		var event = InputEventJoypadButton.new()
 		event.button_index = joy_actions[action]
@@ -124,12 +139,30 @@ func _unhandled_input(event: InputEvent) -> void:
 		request_dash = true
 	elif event.is_action_pressed("interact") and is_playing():
 		interact()
+	# Actions fire on a fresh press only; a held key never repeats them.
+	elif event.is_action_pressed("use_active", false) and is_playing():
+		submit({"type": "use_active"})
+	elif event.is_action_pressed("place_bomb", false) and is_playing():
+		submit({"type": "place_bomb"})
 	elif event.is_action_pressed("journal") and is_playing():
 		ui.open_journal("pause")
-	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and is_playing():
+	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and is_playing() and event.device != InputEvent.DEVICE_ID_EMULATION:
 		var p = ui.local_point(event.position)
 		if ui.INTERACTION_RECT.has_point(p) and interaction_text != "":
 			interact()
+
+## Local commands take the same path a remote peer's would: through Session
+## to the validated action handlers, with a unique event id.
+func submit(command: Dictionary) -> Dictionary:
+	command_counter += 1
+	command["event"] = "local:%d:%d" % [Run.seed_value, command_counter]
+	last_result = {}
+	Session.submit(command)
+	return last_result
+
+func on_command(peer_id: int, command: Dictionary) -> void:
+	if Session.is_authority():
+		last_result = actions.perform(command, peer_id)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
@@ -158,6 +191,10 @@ func _physics_process(delta: float) -> void:
 	sim_time += delta
 	Run.elapsed += delta
 	transition_cooldown -= delta
+	# Cooldowns, modifiers and fuses advance on this same unpaused clock.
+	for bomb in Run.advance(delta):
+		actions.detonate(bomb)
+		if not is_playing(): return
 	var move_input = Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	var move_joy = Vector2(Input.get_joy_axis(0, JOY_AXIS_LEFT_X), Input.get_joy_axis(0, JOY_AXIS_LEFT_Y))
 	if move_joy.length() > .18: move_input = move_joy.limit_length()
@@ -179,7 +216,8 @@ func _physics_process(delta: float) -> void:
 		if intersection != null:
 			aim = intersection - player.global_position - Vector3.UP * .65
 			aim.y = 0
-		shooting = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+		# A click that pressed an on-screen action button never becomes fire.
+		shooting = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not ui.mouse_on_action
 	if request_dash:
 		player.dash()
 		request_dash = false
@@ -190,7 +228,10 @@ func _physics_process(delta: float) -> void:
 	for shot in shots.duplicate():
 		if is_instance_valid(shot) and is_playing(): shot.update_sim(delta)
 	shots = shots.filter(func(s): return is_instance_valid(s) and s.alive)
-	for pickup in pickups:
+	sync_companions()
+	for companion in companions:
+		companion.update_sim(delta)
+	for pickup in pickups.duplicate():
 		if is_instance_valid(pickup): pickup.update_sim(delta)
 	pickups = pickups.filter(func(p): return is_instance_valid(p) and not p.collected)
 	if not Run.active: return
@@ -219,6 +260,10 @@ func _process(delta: float) -> void:
 		# Animate the luminous relic alone; its pedestal and light stay static,
 		# allowing the room's shadow maps to remain cached while idle.
 		marker_visual.rotation.y += delta * .5
+	for view in item_views.values():
+		if is_instance_valid(view):
+			var orb = view.get_node_or_null("Orb")
+			if orb: orb.position.y = .62 + sin(Time.get_ticks_msec() * .003) * .06
 
 func update_camera(delta: float, snap := false) -> void:
 	if not camera:
@@ -260,6 +305,11 @@ func clean_room() -> void:
 	shots.clear()
 	enemies.clear()
 	pickups.clear()
+	companions.clear()
+	bomb_views.clear()
+	item_views.clear()
+	chest_views.clear()
+	interactions.clear()
 	if scene_root:
 		remove_child(scene_root)
 		scene_root.queue_free()
@@ -337,8 +387,10 @@ func enter_room(spawn: Vector3) -> void:
 	gen.seed = int(data.seed)
 	if not data.cleared and data.type in ["combat", "boss"]:
 		room.set_open(false)
+		# The encounter restarts from its seed: each foe has a stable source id,
+		# and the room's credit ledger stops a respawned foe paying out twice.
 		if data.type == "boss":
-			spawn_enemy(room.pedestal + Vector3(0, 0, -2.5), "boss")
+			spawn_enemy(room.pedestal + Vector3(0, 0, -2.5), "boss", "%s:boss" % data.id)
 		else:
 			var choices = ["mote", "spitter", "charger", "splitter", "brute"]
 			var cells: int = room.geometry.cells.size()
@@ -353,7 +405,7 @@ func enter_room(spawn: Vector3) -> void:
 				if p.distance_to(spawn) < 3.0:
 					p = spawn + (p - spawn).normalized() * 3.5 if not p.is_equal_approx(spawn) else spawn + Vector3(3.5, 0, 0)
 				var kind: String = choices[gen.randi_range(0, mini(choices.size() - 1, 2 + Run.floor_number))]
-				spawn_enemy(p, kind)
+				spawn_enemy(p, kind, "%s:e%d" % [data.id, i])
 	else:
 		room.set_open(true)
 		if not data.cleared:
@@ -368,9 +420,15 @@ func enter_room(spawn: Vector3) -> void:
 			make_marker("treasure", room.pedestal)
 		elif data.type == "boss":
 			make_marker("exit", room.pedestal + Vector3(0, 0, -1.5))
-		for drop in data.get("pickups", []):
-			spawn_pickup(Vector3(drop.position[0], 0, drop.position[1]), drop.kind, int(drop.value), int(drop.id))
 		Run.save_run()
+	for drop in data.get("pickups", []):
+		spawn_pickup(Vector3(float(drop.position[0]), 0, float(drop.position[1])), drop.def, float(drop.get("value", -1)), str(drop.id))
+	for chest in data.get("chests", []):
+		chest_views[chest.id] = ItemViews.chest(scene_root, chest)
+	refresh_items()
+	for bomb in Run.pending_bombs:
+		if bomb.room == Run.current_room: spawn_bomb_view(bomb)
+	sync_companions()
 	if data.type == "boss" and not data.cleared:
 		ui.notify("The hearth is stirring", "Watch the windup. Dash through danger.", Color("e0a18b"))
 	update_camera(0.0, true)
@@ -383,7 +441,7 @@ func check_portals() -> void:
 		if Run.portals[portal_id].state not in ["open", "revealed"]: continue
 		var side = Run.portal_side(portal_id, Run.current_room)
 		if RoomGeometry.in_trigger(at, side.cell, side.dir):
-			pending_portal = portal_id
+			submit({"type": "enter_portal", "target": portal_id})
 			return
 
 ## Enter the paired room at the entry anchor of the portal's other side.
@@ -395,18 +453,23 @@ func travel(portal_id: String) -> void:
 	var point = RoomGeometry.entry_point(side.cell, side.dir)
 	enter_room(Vector3(point.x, 0, point.y))
 
-func spawn_enemy(at: Vector3, kind: String) -> DungeonEnemy:
+func spawn_enemy(at: Vector3, kind: String, source := "") -> DungeonEnemy:
 	var enemy = DungeonEnemy.new()
 	scene_root.add_child(enemy)
 	entity_counter += 1
 	enemy.setup(self, kind, entity_counter)
+	enemy.source = source
 	var safe = room.geometry.safe_point(Vector2(at.x, at.z), .5 + enemy.radius * .5, room.blocked_at)
 	enemy.place(Vector3(safe.x, 0, safe.y))
 	enemies.append(enemy)
 	return enemy
 
+## Friendly volleys may not starve enemies of their attacks under the global
+## cap: hostile projectiles keep a reserved share.
 func spawn_shot(at: Vector3, direction: Vector3, damage: float, speed_value: float, stats: Dictionary, color: Color, friendly: bool) -> EmberShot:
-	if shots.size() >= 200: return null
+	if shots.size() >= MAX_SHOTS: return null
+	var hostile = shots.filter(func(s): return is_instance_valid(s) and not s.friendly).size()
+	if friendly and shots.size() - hostile >= MAX_SHOTS - HOSTILE_SHOT_RESERVE: return null
 	var shot = EmberShot.new()
 	scene_root.add_child(shot)
 	entity_counter += 1
@@ -436,34 +499,51 @@ func blast(at: Vector3, radius: float, damage: float, friendly: bool, excluded: 
 		if player.global_position.distance_to(at) < radius:
 			player.hurt(1, at)
 
+## A foe pays out once per run: its credit and its stable drop records are
+## created together, so any later save holds both or neither.
 func on_enemy_killed(enemy: DungeonEnemy) -> void:
-	var expected = 1.35 * (1.0 + Run.stats.coin_bonus)
-	var amount = int(floor(expected)) + int(Run.rng.randf() < fposmod(expected, 1.0))
 	if enemy.boss:
-		amount = maxi(4, roundi(12 * (1.0 + Run.stats.coin_bonus)))
 		hitstop = .11
 		shake = .3
 		for shot in shots:
 			if is_instance_valid(shot) and not shot.friendly: shot.remove()
-	for i in (4 if enemy.boss else 1):
-		spawn_pickup(enemy.global_position + Vector3(sin(i * 2.4) * .4, 0, cos(i * 2.4) * .4), "coin", amount / 4 if enemy.boss else amount)
-	if Run.rng.randf() < .10 + Run.stats.luck * .025:
-		spawn_pickup(enemy.global_position + Vector3(.4, 0, -.3), "heart", 1)
+	var data: Dictionary = Run.rooms[Run.current_room]
+	if enemy.source == "" or enemy.source in data.get("credited", []):
+		return
+	if not data.has("credited"): data.credited = []
+	data.credited.append(enemy.source)
+	Run.kills += 1
+	var drops = Drops.roll("boss" if enemy.boss else "enemy_common", Run.rng, Run.stats.luck, Run.stats.coin_bonus)
+	for i in drops.size():
+		var at = Drops.scatter(drops.size(), i, enemy.global_position)
+		spawn_pickup(at, drops[i].def)
 
-func spawn_pickup(at: Vector3, kind: String, amount: int, restored_id := -1) -> void:
+func spawn_pickup(at: Vector3, pickup_id: String, amount := -1.0, restored_id := "") -> DungeonPickup:
+	var definition = Content.record("pickups", pickup_id)
+	if definition.is_empty():
+		push_warning("Unknown pickup '%s' was not spawned." % pickup_id)
+		return null
+	var safe = room.geometry.safe_point(Vector2(at.x, at.z), .3)
 	var pickup = DungeonPickup.new()
 	scene_root.add_child(pickup)
-	pickup.setup(self, at, kind, amount)
+	pickup.setup(self, Vector3(safe.x, 0, safe.y), pickup_id, amount)
 	var data: Dictionary = Run.rooms[Run.current_room]
-	if restored_id < 0:
-		entity_counter += 1
-		pickup.drop_id = entity_counter
+	if restored_id.is_empty():
+		pickup.drop_id = Run.next_instance("d")
 		if not data.has("pickups"): data.pickups = []
-		data.pickups.append({"id": pickup.drop_id, "kind": kind, "value": amount, "position": [at.x, at.z]})
+		data.pickups.append({"id": pickup.drop_id, "def": pickup_id, "value": pickup.value, "position": [snappedf(safe.x, .001), snappedf(safe.y, .001)]})
 	else:
 		pickup.drop_id = restored_id
-		entity_counter = maxi(entity_counter, restored_id)
 	pickups.append(pickup)
+	return pickup
+
+func pickup_node(drop_id: String) -> DungeonPickup:
+	for pickup in pickups:
+		if is_instance_valid(pickup) and pickup.drop_id == drop_id and not pickup.collected: return pickup
+	return null
+
+func pickup_feedback(at: Vector3, definition: Dictionary) -> void:
+	Effects.burst(scene_root, at + Vector3(0, .35, 0), Color(definition.color), 4, .45)
 
 func clear_room() -> void:
 	room.set_open(true)
@@ -476,7 +556,8 @@ func clear_room() -> void:
 		make_marker("treasure", room.pedestal)
 	else:
 		data.claimed = true
-		if Run.rng.randf() < .4: spawn_pickup(room.pedestal, "heart", 1)
+		for drop in Drops.roll("room_clear", Run.rng, Run.stats.luck):
+			spawn_pickup(room.pedestal, drop.def)
 	Run.save_run()
 
 func ensure_offers(premium := false) -> void:
@@ -492,6 +573,9 @@ func ensure_offers(premium := false) -> void:
 	if gen.randf() < .5 or data.type == "shop":
 		var weapon: Dictionary = Content.weapons[gen.randi_range(0, Content.weapons.size() - 1)]
 		offers[2] = {"kind": "weapon", "id": weapon.id, "price": 14}
+	if gen.randf() < (.6 if data.type == "shop" else .3):
+		var pool = Content.families.actives.filter(func(active): return active.id != Run.active_item.get("def", ""))
+		offers[1] = {"kind": "active", "id": pool[gen.randi_range(0, pool.size() - 1)].id, "price": 15}
 	data.offers = offers
 	Run.save_run()
 
@@ -518,30 +602,69 @@ func make_marker(kind: String, at := Vector3.ZERO) -> void:
 		Geo.ring(marker, Vector3(0, .035, 0), .95, Color("d9b97a"), .035)
 		Geo.halo(marker, Vector3(0, .03, 0), 4, Color(1, .65, .22, .22))
 		Geo.light(marker, Vector3(0, 1.5, 0), Color("f0c68c"), .55, 3.5)
+	interactions.register(PEDESTAL_ID, kind, at, 2.1, "", marker)
+
+func remove_marker() -> void:
+	if marker and is_instance_valid(marker): marker.queue_free()
+	marker = null
+	marker_visual = null
+	interactions.unregister(PEDESTAL_ID)
+
+func prompt_for(target: Dictionary) -> String:
+	match target.kind:
+		"treasure": return "Choose a little treasure"
+		"shop": return "Browse the merchant’s wares"
+		"rest": return "Warm your hands · heal 3"
+		"exit": return "Carry the light home" if Run.floor_number == 3 else "Descend to the next floor"
+		"chest":
+			var chest = GameActions.find_record(Run.rooms[Run.current_room].get("chests", []), target.id.trim_prefix("chest:"))
+			if not chest.get("locked", false): return "Open the chest"
+			return "Unlock the chest · 1 key" if Run.keys > 0 else "Locked · it needs a key"
+		"item":
+			var record = GameActions.find_record(Run.rooms[Run.current_room].get("items", []), target.id.trim_prefix("item:"))
+			var definition = Content.record("actives", record.get("def", ""))
+			return ("Swap for " if not Run.active_item.is_empty() else "Take ") + definition.get("name", "item")
+	return target.prompt
+
+## Loot, swaps and paintings wait until the room is safe; nothing interacts
+## through a wall.
+func interaction_eligible(target: Dictionary) -> bool:
+	if target.kind in ["chest", "item", "painting"] and not room.open:
+		return false
+	var from = Vector2(player.position.x, player.position.z)
+	var to = Vector2(target.position.x, target.position.z)
+	for step in 6:
+		if not room.geometry.contains(from.lerp(to, step / 5.0)): return false
+	return true
 
 func update_interaction() -> void:
-	interaction_text = ""
-	interaction_kind = ""
-	if marker and is_instance_valid(marker) and player.position.distance_to(marker.position) < 2.1:
-		interaction_kind = marker.get_meta("kind")
-		interaction_text = {"treasure": "Choose a little treasure", "shop": "Browse the merchant’s wares", "rest": "Warm your hands · heal 3", "exit": "Carry the light home" if Run.floor_number == 3 else "Descend to the next floor"}.get(interaction_kind, "")
+	var target = interactions.choose(player.position, interaction_eligible)
+	interaction_kind = target.get("kind", "")
+	interaction_text = prompt_for(target) if not target.is_empty() else ""
 
 func interact() -> void:
-	if not is_playing() or interaction_kind == "": return
+	if not is_playing(): return
+	update_interaction()
+	if interactions.focused == "": return
+	submit({"type": "interact", "target": interactions.focused})
+	if is_playing(): update_interaction()
+
+## Pedestal uses: rewards, the merchant, the rest hearth and the floor exit.
+func use_pedestal(target: Dictionary) -> Dictionary:
 	var data: Dictionary = Run.rooms[Run.current_room]
-	match interaction_kind:
+	match target.kind:
 		"treasure", "shop":
 			ensure_offers(data.type == "treasure")
-			chosen_reward_shop = interaction_kind == "shop"
+			chosen_reward_shop = target.kind == "shop"
 			ui.offers = data.offers
 			ui.shop = chosen_reward_shop
 			paused = true
 			ui.show_screen("reward")
 		"rest":
+			# The hearth's marker is the gate: it is removed once used.
 			Run.heal(3)
 			data.claimed = true
-			marker.queue_free()
-			marker = null
+			remove_marker()
 			Run.save_run()
 			Audio.play_sound("item")
 			ui.notify("A moment of warmth", "Recovered 3 health.")
@@ -552,7 +675,10 @@ func interact() -> void:
 				Run.next_floor()
 				enter_room(Vector3(0, 0, 2.0))
 				ui.notify("A little deeper", "A new floor. A fresh breath of warmth.")
-	update_interaction()
+	return GameActions.result(true)
+
+func inspect_painting(_target: Dictionary) -> Dictionary:
+	return GameActions.result(false, "no painting here")
 
 func choose_offer(index: int) -> void:
 	var data: Dictionary = Run.rooms[Run.current_room]
@@ -569,10 +695,16 @@ func choose_offer(index: int) -> void:
 		Run.changed.emit()
 		ui.notify(Content.weapon_by_id[offer.id].name, "A new way to carry the light.")
 		Audio.play_sound("item")
+	elif offer.kind == "active":
+		# The new item goes into the slot; the one in hand is set beside the
+		# pedestal, keeping its instance and its running cooldown.
+		var item_id = Run.next_instance("a")
+		if not data.has("items"): data.items = []
+		data.items.append({"id": item_id, "def": offer.id, "position": [snappedf(player.position.x, .001), snappedf(player.position.z, .001)]})
+		actions.take_item(item_id)
 	else:
 		Run.gain_item(offer.id)
-	if marker and is_instance_valid(marker): marker.queue_free()
-	marker = null
+	remove_marker()
 	if data.type == "boss": make_marker("exit", room.pedestal + Vector3(0, 0, -1.5))
 	Run.save_run()
 	close_reward()
@@ -580,9 +712,73 @@ func choose_offer(index: int) -> void:
 func close_reward() -> void:
 	paused = false
 	ui.show_screen("play")
-	if Run.rooms[Run.current_room].type == "boss" and not Run.rooms[Run.current_room].claimed:
-		# Reward remains on its pedestal until selected; descending requires choosing.
-		pass
+
+func add_item_record(definition_id: String, at: Vector3) -> void:
+	var data: Dictionary = Run.rooms[Run.current_room]
+	if not data.has("items"): data.items = []
+	data.items.append({"id": Run.next_instance("a"), "def": definition_id, "position": [snappedf(at.x, .001), snappedf(at.z, .001)]})
+	refresh_items()
+
+## Rebuilds the views and interaction targets for dropped items and chests.
+func refresh_items() -> void:
+	var data: Dictionary = Run.rooms[Run.current_room]
+	for view in item_views.values():
+		if is_instance_valid(view): view.queue_free()
+	item_views.clear()
+	for id in interactions.targets.keys():
+		if id.begins_with("item:") or id.begins_with("chest:"): interactions.unregister(id)
+	for record in data.get("items", []):
+		var view = ItemViews.item(scene_root, record)
+		item_views[record.id] = view
+		interactions.register("item:" + record.id, "item", view.position, 1.6, "", view)
+	for chest in data.get("chests", []):
+		if chest.opened: continue
+		var at = Vector3(float(chest.position[0]), 0, float(chest.position[1]))
+		interactions.register("chest:" + chest.id, "chest", at, 1.9, "", chest_views.get(chest.id))
+
+func chest_opened(chest: Dictionary) -> void:
+	interactions.unregister("chest:" + chest.id)
+	if chest_views.has(chest.id): ItemViews.set_open(chest_views[chest.id])
+	var at = Vector3(float(chest.position[0]), .7, float(chest.position[1]))
+	Effects.burst(scene_root, at, Color("f1cc8a"), 9, .9)
+	Audio.play_sound("item", .9)
+
+func spawn_bomb_view(record: Dictionary) -> void:
+	var view = BombView.new()
+	scene_root.add_child(view)
+	view.setup(record, GameActions.BOMB_RADIUS)
+	bomb_views[record.id] = view
+
+func bomb_exploded(record: Dictionary, at: Vector3, radius: float) -> void:
+	if bomb_views.has(record.id):
+		if is_instance_valid(bomb_views[record.id]): bomb_views[record.id].queue_free()
+		bomb_views.erase(record.id)
+	Effects.ring_burst(scene_root, at, Color("f0a46b"), radius)
+	Effects.burst(scene_root, at + Vector3(0, .5, 0), Color("f6c27a"), 12, 1.6)
+	shake = maxf(shake, .25)
+	Audio.play_sound("kill", .55)
+
+## A bomb's breach capability: breakable props and concealed seams in range.
+## Offscreen rooms resolve from their saved state without any effects.
+func breach(_room_id: String, _at: Vector3, _radius: float, _live: bool) -> void:
+	pass
+
+## Companion views follow the saved Moth Jar modifier, so they survive room
+## changes and reloads with their remaining time.
+func sync_companions() -> void:
+	var wanted = Run.flag_total("companions") if Run.active else 0
+	companions = companions.filter(func(c): return is_instance_valid(c))
+	while companions.size() > wanted:
+		companions.pop_back().queue_free()
+	var bite = 6.0
+	for modifier in Run.modifiers:
+		if modifier.get("flags", {}).has("companion_damage"): bite = float(modifier.flags.companion_damage)
+	while companions.size() < wanted and is_instance_valid(player):
+		var moth = MothCompanion.new()
+		scene_root.add_child(moth)
+		moth.setup(self, companions.size(), bite)
+		moth.global_position = player.global_position + Vector3(0, .9, 0)
+		companions.append(moth)
 
 func on_item_gained(item: Dictionary) -> void:
 	if player and is_instance_valid(player): player.refresh_orbitals()

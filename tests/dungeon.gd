@@ -367,7 +367,7 @@ func test_legacy_migration() -> void:
 	check(Generator.validate({"rooms": run.rooms, "portals": run.portals, "generator": 1}).is_empty(), "migrated floor validates")
 	game.continue_run()
 	check(game.ui.mode == "play" and game.room.geometry.contains(flat(game.player.position), .3), "migrated run continues inside its saved room")
-	check(game.pickups.any(func(p): return p.drop_id == 77), "saved drops are restored after migration")
+	check(game.pickups.any(func(p): return p.drop_id == "77" and p.def_id == "copper_coin" and p.value == 3), "saved drops are restored after migration")
 	run.save_run()
 	var saved = JSON.parse_string(FileAccess.get_file_as_string("user://run.json"))
 	check(int(saved.version) == run.SAVE_VERSION and int(saved.generator) == Generator.LEGACY_VERSION, "re-saved run is v2 and pins the legacy generator")

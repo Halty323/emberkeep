@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "pickups": [
+    {"id": "copper_coin", "name": "Copper coin", "kind": "coin", "value": 1, "visual": "coin", "color": "#e7bd70", "scale": 1.0},
+    {"id": "silver_coin", "name": "Silver coin", "kind": "coin", "value": 5, "visual": "coin", "color": "#d9dde0", "scale": 1.3},
+    {"id": "half_heart", "name": "Half heart", "kind": "heal", "value": 1, "visual": "heart", "color": "#d99083", "scale": 0.8},
+    {"id": "full_heart", "name": "Full heart", "kind": "heal", "value": 2, "visual": "heart", "color": "#e8897a", "scale": 1.15},
+    {"id": "ward", "name": "Ward", "kind": "ward", "value": 1, "cap": 3, "visual": "ward", "color": "#a3dacf", "scale": 1.0},
+    {"id": "key", "name": "Key", "kind": "key", "value": 1, "cap": 9, "visual": "key", "color": "#e3c27a", "scale": 1.0},
+    {"id": "bomb", "name": "Bomb", "kind": "bomb", "value": 1, "cap": 9, "visual": "bomb", "color": "#6a6e70", "scale": 1.0},
+    {"id": "small_battery", "name": "Small battery", "kind": "battery", "value": 15, "visual": "battery", "color": "#9fd3c7", "scale": 1.0},
+    {"id": "full_battery", "name": "Full battery", "kind": "battery_full", "value": 1, "visual": "battery", "color": "#c4f2dd", "scale": 1.3}
+  ]
+}

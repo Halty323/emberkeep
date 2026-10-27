@@ -29,6 +29,12 @@ var boss_cycle = 0
 var summon_timer = 9.0
 var color = Color("bb7667")
 const ROOM_MARGIN := .45
+# Stable reward identity: "<room>:e<n>" for an encounter's foes, with
+# splitter children derived from their parent. Summons have none, so they
+# can never become an unlimited source of loot or kill credit.
+var source = ""
+var slow_time = 0.0
+var slow_factor = 0.0
 var last_valid = Vector3.ZERO
 var path := PackedVector2Array()
 var path_timer = 0.0
@@ -108,10 +114,15 @@ func steer_toward(target: Vector3, delta: float) -> Vector3:
 	var step = path[0] - from
 	return Vector3(step.x, 0, step.y).normalized() if step.length() > .01 else direct
 
+func slow(duration: float, factor: float) -> void:
+	slow_time = maxf(slow_time, duration)
+	slow_factor = maxf(slow_factor if slow_time > 0 else 0.0, factor)
+
 func update_sim(delta: float) -> void:
 	if not alive:
 		return
 	age += delta
+	slow_time = maxf(0, slow_time - delta)
 	timer -= delta
 	orbital_cooldown -= delta
 	burn_time = maxf(0, burn_time - delta)
@@ -187,6 +198,8 @@ func update_sim(delta: float) -> void:
 			if gap < wanted and gap > .01:
 				move_direction += apart / gap * (wanted - gap) * 2.5
 	var slow = maxf(.28, 1.0 - chill_power * .2) if chill_time > 0 else 1.0
+	if slow_time > 0:
+		slow *= 1.0 - slow_factor
 	velocity = move_direction * speed * slow + knock_velocity
 	knock_velocity = knock_velocity.move_toward(Vector3.ZERO, delta * 20)
 	var geometry: RoomGeometry = game.room.geometry
@@ -240,12 +253,11 @@ func die() -> void:
 	alive = false
 	collision_layer = 0
 	collision_mask = 0
-	Run.kills += 1
 	game.player.haste_time = 2.0
 	Effects.burst(game, global_position + Vector3.UP * .5, color, 9 if boss else 6, 1.5 if boss else 1)
 	Audio.play_sound("kill", .6 if boss else 1)
 	if kind == "splitter":
-		for side in [-1, 1]:
-			game.spawn_enemy(global_position + Vector3(side * .45, 0, 0), "wisp")
+		for slot in 2:
+			game.spawn_enemy(global_position + Vector3((slot * 2 - 1) * .45, 0, 0), "wisp", "%s.s%d" % [source, slot] if source != "" else "")
 	game.on_enemy_killed(self)
 	queue_free()

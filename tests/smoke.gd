@@ -122,8 +122,8 @@ func test_all() -> void:
 	game.choose_offer(0)
 	check(run.inventory.size() == before_count + 1, "reward cannot be claimed twice")
 	# Drops survive both room reconstruction and a disk save/load roundtrip.
-	game.spawn_pickup(Vector3(4, 0, 2), "coin", 5)
-	var drop_id: int = game.pickups.back().drop_id
+	game.spawn_pickup(Vector3(4, 0, 2), "silver_coin")
+	var drop_id: String = game.pickups.back().drop_id
 	run.save_run()
 	game.enter_room(Vector3(0, 0, 4))
 	var restored = game.pickups.filter(func(p): return p.drop_id == drop_id)

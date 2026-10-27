@@ -15,7 +15,16 @@ var errors := PackedStringArray()
 const RARITY_COLORS = {"common": Color("c6d3bf"), "uncommon": Color("96d9ba"), "rare": Color("b9b2e9"), "mythic": Color("f1c579")}
 const CATALOG_PATH := "res://assets/data.json"
 const FAMILY_DIR := "res://content/"
-const FAMILIES := ["rooms"]
+const FAMILIES := ["rooms", "pickups", "actives", "drop_tables"]
+# Registered behaviour. Data may only name these; it never names scripts or
+# methods, and an unknown name is a validation error rather than a fallback.
+const PICKUP_KINDS := ["coin", "heal", "ward", "key", "bomb", "battery", "battery_full"]
+const PICKUP_VISUALS := ["coin", "heart", "ward", "key", "bomb", "battery"]
+const ACTIVE_HANDLERS := {"heal": ["amount"], "gale": ["radius", "push"], "ember_burst": ["count", "damage", "speed"],
+	"slow_field": ["duration", "slow", "boss_slow"], "modifier": ["duration", "effects"], "companions": ["count", "duration", "damage"],
+	"secret_hint": ["duration"], "invulnerable": ["duration"]}
+# Drop kinds written by version 1 saves, resolved explicitly.
+const LEGACY_PICKUPS := {"coin": "copper_coin", "heart": "half_heart"}
 
 func _ready() -> void:
 	load_catalog()
@@ -95,6 +104,70 @@ func validate() -> PackedStringArray:
 			if not valid_stats.has(key): problems.append("weapon %s uses unknown effect '%s'" % [weapon.id, key])
 	for template in families.get("rooms", []):
 		problems.append_array(validate_template(template))
+	for pickup in families.get("pickups", []):
+		problems.append_array(validate_pickup(pickup))
+	for active in families.get("actives", []):
+		problems.append_array(validate_active(active))
+	for table in families.get("drop_tables", []):
+		problems.append_array(validate_drop_table(table))
+	return problems
+
+static func is_number(value) -> bool:
+	return value is float or value is int
+
+func validate_pickup(pickup: Dictionary) -> PackedStringArray:
+	var problems := PackedStringArray()
+	if pickup.get("kind") not in PICKUP_KINDS: problems.append("pickup %s has unknown kind '%s'" % [pickup.id, pickup.get("kind")])
+	if pickup.get("visual") not in PICKUP_VISUALS: problems.append("pickup %s has unknown visual '%s'" % [pickup.id, pickup.get("visual")])
+	if not is_number(pickup.get("value")) or pickup.value <= 0: problems.append("pickup %s needs a positive value" % pickup.id)
+	if pickup.has("cap") and (not is_number(pickup.cap) or pickup.cap < pickup.get("value", 0)): problems.append("pickup %s has an impossible cap" % pickup.id)
+	if not Color.html_is_valid(str(pickup.get("color", ""))): problems.append("pickup %s has an invalid color" % pickup.id)
+	return problems
+
+func validate_active(active: Dictionary) -> PackedStringArray:
+	var problems := PackedStringArray()
+	var handler = active.get("handler", "")
+	if not ACTIVE_HANDLERS.has(handler):
+		problems.append("active %s has unknown handler '%s'" % [active.id, handler])
+		return problems
+	if str(active.get("name", "")).is_empty() or str(active.get("description", "")).is_empty(): problems.append("active %s needs a name and description" % active.id)
+	if not is_number(active.get("cooldown")) or active.cooldown <= 0: problems.append("active %s needs a positive cooldown" % active.id)
+	var cost = active.get("cost", {})
+	if not cost is Dictionary:
+		problems.append("active %s has a malformed cost" % active.id)
+	else:
+		for resource in cost:
+			if resource != "coins": problems.append("active %s costs an unknown resource '%s'" % [active.id, resource])
+			elif not is_number(cost[resource]) or cost[resource] < 0 or cost[resource] > 99 or float(cost[resource]) != floorf(cost[resource]):
+				problems.append("active %s has an impossible cost" % active.id)
+	var params = active.get("params", {})
+	for key in ACTIVE_HANDLERS[handler]:
+		if not params.has(key): problems.append("active %s handler %s needs param '%s'" % [active.id, handler, key])
+	if handler == "modifier":
+		for stat in params.get("effects", {}):
+			if not base_stats().has(stat): problems.append("active %s modifies unknown stat '%s'" % [active.id, stat])
+	if not Color.html_is_valid(str(active.get("color", ""))): problems.append("active %s has an invalid color" % active.id)
+	return problems
+
+func validate_drop_table(table: Dictionary) -> PackedStringArray:
+	var problems := PackedStringArray()
+	var rolls = table.get("rolls", [])
+	if not rolls is Array or rolls.is_empty():
+		problems.append("drop table %s has no rolls" % table.id)
+		return problems
+	for roll in rolls:
+		var shapes = ["coins", "pickup", "one_of", "active"].filter(func(key): return roll.has(key))
+		if shapes.size() != 1:
+			problems.append("drop table %s has a roll that is not exactly one kind" % table.id)
+			continue
+		if roll.has("chance") and (not is_number(roll.chance) or roll.chance < 0 or roll.chance > 1): problems.append("drop table %s has an impossible chance" % table.id)
+		if roll.has("count") and (not is_number(roll.count) or roll.count < 1): problems.append("drop table %s has an impossible count" % table.id)
+		if roll.has("pickup") and not by_id.get("pickups", {}).has(roll.pickup): problems.append("drop table %s names missing pickup '%s'" % [table.id, roll.pickup])
+		if roll.has("coins") and (not is_number(roll.coins) or roll.coins <= 0): problems.append("drop table %s has an impossible coin amount" % table.id)
+		if roll.has("active") and (not is_number(roll.active) or roll.active < 0 or roll.active > 1): problems.append("drop table %s has an impossible active chance" % table.id)
+		for choice in roll.get("one_of", []):
+			if not by_id.get("pickups", {}).has(choice.get("pickup", "")): problems.append("drop table %s names missing pickup '%s'" % [table.id, choice.get("pickup", "")])
+			if not is_number(choice.get("weight")) or choice.weight <= 0: problems.append("drop table %s has a non-positive weight" % table.id)
 	return problems
 
 func validate_template(template: Dictionary) -> PackedStringArray:

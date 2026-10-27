@@ -52,15 +52,17 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 		Geo.box(self, pedestal + Vector3(0, -.003, 0), Vector3(6.2, .03, 4.6), Color("514450") if room_type == "shop" else Color("5d4c3e"))
 		Geo.ring(self, pedestal + Vector3(0, .035, 0), 1.65, Color("9e875c"), .025)
 		Geo.ring(self, pedestal + Vector3(0, .035, 0), 1.45, Color("7c7359"), .018)
-	if room_type in ["combat", "boss"] and not preview:
-		var pattern = [Vector2(-3.5, -2.7), Vector2(3.5, 2.7)]
-		if int(room.seed) % 2 == 0:
-			pattern = [Vector2(-3.8, 2.7), Vector2(3.8, -2.7)]
-		for cell in geometry.cells:
-			for offset in pattern:
-				var point = RoomGeometry.cell_center(cell) + offset
-				if Vector2(pedestal.x, pedestal.z).distance_to(point) < 3.0: continue
-				make_pillar(Vector3(point.x, 0, point.y))
+	if room.has("props"):
+		for prop in room.props:
+			if prop.kind == "pillar": make_pillar(Vector3(float(prop.position[0]), 0, float(prop.position[1])))
+	elif room_type in ["combat", "boss"] and not preview:
+		# Rooms saved before resolved dressing derive the same pillars.
+		for point in FloorGenerator.pillar_points(geometry.cells, int(room.seed), Vector2(pedestal.x, pedestal.z)):
+			make_pillar(Vector3(point.x, 0, point.y))
+	# Containers are solid: navigation and spawns route around them.
+	for chest in room.get("chests", []):
+		var at = Vector2(float(chest.position[0]), float(chest.position[1]))
+		obstacles.append({"position": Vector3(at.x, 0, at.y), "radius": .7, "rect": Rect2(at - Vector2(.5, .33), Vector2(1.0, .66))})
 	make_candles()
 	make_embers()
 	set_open(true)
@@ -335,6 +337,21 @@ func navigation(clearance := .5) -> RoomNavigation:
 			blockers["obstacle%d" % i] = obstacles[i].rect
 		navigators[key] = RoomNavigation.new(geometry, clearance, blockers)
 	return navigators[key]
+
+## A concealed doorway in this room that a Miner's Lantern could point at.
+func hidden_seam() -> Dictionary:
+	for key in sockets:
+		if sockets[key].state == "concealed": return sockets[key]
+	return {}
+
+func show_seam_hint(seam: Dictionary, duration: float) -> void:
+	var at = RoomGeometry.socket_point(seam.cell, seam.dir) - Vector2(seam.dir) * .35
+	var hint = Geo.halo(self, Vector3(at.x, .05, at.y), 3.2, Color(1.0, .82, .45, .55))
+	var glint = Geo.sphere(self, Vector3(at.x, 1.1, at.y), .12, Color("ffe2a0"), 2.6)
+	var tween = create_tween()
+	tween.tween_interval(duration)
+	tween.tween_callback(hint.queue_free)
+	tween.tween_callback(glint.queue_free)
 
 func blocked_at(point: Vector2) -> bool:
 	for obstacle in obstacles:

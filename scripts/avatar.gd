@@ -17,6 +17,7 @@ var haste_time = 0.0
 var walk_time = 0.0
 var recoil = 0.0
 var orbit_meshes: Array[MeshInstance3D] = []
+var shelter: MeshInstance3D
 const ROOM_MARGIN := .3
 var last_valid = Vector3.ZERO
 
@@ -46,8 +47,24 @@ func setup(owner_game: Node3D) -> void:
 	add_child(gun)
 	Geo.box(gun, Vector3(0, .7, -.43), Vector3(.17, .18, .5), Color("b6a080"))
 	Geo.sphere(gun, Vector3(0, .7, -.72), .09, Color("ffe5b4"), 1.6)
+	shelter = Geo.sphere(self, Vector3(0, .65, 0), .95, Color(.78, .9, .96), .35)
+	shelter.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	shelter.material_override = shelter_material()
 	refresh_orbitals()
+	refresh_shelter()
 	reset_room()
+
+static func shelter_material() -> StandardMaterial3D:
+	var glass = StandardMaterial3D.new()
+	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glass.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	glass.albedo_color = Color(.78, .92, 1.0, .16)
+	glass.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return glass
+
+## The Bell Jar's glass is shown for exactly as long as its saved modifier.
+func refresh_shelter() -> void:
+	if shelter: shelter.visible = Run.has_flag("invulnerable")
 
 func place(at: Vector3) -> void:
 	position = at
@@ -69,6 +86,7 @@ func refresh_orbitals() -> void:
 
 func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting: bool) -> void:
 	invulnerability = maxf(0, invulnerability - delta)
+	refresh_shelter()
 	dash_cooldown = maxf(0, dash_cooldown - delta)
 	fire_cooldown -= delta
 	haste_time = maxf(0, haste_time - delta)
@@ -153,10 +171,15 @@ func dash() -> void:
 			game.spawn_shot(global_position + Vector3(0, .5, 0), direction, 5.0 * Run.stats.dash_nova, 10.0, effects, Color("b6e2e5"), true)
 
 func hurt(amount: float, source: Vector3) -> void:
-	if invulnerability > 0 or not Run.active:
+	if invulnerability > 0 or not Run.active or Run.has_flag("invulnerable"):
 		return
-	if shield > 0:
-		shield -= 1
+	# Relic guard refreshes each room and is spent first; wards persist.
+	if shield > 0 or Run.wards > 0:
+		if shield > 0:
+			shield -= 1
+		else:
+			Run.wards -= 1
+			Run.changed.emit()
 		invulnerability = .55
 		Effects.ring_burst(game, global_position, Color("a3dacf"), 1.8)
 		Audio.play_sound("coin", .7)
