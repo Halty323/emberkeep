@@ -223,7 +223,7 @@ func update_camera(delta: float, snap := false) -> void:
 			if is_instance_valid(enemy) and enemy.alive: actors.append(enemy.position)
 		if is_instance_valid(room): room.update_wall_visibility(player.position, 0.0 if snap else delta, actors)
 	camera_focus = target if snap else camera_focus.lerp(target, 1.0 - exp(-7.0 * delta))
-	var amount = shake if Run.profile.shake else 0.0
+	var amount = shake if Settings.values.shake else 0.0
 	# Translate the camera without rotating it: movement and aiming axes stay fixed.
 	camera.position = camera_home + camera_focus + Vector3(sin(Time.get_ticks_msec() * .081), cos(Time.get_ticks_msec() * .067), 0) * amount
 

@@ -12,6 +12,10 @@ const JOURNAL_PAGE_SIZE := 6
 const TOAST_RECT := Rect2(400, 136, 480, 92)
 const REWARD_WIDTH := 340.0
 const REWARD_GAP := 26.0
+const SETTINGS_PAGES := [["display", "Display"], ["graphics", "Graphics"], ["controls", "Sound & Controls"]]
+const SETTINGS_NOTES := {"display": "Resolution scales only the dungeon; text and controls stay sharp. Your display or device can still cap the frame rate.",
+	"graphics": "Detail changes decoration and cosmetic effects only. Walls, furniture collision, loot and combat stay identical.",
+	"controls": "Touch controls show the on-screen sticks and action buttons on any device."}
 var game: Node3D
 var body: Font = preload("res://assets/fonts/body.ttf")
 var heading: Font = preload("res://assets/fonts/display.ttf")
@@ -52,6 +56,10 @@ var secret_taps = 0
 var secret_key_buffer = ""
 var secret_field: LineEdit
 var secret_feedback = ""
+var settings_page = "display"
+var fps_frames = 0
+var fps_time = 0.0
+var fps_value = 0.0
 
 func setup(owner_game: Node3D) -> void:
 	game = owner_game
@@ -190,7 +198,7 @@ func build_surfaces() -> void:
 			boss_surface = make_surface(Rect2(430, 119, 420, 12), Color("2e3430"), Color("bb8969"), true)
 		"pause": make_surface(Rect2(376, 108, 528, 520))
 		"secret": make_surface(Rect2(376, 140, 528, 448))
-		"settings": make_surface(Rect2(350, 72, 580, 588))
+		"settings": make_surface(Rect2(300, 40, 680, 640))
 		"reward":
 			for i in offers.size():
 				var offer: Dictionary = offers[i]
@@ -343,18 +351,66 @@ func build_journal() -> void:
 
 func open_settings(back: String) -> void:
 	previous_mode = back
+	settings_page = "display"
 	show_screen("settings")
 
 func build_settings() -> void:
+	for i in SETTINGS_PAGES.size():
+		var page: Array = SETTINGS_PAGES[i]
+		button(page[1], Rect2(330 + i * 210, 154, 200, 56), func(): open_settings_page(page[0]), page[0] == settings_page)
+	var rows = settings_rows(settings_page)
+	for i in rows.size():
+		setting_row(Rect2(330, 228 + i * 68, 620, 56), rows[i])
 	button("← Back", Rect2(396, 572, 488, 58), func(): close_subscreen())
-	var options = [["sound", "Sound effects"], ["music", "Ambient music"], ["shake", "Camera shake"], ["touch", "Touch controls"], ["quality", "Lantern shadows"]]
-	for i in options.size():
-		var option: Array = options[i]
-		button("%s     %s" % [option[1], "ON" if Run.profile[option[0]] else "OFF"], Rect2(396, 206 + i * 70, 488, 56), func():
-			Run.profile[option[0]] = not Run.profile[option[0]]
-			Run.save_profile()
-			Audio.refresh()
-			show_screen("settings"))
+
+func open_settings_page(page: String) -> void:
+	settings_page = page
+	show_screen("settings")
+
+func on_off(key: String) -> String:
+	return "On" if Settings.values[key] else "Off"
+
+## [setting key, label, value text, interactive]
+func settings_rows(page: String) -> Array:
+	match page:
+		"display":
+			var pixels = Settings.render_pixels()
+			var vsync = ["vsync", "VSync", on_off("vsync"), true]
+			if not Settings.vsync_supported():
+				vsync = ["vsync", "VSync", "System controlled", false]
+			elif Settings.effective_vsync() != on_off("vsync").to_lower():
+				vsync[2] += " · driver " + Settings.effective_vsync().capitalize()
+			return [["render_scale", "Render resolution", "%d%%  ·  %d×%d" % [roundi(Settings.values.render_scale * 100), pixels.x, pixels.y], true],
+				["fps_limit", "FPS limit", "Unlimited" if Settings.values.fps_limit == 0 else str(Settings.values.fps_limit), true],
+				vsync, ["show_fps", "Show FPS", on_off("show_fps"), true]]
+		"graphics":
+			return [["effects_detail", "Effects detail", Settings.values.effects_detail.capitalize(), true],
+				["small_details", "Small details", Settings.values.small_details.capitalize(), true],
+				["shadows", "Lantern shadows", on_off("shadows"), true]]
+	return [["sound", "Sound effects", on_off("sound"), true], ["music", "Ambient music", on_off("music"), true],
+		["shake", "Camera shake", on_off("shake"), true], ["touch", "Touch controls", on_off("touch"), true]]
+
+func setting_row(rect: Rect2, row: Array) -> SettingRow:
+	var control = SettingRow.new()
+	control.name = "Setting_" + row[0]
+	control.setting_key = row[0]
+	style_button(control, false)
+	var padded = StyleBoxEmpty.new()
+	padded.content_margin_left = SettingRow.PADDING
+	for state in ["normal", "hover", "pressed", "disabled"]:
+		control.add_theme_stylebox_override(state, padded)
+	control.value_font = bold
+	control.configure(rect, row[1], row[2], Color("41473f"), EDGE)
+	control.disabled = not row[3]
+	surfaces.append(control.surface)
+	var slab = control.surface
+	control.mouse_entered.connect(func(): slab.modulate = Color(.7, .7, .65) if control.disabled else Color(1.17, 1.12, 1.02))
+	control.mouse_exited.connect(func(): slab.modulate = Color(.7, .7, .65) if control.disabled else Color.WHITE)
+	if control.disabled: slab.modulate = Color(.7, .7, .65)
+	var key: String = row[0]
+	control.pressed.connect(func(): Audio.play_sound("coin", .7); Settings.cycle(key); show_screen("settings"))
+	content.add_child(control)
+	return control
 
 func close_subscreen() -> void:
 	if previous_mode == "menu":
@@ -374,11 +430,7 @@ func style(background: Color, border: Color, radius := 7) -> StyleBoxFlat:
 	box.content_margin_bottom = 8
 	return box
 
-func button(label: String, rect: Rect2, callback: Callable, primary := false) -> Button:
-	var control = Button.new()
-	control.text = label
-	control.position = rect.position
-	control.size = rect.size
+func style_button(control: Button, primary: bool) -> void:
 	control.add_theme_font_override("font", bold)
 	control.add_theme_font_size_override("font_size", 20)
 	control.add_theme_color_override("font_color", GOLD if primary else INK)
@@ -390,6 +442,13 @@ func button(label: String, rect: Rect2, callback: Callable, primary := false) ->
 	for state in ["normal", "hover", "pressed", "disabled"]:
 		control.add_theme_stylebox_override(state, StyleBoxEmpty.new())
 	control.add_theme_stylebox_override("focus", style(Color(0, 0, 0, 0), GOLD, 8))
+
+func button(label: String, rect: Rect2, callback: Callable, primary := false) -> Button:
+	var control = Button.new()
+	control.text = label
+	control.position = rect.position
+	control.size = rect.size
+	style_button(control, primary)
 	var surface = make_surface(rect, Color("62533c") if primary else Color("41473f"), GOLD if primary else EDGE, true)
 	control.set_meta("surface", surface)
 	control.mouse_entered.connect(func(): surface.modulate = Color(.7, .7, .65) if control.disabled else Color(1.17, 1.12, 1.02))
@@ -413,6 +472,12 @@ func damage_number(at: Vector2, amount: float, critical: bool) -> void:
 
 func _process(delta: float) -> void:
 	elapsed_ui += delta
+	fps_frames += 1
+	fps_time += delta
+	if fps_time >= .5:
+		fps_value = fps_frames / fps_time
+		fps_frames = 0
+		fps_time = 0.0
 	toast_time = maxf(0, toast_time - delta)
 	for number in floating_numbers:
 		number.age += delta
@@ -509,8 +574,9 @@ func _draw() -> void:
 			centered(secret_feedback, 640, 401, 17, Color("efbd9f"))
 		"reward": draw_rewards()
 		"settings":
-			hearth_emblem(Vector2(640, 109), 11)
-			centered("Make yourself at home", 640, 169, 32, INK, heading)
+			hearth_emblem(Vector2(640, 76), 11)
+			centered("Make yourself at home", 640, 134, 32, INK, heading)
+			draw_multiline_string(body, Vector2(340, 516), SETTINGS_NOTES[settings_page], HORIZONTAL_ALIGNMENT_CENTER, 600, 17, 2, MUTED)
 		"journal": draw_journal()
 		"dead", "won": draw_end()
 	if mode == "play":
@@ -521,6 +587,8 @@ func _draw() -> void:
 		if toast_time > 0:
 			centered(toast_text, 640, 168, 22, toast_color, heading)
 			draw_multiline_string(body, Vector2(424, 195), toast_detail, HORIZONTAL_ALIGNMENT_CENTER, 432, 17, 2, MUTED)
+	if Settings.values.show_fps:
+		text("%d FPS" % roundi(fps_value), Vector2(1072, 697), 15, GOLD, bold)
 	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
 
 func hearth_emblem(at: Vector2, radius: float) -> void:
@@ -601,7 +669,7 @@ func draw_hud() -> void:
 	if game.interaction_text != "":
 		centered(game.interaction_text, 640, 596, 21, GOLD, bold)
 		centered("Tap to interact  ·  E / A", 640, 624, 16, MUTED)
-	if touch_used or Run.profile.touch or is_touch_platform():
+	if touch_used or Settings.values.touch or is_touch_platform():
 		draw_stick(left_origin, left_vector, "MOVE", left_touch >= 0)
 		draw_stick(right_origin, right_vector, "AIM + FIRE", right_touch >= 0)
 		var ready: bool = game.player and game.player.dash_cooldown <= 0

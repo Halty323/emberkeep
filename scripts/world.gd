@@ -205,7 +205,7 @@ func set_open(value: bool) -> void:
 		gate.get_node("Barrier").visible = not value
 
 func apply_lighting_quality() -> void:
-	var enabled: bool = Run.profile.quality
+	var enabled: bool = Settings.values.shadows
 	if _quality_enabled == enabled:
 		return
 	_quality_enabled = enabled

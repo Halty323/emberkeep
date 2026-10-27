@@ -10,6 +10,7 @@ config/icon="res://assets/icon.svg"
 
 [autoload]
 Content="*res://scripts/content.gd"
+Settings="*res://scripts/settings_service.gd"
 Run="*res://scripts/run.gd"
 Audio="*res://scripts/audio.gd"
 Session="*res://scripts/session.gd"

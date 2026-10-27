@@ -20,15 +20,16 @@ var cleared = 0
 var elapsed = 0.0
 var active = false
 var daily = false
-var profile = {"version": 1, "runs": 0, "wins": 0, "kills": 0, "best_floor": 0,
-	"discovered": [], "sound": true, "music": true, "shake": true, "touch": false, "quality": true}
+# Device preferences live in the Settings service, never in the profile.
+const PROFILE_VERSION := 2
+var profile = {"version": PROFILE_VERSION, "runs": 0, "wins": 0, "kills": 0, "best_floor": 0, "discovered": []}
 
 func _ready() -> void:
 	if FileAccess.file_exists(PROFILE_PATH):
 		var saved = JSON.parse_string(FileAccess.get_file_as_string(PROFILE_PATH))
 		if saved is Dictionary:
 			for key in profile:
-				if saved.has(key):
+				if saved.has(key) and key != "version":
 					profile[key] = saved[key]
 	stats = Content.base_stats()
 

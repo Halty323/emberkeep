@@ -30,11 +30,15 @@ func _ready() -> void:
 	add_child(music_player)
 	music_player.stream = make_ambient()
 	music_player.volume_db = -14
+	Settings.changed.connect(_on_setting_changed)
 	refresh()
+
+func _on_setting_changed(key: String) -> void:
+	if key in ["sound", "music"]: refresh()
 
 func refresh() -> void:
 	if DisplayServer.get_name() == "headless": return
-	if Run.profile.music:
+	if Settings.values.music:
 		if not music_player.playing:
 			music_player.play()
 	else:
@@ -42,7 +46,7 @@ func refresh() -> void:
 
 func play_sound(id: String, pitch := 1.0) -> void:
 	if DisplayServer.get_name() == "headless": return
-	if not Run.profile.sound or not sounds.has(id):
+	if not Settings.values.sound or not sounds.has(id):
 		return
 	var player: AudioStreamPlayer = players[voice % players.size()]
 	voice += 1
