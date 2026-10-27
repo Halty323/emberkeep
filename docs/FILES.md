@@ -3,6 +3,7 @@
 Godot import caches and Git internals are generated locally and excluded from the source archive.
 
 ```text
+.github/workflows/ios-unsigned.yml
 .gitignore
 README.md
 THIRD_PARTY.md
@@ -20,6 +21,7 @@ assets/icon.svg
 assets/icon.svg.import
 docs/ANDROID.md
 docs/FILES.md
+docs/IOS.md
 docs/ONLINE.md
 docs/TESTING.md
 export_presets.cfg
@@ -73,6 +75,7 @@ tests/smoke.gd
 tests/smoke.gd.uid
 tests/ui_presentation.gd
 tests/ui_presentation.gd.uid
+tools/build_ios_unsigned.sh
 tools/configure_android.gd
 tools/configure_android.gd.uid
 tools/export_android.sh
@@ -80,4 +83,5 @@ tools/make_content.py
 tools/render_lighting.sh
 tools/render_ui.sh
 tools/test.sh
+tools/verify_ios_ipa.py
 ```

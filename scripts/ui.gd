@@ -73,10 +73,13 @@ func setup(owner_game: Node3D) -> void:
 	resize()
 	show_screen("menu")
 
+func is_touch_platform() -> bool:
+	return OS.has_feature("android") or OS.has_feature("ios")
+
 func resize() -> void:
 	var size_value = get_viewport_rect().size
 	var safe_rect = Rect2(Vector2.ZERO, size_value)
-	if OS.has_feature("android"):
+	if is_touch_platform():
 		var safe_screen = Rect2(DisplayServer.get_display_safe_area())
 		var window_size = Vector2(DisplayServer.window_get_size())
 		if window_size.x > 0 and window_size.y > 0 and safe_screen.has_area():
@@ -598,7 +601,7 @@ func draw_hud() -> void:
 	if game.interaction_text != "":
 		centered(game.interaction_text, 640, 596, 21, GOLD, bold)
 		centered("Tap to interact  ·  E / A", 640, 624, 16, MUTED)
-	if touch_used or Run.profile.touch or OS.has_feature("android"):
+	if touch_used or Run.profile.touch or is_touch_platform():
 		draw_stick(left_origin, left_vector, "MOVE", left_touch >= 0)
 		draw_stick(right_origin, right_vector, "AIM + FIRE", right_touch >= 0)
 		var ready: bool = game.player and game.player.dash_cooldown <= 0

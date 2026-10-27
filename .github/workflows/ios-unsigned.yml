@@ -1,0 +1,82 @@
+name: iOS unsigned IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ios-unsigned.yml'
+      - 'tools/build_ios_unsigned.sh'
+      - 'tools/verify_ios_ipa.py'
+      - 'export_presets.cfg'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-unsigned-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build iPhone and iPad IPA
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Install Godot 4.6.3 and iOS templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          download_dir="$RUNNER_TEMP/emberkeep-godot"
+          template_dir="$HOME/Library/Application Support/Godot/export_templates/4.6.3.stable"
+          mkdir -p "$download_dir" "$template_dir" "$download_dir/bin"
+          base_url="https://github.com/godotengine/godot-builds/releases/download/4.6.3-stable"
+          curl --fail --location --retry 3 --connect-timeout 30 --max-time 900 \
+            "$base_url/Godot_v4.6.3-stable_macos.universal.zip" -o "$download_dir/editor.zip"
+          curl --fail --location --retry 3 --connect-timeout 30 --max-time 900 \
+            "$base_url/Godot_v4.6.3-stable_export_templates.tpz" -o "$download_dir/templates.tpz"
+          # SHA-256 digests from the official 4.6.3 release asset metadata.
+          (cd "$download_dir" && shasum -a 256 --check <<'CHECKSUMS'
+          30630f3e9b11e10b35c1f90ba8814185dcec43fae1a48345159be7552c64bfe8  editor.zip
+          3fbe2c0e2dec9d537ab9ec97bcf8da91dcf23357fc51f67092dd068d839290a8  templates.tpz
+          CHECKSUMS
+          )
+          unzip -q "$download_dir/editor.zip" -d "$download_dir"
+          unzip -q -j "$download_dir/templates.tpz" 'templates/ios.zip' -d "$template_dir"
+          ln -s "$download_dir/Godot.app/Contents/MacOS/Godot" "$download_dir/bin/godot"
+          echo "$download_dir/bin" >> "$GITHUB_PATH"
+      - name: Run gameplay and interface checks
+        run: bash tools/test.sh
+      - name: Export, build without signing, and verify IPA
+        run: bash tools/build_ios_unsigned.sh "$RUNNER_TEMP/emberkeep-ios-output"
+      - name: Upload sideloadable build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Emberkeep-iOS-unsigned
+          path: |
+            ${{ runner.temp }}/emberkeep-ios-output/Emberkeep-unsigned.ipa
+            ${{ runner.temp }}/emberkeep-ios-output/Emberkeep-unsigned.ipa.sha256
+            ${{ runner.temp }}/emberkeep-ios-output/build-info.json
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+      - name: Upload diagnostics if the build fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iOS-build-diagnostics
+          path: ${{ runner.temp }}/emberkeep-ios-output/*.log
+          if-no-files-found: ignore
+          retention-days: 1
+      - name: Describe installation
+        shell: bash
+        run: |
+          {
+            echo "### Emberkeep iOS build"
+            echo "Download the **Emberkeep-iOS-unsigned** artifact below and extract **Emberkeep-unsigned.ipa**."
+            echo "Sign and install it using AltStore Classic or SideStore with your own Apple ID."
+            echo "This build contains no Apple credentials or provisioning profiles."
+            echo "Free-account signing needs renewal within seven days. Physical-device gameplay is not tested by this workflow."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -167,7 +167,7 @@ func _physics_process(delta: float) -> void:
 	elif aim_joy.length() > .22:
 		aim = screen_direction(aim_joy)
 		shooting = true
-	elif not ui.touch_used and not OS.has_feature("android"):
+	elif not ui.touch_used and not ui.is_touch_platform():
 		var mouse = get_viewport().get_mouse_position()
 		var ray_origin = camera.project_ray_origin(mouse)
 		var ray_direction = camera.project_ray_normal(mouse)

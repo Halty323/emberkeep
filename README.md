@@ -20,6 +20,8 @@ If a companion `emberkeep.pck` is supplied, it can be run with the same Godot ve
 
 Android export instructions are in [docs/ANDROID.md](docs/ANDROID.md). The repository includes an Android export preset; an SDK, matching Godot export templates and a debug signing key are still required to produce an APK. An APK is not included in this source prototype.
 
+iPhone/iPad: [unsigned iOS builds and sideloading](docs/IOS.md) are available through the **iOS unsigned IPA** GitHub Actions workflow, with no owned Mac or paid Apple Developer membership required for personal testing.
+
 ## Controls
 
 | Action | Android touch | Keyboard and mouse | Controller |
