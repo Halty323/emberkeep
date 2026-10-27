@@ -10,6 +10,9 @@ const DASH_CENTER := Vector2(973, 610)
 const DASH_RADIUS := 48.0
 const JOURNAL_PAGE_SIZE := 6
 const TOAST_RECT := Rect2(400, 136, 480, 92)
+const MINIMAP_RECT := Rect2(1012, 100, 244, 192)
+const MINIMAP_AREA := Rect2(1030, 150, 208, 134)
+const FULL_MAP_AREA := Rect2(180, 150, 920, 420)
 const REWARD_WIDTH := 340.0
 const REWARD_GAP := 26.0
 const SETTINGS_PAGES := [["display", "Display"], ["graphics", "Graphics"], ["controls", "Sound & Controls"]]
@@ -138,6 +141,18 @@ func show_screen(screen: String) -> void:
 		"play":
 			button("II", Rect2(1180, 24, 76, 58), func(): game.pause_game(), false)
 			button("RELICS", Rect2(1012, 24, 154, 58), func(): open_journal("pause"), false)
+			# The minimap itself opens the full floor map.
+			var map_button = Button.new()
+			map_button.name = "MapButton"
+			map_button.position = MINIMAP_RECT.position
+			map_button.size = MINIMAP_RECT.size
+			map_button.focus_mode = Control.FOCUS_NONE
+			for state in ["normal", "hover", "pressed", "focus"]:
+				map_button.add_theme_stylebox_override(state, StyleBoxEmpty.new())
+			map_button.pressed.connect(func(): open_map("play"))
+			content.add_child(map_button)
+		"map":
+			button("← Back", Rect2(396, 590, 488, 58), func(): close_subscreen())
 		"pause":
 			button("Continue the journey", Rect2(430, 280, 420, 62), func(): game.resume_game(), true)
 			button("Relic journal", Rect2(430, 358, 420, 58), func(): open_journal("pause"))
@@ -192,7 +207,7 @@ func build_surfaces() -> void:
 		"play":
 			make_surface(Rect2(24, 24, 370, 150))
 			make_surface(Rect2(424, 24, 420, 88), Color("3d423c"))
-			make_surface(Rect2(1012, 100, 244, 192), Color("363c37"))
+			make_surface(MINIMAP_RECT, Color("363c37"))
 			toast_surface = make_surface(TOAST_RECT, Color("45483b"), GOLD)
 			interaction_surface = make_surface(INTERACTION_RECT, PANEL, GOLD)
 			boss_surface = make_surface(Rect2(430, 119, 420, 12), Color("2e3430"), Color("bb8969"), true)
@@ -212,6 +227,7 @@ func build_surfaces() -> void:
 				var item: Dictionary = Content.items[index]
 				make_surface(journal_rect(slot), PANEL, Content.RARITY_COLORS[item.rarity] if item.id in Run.inventory else EDGE)
 		"dead", "won": make_surface(Rect2(350, 96, 580, 540))
+		"map": make_surface(Rect2(140, 60, 1000, 610))
 
 func update_surface_visibility() -> void:
 	if is_instance_valid(toast_surface): toast_surface.visible = mode == "play" and toast_time > 0
@@ -412,9 +428,16 @@ func setting_row(rect: Rect2, row: Array) -> SettingRow:
 	content.add_child(control)
 	return control
 
+func open_map(back: String) -> void:
+	previous_mode = back
+	game.paused = true
+	show_screen("map")
+
 func close_subscreen() -> void:
 	if previous_mode == "menu":
 		show_screen("menu")
+	elif previous_mode == "play":
+		game.resume_game()
 	else:
 		show_screen("pause")
 
@@ -578,6 +601,7 @@ func _draw() -> void:
 			centered("Make yourself at home", 640, 134, 32, INK, heading)
 			draw_multiline_string(body, Vector2(340, 516), SETTINGS_NOTES[settings_page], HORIZONTAL_ALIGNMENT_CENTER, 600, 17, 2, MUTED)
 		"journal": draw_journal()
+		"map": draw_full_map()
 		"dead", "won": draw_end()
 	if mode == "play":
 		for number in floating_numbers:
@@ -694,31 +718,83 @@ func draw_stick(at: Vector2, value: Vector2, label: String, active_touch: bool) 
 
 func draw_minimap() -> void:
 	text("THE WAY HOME", Vector2(1034, 132), 14, GOLD, bold)
-	text("N", Vector2(1220, 132), 13, MUTED)
+	text("M", Vector2(1218, 132), 13, MUTED)
 	divider(Vector2(1034, 145), Vector2(1234, 145))
-	var center = Vector2(1134, 213)
-	var scale_map = 24.0
-	var here = Run.coord(Run.current_room)
-	for key in Run.rooms:
-		var r: Dictionary = Run.rooms[key]
-		if not r.visited and key not in Run.neighbors(Run.current_room): continue
-		var p = center + Vector2(Run.coord(key) - here) * scale_map
-		if absf(p.x - center.x) > 86 or absf(p.y - center.y) > 50: continue
-		for neighbor in Run.neighbors(key):
-			var n: Dictionary = Run.rooms[neighbor]
-			if not n.visited and neighbor not in Run.neighbors(Run.current_room): continue
-			var to = center + Vector2(Run.coord(neighbor) - here) * scale_map
-			if absf(to.x - center.x) <= 86 and absf(to.y - center.y) <= 50:
-				draw_line(p, to, Color("656752"), 2, true)
-		var c = Color("9b9e82") if r.cleared else Color("626957")
-		if r.type == "treasure": c = GOLD
-		if r.type == "shop": c = Color("afcfaa")
-		if r.type == "boss": c = Color("da9b80")
-		if key == Run.current_room: c = INK
-		draw_rect(Rect2(p - Vector2(7, 5), Vector2(14, 10)), Color("262e28"))
-		draw_rect(Rect2(p - Vector2(6, 5), Vector2(12, 9)), c)
-		if key == Run.current_room:
-			draw_rect(Rect2(p - Vector2(10, 8), Vector2(20, 16)), GOLD, false, 1.5)
+	var cells = FloorGenerator.room_cells(Run.rooms[Run.current_room])
+	var focus = Vector2.ZERO
+	for cell in cells: focus += Vector2(cell)
+	draw_floor_map(MINIMAP_AREA, focus / cells.size(), 24.0)
+
+## Rooms the player may know about: visited ones and the current room's open
+## neighbours. A concealed passage reveals nothing until it is opened.
+func map_rooms() -> Array:
+	var near = Run.neighbors(Run.current_room)
+	return Run.rooms.keys().filter(func(id): return Run.rooms[id].visited or id == Run.current_room or id in near)
+
+func map_color(id: String) -> Color:
+	var room: Dictionary = Run.rooms[id]
+	if id == Run.current_room: return INK
+	if room.type == "treasure": return GOLD
+	if room.type == "shop": return Color("afcfaa")
+	if room.type == "boss": return Color("da9b80")
+	if room.get("secret", false): return Color("b9a2c9")
+	return Color("9b9e82") if room.cleared else Color("626957")
+
+## Draws each room's whole footprint as one shape: cells merge across their
+## own seams, and short connectors mark actual doorways, not adjacency.
+func draw_floor_map(area: Rect2, focus: Vector2, cell_size: float) -> void:
+	var known = map_rooms()
+	var origin = area.get_center() - focus * cell_size
+	var inset = maxf(3.0, cell_size * .2)
+	for portal in Run.portals.values():
+		if portal.state == "concealed" or portal.a.room not in known or portal.b.room not in known: continue
+		var a = Vector2(FloorGenerator.vec(portal.a.cell))
+		var direction = Vector2(FloorGenerator.vec(portal.a.dir))
+		var start = origin + (a + direction * (.5 - inset / cell_size)) * cell_size
+		var end = origin + (a + direction * (.5 + inset / cell_size)) * cell_size
+		if area.has_point(start) and area.has_point(end):
+			draw_line(start, end, Color("9d9878"), maxf(2.0, cell_size * .12), true)
+	for id in known:
+		var cells = FloorGenerator.room_cells(Run.rooms[id])
+		var color = map_color(id)
+		for cell in cells:
+			var low = Vector2(inset if not cells.has(cell + Vector2i.LEFT) else 0.0, inset if not cells.has(cell + Vector2i.UP) else 0.0)
+			var high = Vector2(inset if not cells.has(cell + Vector2i.RIGHT) else 0.0, inset if not cells.has(cell + Vector2i.DOWN) else 0.0)
+			var rect = Rect2(origin + (Vector2(cell) - Vector2(.5, .5)) * cell_size + low, Vector2.ONE * cell_size - low - high)
+			var shadow = Rect2(rect.position + Vector2(0, 2), rect.size).intersection(area)
+			if shadow.has_area(): draw_rect(shadow, Color("262e28"))
+			var shown = rect.intersection(area)
+			if shown.has_area(): draw_rect(shown, color)
+		if id == Run.current_room:
+			# One outline around the whole footprint, drawn on exposed edges only.
+			var reach = cell_size * .5 - inset + 2.5
+			for cell in cells:
+				var center = origin + Vector2(cell) * cell_size
+				for direction in RoomGeometry.DIRECTIONS:
+					if cells.has(cell + direction): continue
+					var across = Vector2i(absi(direction.y), absi(direction.x))
+					var mid = center + Vector2(direction) * reach
+					var start = mid - Vector2(across) * (cell_size * .5 if cells.has(cell - across) else reach)
+					var end = mid + Vector2(across) * (cell_size * .5 if cells.has(cell + across) else reach)
+					if area.has_point(start) and area.has_point(end):
+						draw_line(start, end, GOLD, 1.5, true)
+
+func draw_full_map() -> void:
+	hearth_emblem(Vector2(640, 96), 11)
+	centered("The way home", 640, 140, 32, INK, heading)
+	var known = map_rooms()
+	var low = Vector2(INF, INF)
+	var high = -low
+	for id in known:
+		for cell in FloorGenerator.room_cells(Run.rooms[id]):
+			low = Vector2(minf(low.x, cell.x), minf(low.y, cell.y))
+			high = Vector2(maxf(high.x, cell.x), maxf(high.y, cell.y))
+	var span = high - low + Vector2.ONE
+	var cell_size = minf(48.0, minf(FULL_MAP_AREA.size.x / (span.x + 1), FULL_MAP_AREA.size.y / (span.y + 1)))
+	draw_floor_map(FULL_MAP_AREA, (low + high) / 2.0, cell_size)
+	var main_rooms = Run.rooms.values().filter(func(room): return not room.get("secret", false))
+	centered("Floor %d  ·  %d of %d rooms visited  ·  Outlined: you are here" % [Run.floor_number,
+		main_rooms.filter(func(room): return room.visited).size(), main_rooms.size()], 640, 578, 17, MUTED)
 
 func draw_rewards() -> void:
 	hearth_emblem(Vector2(640, 61), 12)

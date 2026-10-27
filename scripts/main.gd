@@ -26,6 +26,7 @@ var request_dash = false
 var interaction_text = ""
 var interaction_kind = ""
 var transition_cooldown = 0.0
+var pending_portal = ""
 var entity_counter = 10
 var chosen_reward_shop = false
 var snapshot_timer = 0.0
@@ -97,7 +98,7 @@ func _ready() -> void:
 func setup_inputs() -> void:
 	var actions = {"move_left": [KEY_A, KEY_LEFT], "move_right": [KEY_D, KEY_RIGHT],
 		"move_up": [KEY_W, KEY_UP], "move_down": [KEY_S, KEY_DOWN],
-		"dash": [KEY_SPACE, KEY_SHIFT], "interact": [KEY_E], "pause_game": [KEY_ESCAPE, KEY_P], "journal": [KEY_TAB]}
+		"dash": [KEY_SPACE, KEY_SHIFT], "interact": [KEY_E], "pause_game": [KEY_ESCAPE, KEY_P], "journal": [KEY_TAB], "map": [KEY_M]}
 	for action in actions:
 		if not InputMap.has_action(action): InputMap.add_action(action)
 		for key in actions[action]:
@@ -114,8 +115,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("pause_game") and not in_menu and Run.active:
 		if ui.mode == "play": pause_game()
 		elif ui.mode == "pause": resume_game()
-		elif ui.mode in ["journal", "settings"]: ui.close_subscreen()
+		elif ui.mode in ["journal", "settings", "map"]: ui.close_subscreen()
 		elif ui.mode == "secret": ui.close_secret_code()
+	elif event.is_action_pressed("map") and not in_menu and Run.active:
+		if ui.mode == "map": ui.close_subscreen()
+		elif is_playing(): ui.open_map("play")
 	elif event.is_action_pressed("dash") and is_playing():
 		request_dash = true
 	elif event.is_action_pressed("interact") and is_playing():
@@ -135,7 +139,7 @@ func _notification(what: int) -> void:
 		if is_instance_valid(ui) and not in_menu:
 			if ui.mode == "play": pause_game()
 			elif ui.mode == "pause": resume_game()
-			elif ui.mode in ["settings", "journal"]: ui.close_subscreen()
+			elif ui.mode in ["settings", "journal", "map"]: ui.close_subscreen()
 			elif ui.mode == "secret": ui.close_secret_code()
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		get_tree().quit()
@@ -181,7 +185,7 @@ func _physics_process(delta: float) -> void:
 		request_dash = false
 	player.update_sim(delta, move_input, aim, shooting)
 	for enemy in enemies.duplicate():
-		if is_instance_valid(enemy) and is_playing(): enemy.update_sim(delta)
+		if is_instance_valid(enemy) and is_playing() and enemy.alive: enemy.update_sim(delta)
 	enemies = enemies.filter(func(e): return is_instance_valid(e) and e.alive)
 	for shot in shots.duplicate():
 		if is_instance_valid(shot) and is_playing(): shot.update_sim(delta)
@@ -194,12 +198,17 @@ func _physics_process(delta: float) -> void:
 		clear_room()
 	update_interaction()
 	if room.open and transition_cooldown <= 0:
-		check_doors()
+		check_portals()
 	snapshot_timer -= delta
 	if snapshot_timer <= 0:
 		snapshot_timer = .1
 		Session.publish({"player": {"id": player.entity_id, "owner": player.owner_peer_id, "position": [player.position.x, player.position.z], "hp": Run.hp},
 			"room": Run.current_room, "seed": Run.seed_value, "floor": Run.floor_number})
+	# Room changes happen only here, after every actor finished this tick.
+	if pending_portal != "":
+		var portal_id: String = pending_portal
+		pending_portal = ""
+		travel(portal_id)
 
 func _process(delta: float) -> void:
 	shake = maxf(0, shake - delta * .9)
@@ -216,16 +225,30 @@ func update_camera(delta: float, snap := false) -> void:
 		return
 	var target = Vector3.ZERO
 	if not in_menu and is_instance_valid(player):
-		target = Vector3(clampf(player.position.x * CAMERA_FOLLOW_GAIN, -CAMERA_FOCUS_LIMIT.x, CAMERA_FOCUS_LIMIT.x),
-			0, clampf(player.position.z * CAMERA_FOLLOW_GAIN, -CAMERA_FOCUS_LIMIT.y, CAMERA_FOCUS_LIMIT.y))
+		target = camera_target(player.position)
 		var actors: Array = []
 		for enemy in enemies:
 			if is_instance_valid(enemy) and enemy.alive: actors.append(enemy.position)
 		if is_instance_valid(room): room.update_wall_visibility(player.position, 0.0 if snap else delta, actors)
 	camera_focus = target if snap else camera_focus.lerp(target, 1.0 - exp(-7.0 * delta))
+	if not in_menu and is_instance_valid(room):
+		room.update_light_selection(camera_focus)
 	var amount = shake if Settings.values.shake else 0.0
 	# Translate the camera without rotating it: movement and aiming axes stay fixed.
 	camera.position = camera_home + camera_focus + Vector3(sin(Time.get_ticks_msec() * .081), cos(Time.get_ticks_msec() * .067), 0) * amount
+
+## Keeps the close zoom in every room. A 1x1 room follows 45% of movement
+## within ±3.6/±2.8; larger rooms widen the same edge margins so the player
+## stays framed at every wall, bend and door without shrinking combat.
+func camera_target(at: Vector3) -> Vector3:
+	var area: Rect2 = room.geometry.bounds() if is_instance_valid(room) and room.geometry else Rect2(-9, -7, 18, 14)
+	var center = area.get_center()
+	var half = area.size / 2.0
+	var margin = RoomGeometry.HALF - CAMERA_FOCUS_LIMIT
+	var limit = Vector2(maxf(0, half.x - margin.x), maxf(0, half.y - margin.y))
+	var gain = Vector2(maxf(CAMERA_FOLLOW_GAIN, limit.x / maxf(half.x - .3, .1)), maxf(CAMERA_FOLLOW_GAIN, limit.y / maxf(half.y - .3, .1)))
+	return Vector3(center.x + clampf((at.x - center.x) * gain.x, -limit.x, limit.x), 0,
+		center.y + clampf((at.z - center.y) * gain.y, -limit.y, limit.y))
 
 func clean_room() -> void:
 	for shot in shots:
@@ -246,6 +269,7 @@ func clean_room() -> void:
 	marker_visual = null
 	interaction_text = ""
 	interaction_kind = ""
+	pending_portal = ""
 
 func show_title_room() -> void:
 	in_menu = true
@@ -259,7 +283,7 @@ func show_title_room() -> void:
 	player = Adventurer.new()
 	scene_root.add_child(player)
 	player.setup(self)
-	player.position = Vector3(0, 0, .1)
+	player.place(Vector3(0, 0, .1))
 	player.visual.rotation_degrees.y = 150
 	make_marker("treasure", Vector3(2.3, 0, -1.5))
 	update_camera(0.0, true)
@@ -283,9 +307,14 @@ func continue_run() -> void:
 	paused = false
 	camera.h_offset = 0
 	camera.size = CAMERA_GAME_SIZE
-	enter_room(Vector3(0, 0, 2.0))
+	enter_room(saved_entry())
 	ui.show_screen("play")
 	ui.notify("Welcome back, little light", "Your last safe room remembers you.")
+
+func saved_entry() -> Vector3:
+	if Run.entry.get("room", "") == Run.current_room:
+		return Vector3(float(Run.entry.position[0]), 0, float(Run.entry.position[1]))
+	return Vector3(0, 0, 2.0)
 
 func enter_room(spawn: Vector3) -> void:
 	clean_room()
@@ -294,10 +323,14 @@ func enter_room(spawn: Vector3) -> void:
 	room = DungeonRoom.new()
 	scene_root.add_child(room)
 	room.build(self, data)
+	# A saved or requested spawn can be outside a rotated L: validate it.
+	var safe = room.geometry.safe_point(Vector2(spawn.x, spawn.z), .5, room.blocked_at)
+	spawn = Vector3(safe.x, 0, safe.y)
+	Run.entry = {"room": Run.current_room, "position": [snappedf(safe.x, .001), snappedf(safe.y, .001)]}
 	player = Adventurer.new()
 	scene_root.add_child(player)
 	player.setup(self)
-	player.position = spawn
+	player.place(spawn)
 	player.invulnerability = 1.0
 	transition_cooldown = .9
 	var gen = RandomNumberGenerator.new()
@@ -305,15 +338,20 @@ func enter_room(spawn: Vector3) -> void:
 	if not data.cleared and data.type in ["combat", "boss"]:
 		room.set_open(false)
 		if data.type == "boss":
-			spawn_enemy(Vector3(0, 0, -2.5), "boss")
+			spawn_enemy(room.pedestal + Vector3(0, 0, -2.5), "boss")
 		else:
 			var choices = ["mote", "spitter", "charger", "splitter", "brute"]
-			var count = 3 + Run.floor_number + mini(int(data.depth) / 3, 2)
+			var cells: int = room.geometry.cells.size()
+			var count = roundi((3 + Run.floor_number + mini(int(data.depth) / 3, 2)) * (1.0 + .45 * (cells - 1)))
 			for i in count:
+				var center = RoomGeometry.cell_center(room.geometry.cells[i % cells])
 				var p = Vector3(gen.randf_range(-6, 6), 0, gen.randf_range(-4, 4))
-				if p.distance_to(spawn) < 3.0: p = -p
+				if p.distance_to(spawn - Vector3(center.x, 0, center.y)) < 3.0: p = -p
+				p += Vector3(center.x, 0, center.y)
 				for obstacle in room.obstacles:
-					if p.distance_to(obstacle.position) < 1.6: p.z = 0
+					if p.distance_to(obstacle.position) < 1.6: p.z = center.y
+				if p.distance_to(spawn) < 3.0:
+					p = spawn + (p - spawn).normalized() * 3.5 if not p.is_equal_approx(spawn) else spawn + Vector3(3.5, 0, 0)
 				var kind: String = choices[gen.randi_range(0, mini(choices.size() - 1, 2 + Run.floor_number))]
 				spawn_enemy(p, kind)
 	else:
@@ -325,11 +363,11 @@ func enter_room(spawn: Vector3) -> void:
 		if data.type == "boss" and not data.claimed and not data.has("offers"):
 			ensure_offers(true)
 		if not data.claimed and data.type in ["treasure", "shop", "rest"]:
-			make_marker(data.type)
+			make_marker(data.type, room.pedestal)
 		elif data.cleared and not data.claimed and data.has("offers"):
-			make_marker("treasure")
+			make_marker("treasure", room.pedestal)
 		elif data.type == "boss":
-			make_marker("exit", Vector3(0, 0, -1.5))
+			make_marker("exit", room.pedestal + Vector3(0, 0, -1.5))
 		for drop in data.get("pickups", []):
 			spawn_pickup(Vector3(drop.position[0], 0, drop.position[1]), drop.kind, int(drop.value), int(drop.id))
 		Run.save_run()
@@ -337,25 +375,33 @@ func enter_room(spawn: Vector3) -> void:
 		ui.notify("The hearth is stirring", "Watch the windup. Dash through danger.", Color("e0a18b"))
 	update_camera(0.0, true)
 
-func check_doors() -> void:
-	var direction = Vector2i.ZERO
-	if absf(player.position.x) > 8.15 and absf(player.position.z) < 1.1:
-		direction = Vector2i(int(signf(player.position.x)), 0)
-	elif absf(player.position.z) > 6.15 and absf(player.position.x) < 1.1:
-		direction = Vector2i(0, int(signf(player.position.z)))
-	if direction == Vector2i.ZERO: return
-	var key = Run.room_key(Run.coord(Run.current_room) + direction)
-	if Run.rooms.has(key):
-		Run.current_room = key
-		Audio.play_sound("door")
-		enter_room(Vector3(-direction.x * 7.3, 0, -direction.y * 5.3))
+## Each doorway trigger names one specific portal; the transition itself is
+## scheduled for the end of the physics tick.
+func check_portals() -> void:
+	var at = Vector2(player.position.x, player.position.z)
+	for portal_id in Run.rooms[Run.current_room].get("portals", []):
+		if Run.portals[portal_id].state not in ["open", "revealed"]: continue
+		var side = Run.portal_side(portal_id, Run.current_room)
+		if RoomGeometry.in_trigger(at, side.cell, side.dir):
+			pending_portal = portal_id
+			return
+
+## Enter the paired room at the entry anchor of the portal's other side.
+func travel(portal_id: String) -> void:
+	var destination = Run.other_room(portal_id, Run.current_room)
+	var side = Run.portal_side(portal_id, destination)
+	Run.current_room = destination
+	Audio.play_sound("door")
+	var point = RoomGeometry.entry_point(side.cell, side.dir)
+	enter_room(Vector3(point.x, 0, point.y))
 
 func spawn_enemy(at: Vector3, kind: String) -> DungeonEnemy:
 	var enemy = DungeonEnemy.new()
 	scene_root.add_child(enemy)
 	entity_counter += 1
 	enemy.setup(self, kind, entity_counter)
-	enemy.position = at
+	var safe = room.geometry.safe_point(Vector2(at.x, at.z), .5 + enemy.radius * .5, room.blocked_at)
+	enemy.place(Vector3(safe.x, 0, safe.y))
 	enemies.append(enemy)
 	return enemy
 
@@ -427,10 +473,10 @@ func clear_room() -> void:
 	ui.notify("A little more warmth", "The doorways are open.")
 	if data.type == "boss" or Run.cleared % 2 == 0:
 		ensure_offers(data.type == "boss")
-		make_marker("treasure")
+		make_marker("treasure", room.pedestal)
 	else:
 		data.claimed = true
-		if Run.rng.randf() < .4: spawn_pickup(Vector3.ZERO, "heart", 1)
+		if Run.rng.randf() < .4: spawn_pickup(room.pedestal, "heart", 1)
 	Run.save_run()
 
 func ensure_offers(premium := false) -> void:
@@ -527,7 +573,7 @@ func choose_offer(index: int) -> void:
 		Run.gain_item(offer.id)
 	if marker and is_instance_valid(marker): marker.queue_free()
 	marker = null
-	if data.type == "boss": make_marker("exit", Vector3(0, 0, -1.5))
+	if data.type == "boss": make_marker("exit", room.pedestal + Vector3(0, 0, -1.5))
 	Run.save_run()
 	close_reward()
 

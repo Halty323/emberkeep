@@ -46,5 +46,20 @@ common/physics_ticks_per_second=60
 [audio]
 driver/enable_input=false
 
+[shader_globals]
+
+room_footprint={
+"type": "sampler2D",
+"value": ""
+}
+room_grid_origin={
+"type": "vec2",
+"value": Vector2(-9, -7)
+}
+room_grid_cells={
+"type": "vec2",
+"value": Vector2(1, 1)
+}
+
 [editor]
 version_control/autoload_on_startup=false

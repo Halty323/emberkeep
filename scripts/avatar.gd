@@ -17,6 +17,8 @@ var haste_time = 0.0
 var walk_time = 0.0
 var recoil = 0.0
 var orbit_meshes: Array[MeshInstance3D] = []
+const ROOM_MARGIN := .3
+var last_valid = Vector3.ZERO
 
 func setup(owner_game: Node3D) -> void:
 	game = owner_game
@@ -46,6 +48,10 @@ func setup(owner_game: Node3D) -> void:
 	Geo.sphere(gun, Vector3(0, .7, -.72), .09, Color("ffe5b4"), 1.6)
 	refresh_orbitals()
 	reset_room()
+
+func place(at: Vector3) -> void:
+	position = at
+	last_valid = at
 
 func reset_room() -> void:
 	shield = int(Run.stats.shield)
@@ -84,10 +90,12 @@ func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting:
 		collision_mask = 5
 		var target = direction * 5.2 * float(Run.stats.speed)
 		velocity = velocity.move_toward(target, delta * 47.0)
+	var geometry: RoomGeometry = game.room.geometry
+	if geometry.contains(Vector2(position.x, position.z), ROOM_MARGIN):
+		last_valid = position
 	move_and_slide()
-	position.x = clampf(position.x, -8.7, 8.7)
-	position.z = clampf(position.z, -6.7, 6.7)
-	position.y = 0
+	var kept = geometry.recover(Vector2(last_valid.x, last_valid.z), Vector2(position.x, position.z), ROOM_MARGIN)
+	position = Vector3(kept.x, 0, kept.y)
 	walk_time += delta * velocity.length() * 2.7
 	visual.position.y = absf(sin(walk_time)) * .055
 	visual.rotation.y = lerp_angle(visual.rotation.y, atan2(-aim_direction.x, -aim_direction.z), delta * 18)

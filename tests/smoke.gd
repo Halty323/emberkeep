@@ -97,9 +97,11 @@ func test_all() -> void:
 		game.player.fire()
 	check(game.shots.size() > 20, "all weapons instantiate projectiles")
 	# Exercise room combat, rewards and progression, without touching live data.
+	# These checks use single-cell coordinates; multi-cell rooms are covered
+	# by tests/dungeon.gd.
 	var combat_key := ""
 	for key in run.rooms:
-		if run.rooms[key].type == "combat": combat_key = key; break
+		if run.rooms[key].type == "combat" and run.rooms[key].cells.size() == 1: combat_key = key; break
 	run.current_room = combat_key
 	game.enter_room(Vector3(0, 0, 4))
 	check(not game.room.open and game.enemies.size() > 0, "combat room locks with enemies")

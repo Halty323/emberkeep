@@ -28,6 +28,12 @@ var boss = false
 var boss_cycle = 0
 var summon_timer = 9.0
 var color = Color("bb7667")
+const ROOM_MARGIN := .45
+var last_valid = Vector3.ZERO
+var path := PackedVector2Array()
+var path_timer = 0.0
+var sight_timer = 0.0
+var has_sight = true
 
 func setup(owner_game: Node3D, type: String, id: int) -> void:
 	game = owner_game
@@ -68,6 +74,40 @@ func setup(owner_game: Node3D, type: String, id: int) -> void:
 	Geo.halo(self, Vector3(0, .022, 0), radius * 3.8, Color(color.r, color.g, color.b, .09))
 	timer = 1.0 + float(entity_id % 5) * .23
 
+func place(at: Vector3) -> void:
+	position = at
+	last_valid = at
+
+func clearance() -> float:
+	return 1.0 if radius > .7 else .5
+
+## Direct pursuit while the way is clear; otherwise follow a staggered grid
+## path so L bends and furniture never trap an enemy in a corner.
+func steer_toward(target: Vector3, delta: float) -> Vector3:
+	var direct = Vector3(target.x - position.x, 0, target.z - position.z).normalized()
+	if not is_instance_valid(game.room) or not game.room.geometry:
+		return direct
+	var nav: RoomNavigation = game.room.navigation(clearance())
+	var from = Vector2(position.x, position.z)
+	var to = Vector2(target.x, target.z)
+	sight_timer -= delta
+	if sight_timer <= 0:
+		sight_timer = .2
+		has_sight = nav.line_clear(from, to)
+	if has_sight:
+		path = PackedVector2Array()
+		return direct
+	path_timer -= delta
+	if path_timer <= 0 or path.is_empty():
+		path = nav.find_path(from, to)
+		path_timer = .45 + float(entity_id % 7) * .06
+	while path.size() > 1 and from.distance_to(path[0]) < .45:
+		path.remove_at(0)
+	if path.is_empty():
+		return direct
+	var step = path[0] - from
+	return Vector3(step.x, 0, step.y).normalized() if step.length() > .01 else direct
+
 func update_sim(delta: float) -> void:
 	if not alive:
 		return
@@ -89,8 +129,8 @@ func update_sim(delta: float) -> void:
 	to_player.y = 0
 	var distance = to_player.length()
 	var direction = to_player.normalized()
-	var move_direction = direction
-	if kind == "spitter":
+	var move_direction = steer_toward(game.player.global_position, delta)
+	if kind == "spitter" and has_sight:
 		move_direction = direction * (1.0 if distance > 5.5 else (-.5 if distance < 3.5 else 0.0))
 		if timer <= 0:
 			shoot_fan(direction, 3 if Run.floor_number > 1 else 1, .32)
@@ -137,13 +177,24 @@ func update_sim(delta: float) -> void:
 			var d = away.length()
 			if d < 1.8 + radius and d > .01:
 				move_direction += away.normalized() * (1.8 + radius - d) * 2.0
+		# Local separation keeps a crowd from stacking into one blob.
+		for other in game.enemies:
+			if other == self or not is_instance_valid(other) or not other.alive: continue
+			var apart: Vector3 = global_position - other.global_position
+			apart.y = 0
+			var gap = apart.length()
+			var wanted = radius + other.radius + .1
+			if gap < wanted and gap > .01:
+				move_direction += apart / gap * (wanted - gap) * 2.5
 	var slow = maxf(.28, 1.0 - chill_power * .2) if chill_time > 0 else 1.0
 	velocity = move_direction * speed * slow + knock_velocity
 	knock_velocity = knock_velocity.move_toward(Vector3.ZERO, delta * 20)
+	var geometry: RoomGeometry = game.room.geometry
+	if geometry.contains(Vector2(position.x, position.z), ROOM_MARGIN):
+		last_valid = position
 	move_and_slide()
-	position.y = 0
-	position.x = clampf(position.x, -8.55, 8.55)
-	position.z = clampf(position.z, -6.55, 6.55)
+	var kept = geometry.recover(Vector2(last_valid.x, last_valid.z), Vector2(position.x, position.z), ROOM_MARGIN)
+	position = Vector3(kept.x, 0, kept.y)
 	if windup <= 0:
 		visual.scale = visual.scale.lerp(Vector3.ONE, delta * 12)
 	visual.position.y = sin(age * (4 if boss else 7) + entity_id) * .04

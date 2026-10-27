@@ -1,7 +1,7 @@
 extends Node
 signal changed
 signal item_gained(item: Dictionary)
-const SAVE_VERSION := 1
+const SAVE_VERSION := 2
 const ALL_RELICS_CODE := "ALLRELICS"
 const PROFILE_PATH := "user://profile.json"
 const SAVE_PATH := "user://run.json"
@@ -9,7 +9,11 @@ var rng = RandomNumberGenerator.new()
 var seed_value = 0
 var floor_number = 1
 var rooms: Dictionary = {}
+var portals: Dictionary = {}
 var current_room = "0,0"
+# Where the player last entered the current room, in room-local coordinates.
+var entry = {"room": "0,0", "position": [0.0, 2.0]}
+var generator_version = FloorGenerator.VERSION
 var inventory: Array = []
 var weapon_id = "candle"
 var stats: Dictionary = {}
@@ -37,6 +41,7 @@ func start_run(chosen_weapon: String, seed_input := 0, is_daily := false) -> voi
 	seed_value = seed_input if seed_input != 0 else int(Time.get_unix_time_from_system()) % 99999999
 	rng.seed = seed_value
 	floor_number = 1
+	generator_version = FloorGenerator.VERSION
 	inventory = []
 	weapon_id = chosen_weapon
 	coins = 8
@@ -116,54 +121,52 @@ func heal(amount: float) -> void:
 	changed.emit()
 
 func coord(key: String) -> Vector2i:
-	var parts = key.split(",")
-	return Vector2i(int(parts[0]), int(parts[1]))
+	return FloorGenerator.legacy_coord(key)
 
 func room_key(p: Vector2i) -> String:
-	return "%d,%d" % [p.x, p.y]
+	return FloorGenerator.key_of(p)
 
-func neighbors(key: String) -> Array:
+## Rooms joined to this one by a doorway. Concealed passages are omitted, so
+## hidden rooms never leak through neighbour lists, hints or the map.
+func neighbors(key: String, include_concealed := false) -> Array:
 	var result: Array = []
-	for direction in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
-		var next = room_key(coord(key) + direction)
-		if rooms.has(next):
-			result.append(next)
+	for portal_id in rooms[key].get("portals", []):
+		var portal: Dictionary = portals[portal_id]
+		if portal.state == "concealed" and not include_concealed:
+			continue
+		var other: String = portal.b.room if portal.a.room == key else portal.a.room
+		if other not in result:
+			result.append(other)
 	return result
 
+## The portal endpoint on this room's side, in room-local cell coordinates.
+func portal_side(portal_id: String, room_id: String) -> Dictionary:
+	var portal: Dictionary = portals[portal_id]
+	var side: Dictionary = portal.a if portal.a.room == room_id else portal.b
+	return {"cell": FloorGenerator.vec(side.cell) - room_anchor(rooms[room_id]), "dir": FloorGenerator.vec(side.dir)}
+
+func other_room(portal_id: String, room_id: String) -> String:
+	var portal: Dictionary = portals[portal_id]
+	return portal.b.room if portal.a.room == room_id else portal.a.room
+
+func room_anchor(room: Dictionary) -> Vector2i:
+	return FloorGenerator.vec(room.get("anchor", [0, 0]))
+
+func local_cells(room: Dictionary) -> Array:
+	var anchor = room_anchor(room)
+	return room.get("cells", [[anchor.x, anchor.y]]).map(func(value): return FloorGenerator.vec(value) - anchor)
+
 func generate_floor() -> void:
-	var gen = RandomNumberGenerator.new()
-	gen.seed = seed_value + floor_number * 10007
-	rooms = {"0,0": {"type": "start", "cleared": true, "visited": true, "claimed": true}}
-	var keys: Array = ["0,0"]
-	var count = 11 + floor_number * 2
-	while rooms.size() < count:
-		var parent: String = keys[gen.randi_range(0, keys.size() - 1)]
-		var directions = [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]
-		var point = coord(parent) + directions[gen.randi_range(0, 3)]
-		if absi(point.x) > 4 or absi(point.y) > 4:
-			continue
-		var key = room_key(point)
-		if rooms.has(key):
-			continue
-		rooms[key] = {"type": "combat", "cleared": false, "visited": false, "claimed": false}
-		keys.append(key)
-	var distances = {"0,0": 0}
-	var queue: Array = ["0,0"]
-	while not queue.is_empty():
-		var key: String = queue.pop_front()
-		for next in neighbors(key):
-			if not distances.has(next):
-				distances[next] = distances[key] + 1
-				queue.append(next)
-	keys.sort_custom(func(a, b): return distances[a] > distances[b])
-	rooms[keys[0]].type = "boss"
-	rooms[keys[1]].type = "treasure"
-	rooms[keys[2]].type = "shop"
-	rooms[keys[3]].type = "rest"
-	for key in keys:
-		rooms[key]["depth"] = distances[key]
-		rooms[key]["seed"] = seed_value + floor_number * 10007 + coord(key).x * 719 + coord(key).y * 1117
-	current_room = "0,0"
+	var floor_data: Dictionary
+	if generator_version == FloorGenerator.LEGACY_VERSION:
+		# Runs saved before v2 keep the original generator for later floors.
+		floor_data = FloorGenerator.from_legacy(FloorGenerator.legacy_rooms(seed_value, floor_number))
+	else:
+		floor_data = FloorGenerator.generate(seed_value, floor_number)
+	rooms = floor_data.rooms
+	portals = floor_data.portals
+	current_room = FloorGenerator.START_ID
+	entry = {"room": current_room, "position": [0.0, 2.0]}
 	profile.best_floor = maxi(profile.best_floor, floor_number)
 
 func mark_cleared() -> void:
@@ -200,10 +203,24 @@ func save_profile() -> void:
 	_atomic_json(PROFILE_PATH, profile)
 
 func snapshot() -> Dictionary:
-	return {"version": SAVE_VERSION, "seed": seed_value, "floor": floor_number, "rooms": rooms,
-		"current_room": current_room, "inventory": inventory, "weapon": weapon_id, "hp": hp,
+	return {"version": SAVE_VERSION, "generator": generator_version, "content_revision": Content.revision,
+		"seed": seed_value, "floor": floor_number, "rooms": rooms, "portals": portals,
+		"current_room": current_room, "entry": entry, "inventory": inventory, "weapon": weapon_id, "hp": hp,
 		"coins": coins, "kills": kills, "cleared": cleared, "elapsed": elapsed, "daily": daily,
 		"rng_state": str(rng.state)}
+
+## v1 saves predate multi-cell rooms. Their graph, room types, offers, drops,
+## health, inventory, weapon and RNG state are carried over untouched; only
+## footprints and the doorways v1 implied are added. Nothing is regenerated.
+static func migrate_v1(d: Dictionary) -> Dictionary:
+	var migrated: Dictionary = d.duplicate(true)
+	var floor_data = FloorGenerator.from_legacy(d.rooms)
+	migrated.rooms = floor_data.rooms
+	migrated.portals = floor_data.portals
+	migrated.generator = FloorGenerator.LEGACY_VERSION
+	migrated.entry = {"room": d.current_room, "position": [0.0, 2.0]}
+	migrated.version = SAVE_VERSION
+	return migrated
 
 func save_run() -> void:
 	if active:
@@ -216,20 +233,30 @@ func load_run() -> bool:
 	if not has_save():
 		return false
 	var d = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
-	if not d is Dictionary or int(d.get("version", -1)) != SAVE_VERSION:
+	if not d is Dictionary:
 		return false
-	for key in ["seed", "floor", "rooms", "current_room", "inventory", "weapon", "hp", "coins", "kills", "cleared", "elapsed"]:
+	if int(d.get("version", -1)) == 1 and d.get("rooms") is Dictionary and d.has("current_room"):
+		d = migrate_v1(d)
+	if int(d.get("version", -1)) != SAVE_VERSION:
+		return false
+	for key in ["seed", "floor", "rooms", "portals", "current_room", "entry", "inventory", "weapon", "hp", "coins", "kills", "cleared", "elapsed"]:
 		if not d.has(key):
 			return false
 	if not Content.weapon_by_id.has(d.weapon) or not d.rooms.has(d.current_room):
 		return false
+	for portal in d.portals.values():
+		if not d.rooms.has(portal.a.room) or not d.rooms.has(portal.b.room):
+			return false
 	for id in d.inventory:
 		if not Content.item_by_id.has(id):
 			return false
 	seed_value = int(d.seed)
 	floor_number = int(d.floor)
 	rooms = d.rooms
+	portals = d.portals
 	current_room = d.current_room
+	entry = d.entry
+	generator_version = int(d.get("generator", FloorGenerator.VERSION))
 	inventory = d.inventory
 	weapon_id = d.weapon
 	coins = int(d.coins)
