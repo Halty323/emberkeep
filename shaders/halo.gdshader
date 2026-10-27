@@ -2,18 +2,29 @@ shader_type spatial;
 render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabled, fog_disabled;
 uniform vec4 tint : source_color = vec4(1.0, 0.55, 0.15, 0.25);
 uniform float softness = 2.6;
-uniform vec2 room_half_size = vec2(9.0, 7.0);
+// Room footprint mask: one (x0, z0, x1, z1) rectangle per floor cell. Sides
+// shared with a neighbouring cell are pre-extended, so seams stay seamless.
+uniform vec4 room_cells[4];
 varying vec2 world_xz;
 
 void vertex() {
     world_xz = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xz;
 }
 
+float cell_mask(vec4 r, vec2 p) {
+    vec2 low = smoothstep(r.xy, r.xy + vec2(0.15), p);
+    vec2 high = 1.0 - smoothstep(r.zw - vec2(0.15), r.zw, p);
+    return low.x * low.y * high.x * high.y;
+}
+
 void fragment() {
     float d = length(UV - vec2(0.5)) * 2.0;
     float glow = pow(max(0.0, 1.0 - d), softness);
-    vec2 floor_edge = 1.0 - smoothstep(room_half_size - vec2(0.15), room_half_size, abs(world_xz));
-    float intensity = glow * tint.a * floor_edge.x * floor_edge.y;
+    float floor_mask = 0.0;
+    for (int i = 0; i < 4; i++) {
+        floor_mask = max(floor_mask, cell_mask(room_cells[i], world_xz));
+    }
+    float intensity = glow * tint.a * floor_mask;
     if (intensity < 0.001) {
         discard;
     }

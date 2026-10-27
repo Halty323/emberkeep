@@ -26,6 +26,7 @@ var request_dash = false
 var interaction_text = ""
 var interaction_kind = ""
 var interaction_target: Dictionary = {}
+var pending_portal := ""
 var interactions := InteractionRegistry.new()
 var actions := GameActions.new()
 var transition_cooldown = 0.0
@@ -94,6 +95,7 @@ func _ready() -> void:
 	Run.item_gained.connect(on_item_gained)
 	actions.register("Interact", _action_interact)
 	actions.register("CollectPickup", _action_collect_pickup)
+	actions.register("EnterPortal", _action_enter_portal)
 	# Commands from the transport boundary use the same validated handlers.
 	Session.command_received.connect(func(_peer_id, command): perform_action(command))
 	get_tree().auto_accept_quit = false
@@ -104,7 +106,7 @@ func _ready() -> void:
 func setup_inputs() -> void:
 	var actions = {"move_left": [KEY_A, KEY_LEFT], "move_right": [KEY_D, KEY_RIGHT],
 		"move_up": [KEY_W, KEY_UP], "move_down": [KEY_S, KEY_DOWN],
-		"dash": [KEY_SPACE, KEY_SHIFT], "interact": [KEY_E], "pause_game": [KEY_ESCAPE, KEY_P], "journal": [KEY_TAB]}
+		"dash": [KEY_SPACE, KEY_SHIFT], "interact": [KEY_E], "pause_game": [KEY_ESCAPE, KEY_P], "journal": [KEY_TAB], "map": [KEY_M]}
 	for action in actions:
 		if not InputMap.has_action(action): InputMap.add_action(action)
 		for key in actions[action]:
@@ -122,6 +124,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if ui.mode == "play": pause_game()
 		elif ui.mode == "pause": resume_game()
 		elif ui.mode in ["journal", "settings"]: ui.close_subscreen()
+		elif ui.mode == "map": ui.close_map()
 		elif ui.mode == "secret": ui.close_secret_code()
 	elif event.is_action_pressed("dash") and is_playing():
 		request_dash = true
@@ -129,6 +132,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		interact()
 	elif event.is_action_pressed("journal") and is_playing():
 		ui.open_journal("pause")
+	elif event.is_action_pressed("map") and not in_menu:
+		if is_playing(): ui.open_map()
+		elif ui.mode == "map": ui.close_map()
 	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and is_playing():
 		var p = ui.local_point(event.position)
 		if ui.INTERACTION_RECT.has_point(p) and interaction_text != "":
@@ -143,6 +149,7 @@ func _notification(what: int) -> void:
 			if ui.mode == "play": pause_game()
 			elif ui.mode == "pause": resume_game()
 			elif ui.mode in ["settings", "journal"]: ui.close_subscreen()
+			elif ui.mode == "map": ui.close_map()
 			elif ui.mode == "secret": ui.close_secret_code()
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		get_tree().quit()
@@ -223,8 +230,7 @@ func update_camera(delta: float, snap := false) -> void:
 		return
 	var target = Vector3.ZERO
 	if not in_menu and is_instance_valid(player):
-		target = Vector3(clampf(player.position.x * CAMERA_FOLLOW_GAIN, -CAMERA_FOCUS_LIMIT.x, CAMERA_FOCUS_LIMIT.x),
-			0, clampf(player.position.z * CAMERA_FOLLOW_GAIN, -CAMERA_FOCUS_LIMIT.y, CAMERA_FOCUS_LIMIT.y))
+		target = camera_target(player.position)
 		var actors: Array = []
 		for enemy in enemies:
 			if is_instance_valid(enemy) and enemy.alive: actors.append(enemy.position)
@@ -233,6 +239,20 @@ func update_camera(delta: float, snap := false) -> void:
 	var amount = shake if Settings.values.shake else 0.0
 	# Translate the camera without rotating it: movement and aiming axes stay fixed.
 	camera.position = camera_home + camera_focus + Vector3(sin(Time.get_ticks_msec() * .081), cos(Time.get_ticks_msec() * .067), 0) * amount
+
+## Geometry-aware follow: inside a large room the camera tracks the player
+## between cell centres, then eases toward the outer walls exactly as a single
+## room always has. The close zoom never shrinks to fit a whole room.
+func camera_target(at: Vector3) -> Vector3:
+	var area: Rect2 = room.geometry.bounds() if is_instance_valid(room) else Rect2(-9, -7, 18, 14)
+	var track_low := area.position + RoomGeometry.HALF
+	var track_high := area.end - RoomGeometry.HALF
+	var result := Vector3.ZERO
+	var tx := clampf(at.x, track_low.x, track_high.x)
+	var tz := clampf(at.z, track_low.y, track_high.y)
+	result.x = tx + clampf((at.x - tx) * CAMERA_FOLLOW_GAIN, -CAMERA_FOCUS_LIMIT.x, CAMERA_FOCUS_LIMIT.x)
+	result.z = tz + clampf((at.z - tz) * CAMERA_FOLLOW_GAIN, -CAMERA_FOCUS_LIMIT.y, CAMERA_FOCUS_LIMIT.y)
+	return result
 
 func clean_room() -> void:
 	for shot in shots:
@@ -292,21 +312,26 @@ func continue_run() -> void:
 	paused = false
 	camera.h_offset = 0
 	camera.size = CAMERA_GAME_SIZE
-	enter_room(Vector3(0, 0, 2.0))
+	enter_room(checkpoint_spawn(), Run.checkpoint.get("portal", ""))
 	ui.show_screen("play")
 	ui.notify("Welcome back, little light", "Your last safe room remembers you.")
 
-func enter_room(spawn: Vector3) -> void:
+func enter_room(spawn: Vector3, via_portal := "") -> void:
 	clean_room()
 	var data: Dictionary = Run.rooms[Run.current_room]
 	data.visited = true
+	Run.checkpoint = {"room": Run.current_room, "portal": via_portal}
 	room = DungeonRoom.new()
 	scene_root.add_child(room)
-	room.build(self, data)
+	room.build(self, data, false, Run.room_layout(Run.current_room))
+	# Never place the player outside the footprint, e.g. in an L's missing quadrant.
+	var safe := room.geometry.nearest_inside(spawn, .45)
+	spawn = Vector3(safe.x, 0, safe.y)
 	player = Adventurer.new()
 	scene_root.add_child(player)
 	player.setup(self)
 	player.position = spawn
+	player.last_valid = spawn
 	player.invulnerability = 1.0
 	transition_cooldown = .9
 	var gen = RandomNumberGenerator.new()
@@ -317,12 +342,22 @@ func enter_room(spawn: Vector3) -> void:
 			spawn_enemy(Vector3(0, 0, -2.5), "boss")
 		else:
 			var choices = ["mote", "spitter", "charger", "splitter", "brute"]
-			var count = 3 + Run.floor_number + mini(int(data.depth) / 3, 2)
+			var cells: Array[Vector2i] = room.geometry.cells
+			# A large room is one encounter with a few more foes, cleared once.
+			var count = 3 + Run.floor_number + mini(int(data.depth) / 3, 2) + (cells.size() - 1) * 2
 			for i in count:
-				var p = Vector3(gen.randf_range(-6, 6), 0, gen.randf_range(-4, 4))
-				if p.distance_to(spawn) < 3.0: p = -p
+				var offset := Vector2.ZERO
+				if cells.size() > 1:
+					offset = room.geometry.cell_center(cells[gen.randi_range(0, cells.size() - 1)])
+				var center := Vector3(offset.x, 0, offset.y)
+				var p = center + Vector3(gen.randf_range(-6, 6), 0, gen.randf_range(-4, 4))
+				if p.distance_to(spawn) < 3.0: p = center - (p - center)
 				for obstacle in room.obstacles:
-					if p.distance_to(obstacle.position) < 1.6: p.z = 0
+					if p.distance_to(obstacle.position) < 1.6: p.z = center.z
+				if cells.size() > 1 and p.distance_to(spawn) < 3.0:
+					p = center
+				var inside := room.geometry.nearest_inside(p, .6)
+				p = Vector3(inside.x, 0, inside.y)
 				var kind: String = choices[gen.randi_range(0, mini(choices.size() - 1, 2 + Run.floor_number))]
 				spawn_enemy(p, kind)
 	else:
@@ -346,18 +381,58 @@ func enter_room(spawn: Vector3) -> void:
 		ui.notify("The hearth is stirring", "Watch the windup. Dash through danger.", Color("e0a18b"))
 	update_camera(0.0, true)
 
+## Each doorway trigger identifies one portal; several doors may share a wall.
 func check_doors() -> void:
-	var direction = Vector2i.ZERO
-	if absf(player.position.x) > 8.15 and absf(player.position.z) < 1.1:
-		direction = Vector2i(int(signf(player.position.x)), 0)
-	elif absf(player.position.z) > 6.15 and absf(player.position.x) < 1.1:
-		direction = Vector2i(0, int(signf(player.position.z)))
-	if direction == Vector2i.ZERO: return
-	var key = Run.room_key(Run.coord(Run.current_room) + direction)
-	if Run.rooms.has(key):
-		Run.current_room = key
-		Audio.play_sound("door")
-		enter_room(Vector3(-direction.x * 7.3, 0, -direction.y * 5.3))
+	for socket in room.sockets:
+		if socket.portal == "" or socket.get("state", "open") == "concealed": continue
+		var door := room.socket_position(socket)
+		var normal := Vector3(socket.dir.x, 0, socket.dir.y)
+		var lateral := Vector3(absf(normal.z), 0, absf(normal.x))
+		var offset: Vector3 = player.position - door
+		if offset.dot(normal) > -.85 and absf(offset.dot(lateral)) < 1.1:
+			# Transition after this physics step, at a safe boundary.
+			if pending_portal == "":
+				pending_portal = socket.portal
+				call_deferred("_finish_portal_transition")
+			return
+
+func _finish_portal_transition() -> void:
+	var portal := pending_portal
+	pending_portal = ""
+	if portal != "" and is_playing():
+		perform_action({"type": "EnterPortal", "portal": portal})
+
+## Entry anchor inside `room_id` for a portal, in that room's local space.
+func portal_entry(room_id: String, portal_id: String) -> Vector3:
+	var layout := Run.room_layout(room_id)
+	var geometry := RoomGeometry.new(layout.cells)
+	for socket in layout.sockets:
+		if socket.portal == portal_id:
+			var p := geometry.entry_point(socket.cell, socket.dir)
+			return Vector3(p.x, 0, p.y)
+	return Vector3(0, 0, 2.0)
+
+func _action_enter_portal(action: Dictionary) -> Dictionary:
+	var pid := str(action.get("portal", ""))
+	if not is_playing() or not room.open:
+		return GameActions.fail("doors_closed")
+	if not Run.portals.has(pid) or pid not in Run.room_portal_ids.get(Run.current_room, []):
+		return GameActions.fail("unknown_portal")
+	var portal: Dictionary = Run.portals[pid]
+	if portal.get("state", "open") == "concealed":
+		return GameActions.fail("concealed")
+	var destination: String = portal.b if portal.a == Run.current_room else portal.a
+	Run.current_room = destination
+	Audio.play_sound("door")
+	enter_room(portal_entry(destination, pid), pid)
+	return GameActions.ok({"room": destination})
+
+## Where Continue resumes: the saved entry anchor, validated against geometry.
+func checkpoint_spawn() -> Vector3:
+	var portal: String = Run.checkpoint.get("portal", "")
+	if Run.checkpoint.get("room", "") == Run.current_room and portal != "" and Run.portals.has(portal):
+		return portal_entry(Run.current_room, portal)
+	return Vector3(0, 0, 2.0)
 
 func spawn_enemy(at: Vector3, kind: String) -> DungeonEnemy:
 	var enemy = DungeonEnemy.new()
@@ -365,6 +440,7 @@ func spawn_enemy(at: Vector3, kind: String) -> DungeonEnemy:
 	entity_counter += 1
 	enemy.setup(self, kind, entity_counter)
 	enemy.position = at
+	enemy.last_valid = at
 	enemies.append(enemy)
 	return enemy
 

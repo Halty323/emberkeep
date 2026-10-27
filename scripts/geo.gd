@@ -1,6 +1,9 @@
 class_name Geo
 extends RefCounted
 static var materials: Dictionary = {}
+## Floor footprint of the room being shown, as cell rectangles (x0, z0, x1, z1).
+## Glows clip to this mask so they never spill into the void of an L-shaped room.
+static var footprint := PackedVector4Array([Vector4(-9, -7, 9, 7), Vector4.ZERO, Vector4.ZERO, Vector4.ZERO])
 
 static func material(color: Color, emission := 0.0) -> StandardMaterial3D:
 	var key = str(color) + str(emission)
@@ -64,6 +67,7 @@ static func halo(parent: Node3D, position: Vector3, size: float, color: Color) -
 	var mat = ShaderMaterial.new()
 	mat.shader = preload("res://shaders/halo.gdshader")
 	mat.set_shader_parameter("tint", color)
+	mat.set_shader_parameter("room_cells", footprint)
 	instance.material_override = mat
 	# Keep unlit effects out of the GLES3 per-light/shadow rendering passes.
 	instance.layers = 2

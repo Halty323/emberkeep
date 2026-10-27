@@ -28,6 +28,9 @@ var boss = false
 var boss_cycle = 0
 var summon_timer = 9.0
 var color = Color("bb7667")
+var last_valid = Vector3.ZERO
+var path := PackedVector2Array()
+var path_timer = 0.0
 
 func setup(owner_game: Node3D, type: String, id: int) -> void:
 	game = owner_game
@@ -89,9 +92,9 @@ func update_sim(delta: float) -> void:
 	to_player.y = 0
 	var distance = to_player.length()
 	var direction = to_player.normalized()
-	var move_direction = direction
+	var move_direction = steer_toward(game.player.position, delta)
 	if kind == "spitter":
-		move_direction = direction * (1.0 if distance > 5.5 else (-.5 if distance < 3.5 else 0.0))
+		move_direction = move_direction * (1.0 if distance > 5.5 else 0.0) + (direction * -.5 if distance < 3.5 else Vector3.ZERO)
 		if timer <= 0:
 			shoot_fan(direction, 3 if Run.floor_number > 1 else 1, .32)
 			timer = 2.2
@@ -131,7 +134,8 @@ func update_sim(delta: float) -> void:
 	if charge_time > 0:
 		charge_time -= delta
 		move_direction = charge_direction * (5.0 if boss else 6.0)
-	else:
+	elif path.is_empty():
+		# Grid paths already route around pillars; repulsion is for direct pursuit.
 		for obstacle in game.room.obstacles:
 			var away: Vector3 = global_position - obstacle.position
 			var d = away.length()
@@ -142,14 +146,42 @@ func update_sim(delta: float) -> void:
 	knock_velocity = knock_velocity.move_toward(Vector3.ZERO, delta * 20)
 	move_and_slide()
 	position.y = 0
-	position.x = clampf(position.x, -8.55, 8.55)
-	position.z = clampf(position.z, -6.55, 6.55)
+	var geometry: RoomGeometry = game.room.geometry
+	var margin = minf(.45, radius)
+	if geometry.contains(position, margin):
+		last_valid = position
+	else:
+		position = last_valid if geometry.contains(last_valid, margin) else _inside(position, margin)
+		last_valid = position
 	if windup <= 0:
 		visual.scale = visual.scale.lerp(Vector3.ONE, delta * 12)
 	visual.position.y = sin(age * (4 if boss else 7) + entity_id) * .04
 	visual.rotation.y = lerp_angle(visual.rotation.y, atan2(-direction.x, -direction.z), delta * 8)
 	if distance < radius + .45:
 		game.player.hurt(1.0, global_position)
+
+func _inside(p: Vector3, margin: float) -> Vector3:
+	var q: Vector2 = game.room.geometry.nearest_inside(p, margin)
+	return Vector3(q.x, 0, q.y)
+
+## Direct pursuit when the straight line stays on the floor; otherwise follow a
+## coarse grid path around concave corners. Paths refresh on a staggered timer.
+func steer_toward(target: Vector3, delta: float) -> Vector3:
+	var direct: Vector3 = target - position
+	direct.y = 0
+	var room = game.room
+	if room.navigation == null or room.geometry.segment_clear(position, target, minf(.45, radius)):
+		path = PackedVector2Array()
+		return direct.normalized()
+	path_timer -= delta
+	if path.is_empty() or path_timer <= 0:
+		path_timer = .4 + float(entity_id % 7) * .05
+		path = room.navigation.find_path(Vector2(position.x, position.z), Vector2(target.x, target.z))
+	while not path.is_empty() and Vector2(position.x, position.z).distance_to(path[0]) < .6:
+		path.remove_at(0)
+	if path.is_empty():
+		return direct.normalized()
+	return Vector3(path[0].x - position.x, 0, path[0].y - position.z).normalized()
 
 func shoot_fan(direction: Vector3, count: int, spread: float) -> void:
 	for i in count:

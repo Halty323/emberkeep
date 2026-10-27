@@ -17,6 +17,9 @@ var haste_time = 0.0
 var walk_time = 0.0
 var recoil = 0.0
 var orbit_meshes: Array[MeshInstance3D] = []
+## Last position that satisfied the room footprint (shared recovery path).
+var last_valid = Vector3.ZERO
+const FOOTPRINT_MARGIN = .3
 
 func setup(owner_game: Node3D) -> void:
 	game = owner_game
@@ -85,9 +88,19 @@ func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting:
 		var target = direction * 5.2 * float(Run.stats.speed)
 		velocity = velocity.move_toward(target, delta * 47.0)
 	move_and_slide()
-	position.x = clampf(position.x, -8.7, 8.7)
-	position.z = clampf(position.z, -6.7, 6.7)
 	position.y = 0
+	# Walls collide first; this only undoes numerical escape, and never
+	# teleports across the missing quadrant of an L-shaped room.
+	if game.room.geometry.contains(position, FOOTPRINT_MARGIN):
+		last_valid = position
+	else:
+		var slide := Vector3(position.x, 0, last_valid.z)
+		if game.room.geometry.contains(slide, FOOTPRINT_MARGIN):
+			position = slide
+		else:
+			slide = Vector3(last_valid.x, 0, position.z)
+			position = slide if game.room.geometry.contains(slide, FOOTPRINT_MARGIN) else last_valid
+		last_valid = position
 	walk_time += delta * velocity.length() * 2.7
 	visual.position.y = absf(sin(walk_time)) * .055
 	visual.rotation.y = lerp_angle(visual.rotation.y, atan2(-aim_direction.x, -aim_direction.z), delta * 18)

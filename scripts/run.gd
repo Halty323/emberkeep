@@ -5,6 +5,7 @@ const SAVE_VERSION := 2
 ## Floor generator revisions. A run keeps the generator it started with, so a
 ## migrated save never regenerates its floor or advances its gameplay RNG.
 const GENERATOR_LEGACY := 1
+const GENERATOR_V2 := 2
 const ALL_RELICS_CODE := "ALLRELICS"
 const PROFILE_PATH := "user://profile.json"
 const SAVE_PATH := "user://run.json"
@@ -35,6 +36,12 @@ var modifiers: Array = []
 var reward_ledger: Dictionary = {}
 var pending_bombs: Array = []
 var next_entity = 1000
+## Floor graph: explicit portals for v2 floors (derived for legacy floors).
+var portals: Dictionary = {}
+var cell_owner: Dictionary = {}
+var room_portal_ids: Dictionary = {}
+## Where Continue places the player: the room and the portal used to enter it.
+var checkpoint: Dictionary = {}
 ## Device preferences moved to Settings (user://settings.json); the profile
 ## holds only progress that would follow a player between devices.
 const PROFILE_DEFAULTS = {"version": 2, "runs": 0, "wins": 0, "kills": 0, "best_floor": 0, "discovered": []}
@@ -79,7 +86,8 @@ func start_run(chosen_weapon: String, seed_input := 0, is_daily := false) -> voi
 	changed.emit()
 
 func reset_run_extras() -> void:
-	generator = GENERATOR_LEGACY
+	generator = GENERATOR_V2
+	checkpoint = {}
 	keys = 0
 	bombs = 0
 	wards = 0
@@ -164,15 +172,103 @@ func coord(key: String) -> Vector2i:
 func room_key(p: Vector2i) -> String:
 	return "%d,%d" % [p.x, p.y]
 
-func neighbors(key: String) -> Array:
+## Rooms connected to `key` through a known, passable portal.
+func neighbors(key: String, include_hidden := false) -> Array:
 	var result: Array = []
-	for direction in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
-		var next = room_key(coord(key) + direction)
-		if rooms.has(next):
-			result.append(next)
+	for pid in room_portal_ids.get(key, []):
+		var portal: Dictionary = portals[pid]
+		if not include_hidden and portal.get("state", "open") == "concealed":
+			continue
+		var other: String = portal.b if portal.a == key else portal.a
+		if other not in result:
+			result.append(other)
 	return result
 
+## Absolute map cells occupied by a room. Legacy rooms are a single cell.
+func room_cells(key: String) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	var room: Dictionary = rooms.get(key, {})
+	if room.has("cells"):
+		for c in room.cells:
+			result.append(Vector2i(int(c[0]), int(c[1])))
+	else:
+		result.append(coord(key))
+	return result
+
+## Room-local cells (origin cell at 0,0) and doorway sockets for building a room.
+func room_layout(key: String) -> Dictionary:
+	var origin := coord(key)
+	var cells: Array = []
+	for c in room_cells(key):
+		cells.append(c - origin)
+	var sockets: Array = []
+	for pid in room_portal_ids.get(key, []):
+		var portal: Dictionary = portals[pid]
+		var mine := _cell(portal.cell_a if portal.a == key else portal.cell_b)
+		var other := _cell(portal.cell_b if portal.a == key else portal.cell_a)
+		sockets.append({"portal": pid, "cell": mine - origin, "dir": other - mine,
+			"other": portal.b if portal.a == key else portal.a, "state": portal.get("state", "open")})
+	return {"cells": cells, "sockets": sockets}
+
+static func _cell(value) -> Vector2i:
+	return value if value is Vector2i else Vector2i(int(value[0]), int(value[1]))
+
+static func rotate_cells(cells: Array, rotation: int) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	for c in cells:
+		var v := _cell(c)
+		for i in posmod(rotation, 4):
+			v = Vector2i(-v.y, v.x)
+		result.append(v)
+	return result
+
+static func portal_id(a: Vector2i, b: Vector2i) -> String:
+	var first := a if a.x < b.x or (a.x == b.x and a.y < b.y) else b
+	var second := b if first == a else a
+	return "%d,%d>%d,%d" % [first.x, first.y, second.x, second.y]
+
+## Derived caches only: cell ownership and per-room portal lists. Legacy floors
+## derive their doors from adjacency exactly as the old game did.
+func rebuild_floor_index() -> void:
+	cell_owner = {}
+	room_portal_ids = {}
+	for key in rooms:
+		room_portal_ids[key] = []
+		for c in room_cells(key):
+			cell_owner[c] = key
+	if generator == GENERATOR_LEGACY:
+		portals = {}
+		for key in rooms:
+			for direction in [Vector2i.RIGHT, Vector2i.DOWN]:
+				var other := room_key(coord(key) + direction)
+				if rooms.has(other):
+					var a := coord(key)
+					var b := coord(other)
+					portals[portal_id(a, b)] = {"a": key, "b": other, "cell_a": [a.x, a.y], "cell_b": [b.x, b.y], "state": "open"}
+	for pid in portals:
+		var portal: Dictionary = portals[pid]
+		if room_portal_ids.has(portal.a): room_portal_ids[portal.a].append(pid)
+		if room_portal_ids.has(portal.b): room_portal_ids[portal.b].append(pid)
+	for key in room_portal_ids:
+		room_portal_ids[key].sort()
+
 func generate_floor() -> void:
+	if generator == GENERATOR_LEGACY:
+		generate_floor_legacy()
+	else:
+		var built := false
+		for attempt in 12:
+			if _generate_v2(attempt, false):
+				built = true
+				break
+		if not built:
+			# Known-valid fallback: single-cell rooms always fit the bounds.
+			_generate_v2(99, true)
+	current_room = "0,0"
+	checkpoint = {}
+	profile.best_floor = maxi(profile.best_floor, floor_number)
+
+func generate_floor_legacy() -> void:
 	var gen = RandomNumberGenerator.new()
 	gen.seed = seed_value + floor_number * 10007
 	rooms = {"0,0": {"type": "start", "cleared": true, "visited": true, "claimed": true}}
@@ -189,6 +285,7 @@ func generate_floor() -> void:
 			continue
 		rooms[key] = {"type": "combat", "cleared": false, "visited": false, "claimed": false}
 		keys.append(key)
+	rebuild_floor_index()
 	var distances = {"0,0": 0}
 	var queue: Array = ["0,0"]
 	while not queue.is_empty():
@@ -205,8 +302,121 @@ func generate_floor() -> void:
 	for key in keys:
 		rooms[key]["depth"] = distances[key]
 		rooms[key]["seed"] = seed_value + floor_number * 10007 + coord(key).x * 719 + coord(key).y * 1117
-	current_room = "0,0"
-	profile.best_floor = maxi(profile.best_floor, floor_number)
+
+func _pick_template(gen: RandomNumberGenerator, singles_only: bool, cells_left: int) -> Dictionary:
+	var choices: Array = []
+	var total := 0.0
+	for template in Content.families.get("rooms", []):
+		if "combat" not in template.roles or (singles_only and template.cells.size() > 1):
+			continue
+		if template.cells.size() - 1 > cells_left:
+			continue
+		choices.append(template)
+		total += float(template.weight)
+	var roll := gen.randf() * total
+	for template in choices:
+		roll -= float(template.weight)
+		if roll <= 0:
+			return template
+	return choices.back()
+
+## Generator v2: real multi-cell footprints joined by explicit portals.
+## Bounded retries; the caller falls back to single cells if nothing fits.
+func _generate_v2(attempt: int, singles_only: bool) -> bool:
+	var gen = RandomNumberGenerator.new()
+	gen.seed = seed_value + floor_number * 10007 + attempt * 7919
+	var single: Dictionary = Content.get_def("rooms", "hall_single")
+	rooms = {"0,0": {"type": "start", "cleared": true, "visited": true, "claimed": true,
+		"template": single.id, "revision": int(single.revision), "rotation": 0, "cells": [[0, 0]]}}
+	portals = {}
+	var owner := {Vector2i.ZERO: "0,0"}
+	var keys: Array = ["0,0"]
+	var count = 11 + floor_number * 2
+	var cell_budget = count + 6
+	var used_cells := 1
+	var tries := 0
+	while keys.size() < count and tries < 4000:
+		tries += 1
+		var parent: String = keys[gen.randi_range(0, keys.size() - 1)]
+		var parent_cells: Array = rooms[parent].cells
+		var from := _cell(parent_cells[gen.randi_range(0, parent_cells.size() - 1)])
+		var direction: Vector2i = RoomGeometry.DIRECTIONS[gen.randi_range(0, 3)]
+		var target := from + direction
+		if owner.has(target) or absi(target.x) > 4 or absi(target.y) > 4:
+			continue
+		var template := _pick_template(gen, singles_only, cell_budget - used_cells - (count - keys.size() - 1))
+		var rotations: Array = template.rotations
+		var rotation := int(rotations[gen.randi_range(0, rotations.size() - 1)])
+		var shape := rotate_cells(template.cells, rotation)
+		var anchor := target - shape[gen.randi_range(0, shape.size() - 1)]
+		var placed: Array[Vector2i] = []
+		var fits := true
+		for c in shape:
+			var cell := anchor + c
+			if owner.has(cell) or absi(cell.x) > 4 or absi(cell.y) > 4:
+				fits = false
+				break
+			placed.append(cell)
+		if not fits:
+			continue
+		var key := room_key(anchor)
+		var cell_list: Array = []
+		for cell in placed:
+			owner[cell] = key
+			cell_list.append([cell.x, cell.y])
+		rooms[key] = {"type": "combat", "cleared": false, "visited": false, "claimed": false,
+			"template": template.id, "revision": int(template.revision), "rotation": rotation, "cells": cell_list}
+		keys.append(key)
+		used_cells += placed.size()
+		portals[portal_id(from, target)] = {"a": parent, "b": key, "cell_a": [from.x, from.y], "cell_b": [target.x, target.y], "state": "open"}
+	if keys.size() < count:
+		return false
+	# A few extra doors between touching rooms form loops; one per room pair.
+	var linked := {}
+	for pid in portals:
+		linked[[portals[pid].a, portals[pid].b]] = true
+		linked[[portals[pid].b, portals[pid].a]] = true
+	var cells_sorted: Array = owner.keys()
+	cells_sorted.sort()
+	for cell in cells_sorted:
+		for direction in [Vector2i.RIGHT, Vector2i.DOWN]:
+			var other_cell: Vector2i = cell + direction
+			if not owner.has(other_cell) or owner[other_cell] == owner[cell]:
+				continue
+			var pair = [owner[cell], owner[other_cell]]
+			if linked.has(pair) or gen.randf() > .22:
+				continue
+			linked[pair] = true
+			linked[[pair[1], pair[0]]] = true
+			portals[portal_id(cell, other_cell)] = {"a": pair[0], "b": pair[1], "cell_a": [cell.x, cell.y], "cell_b": [other_cell.x, other_cell.y], "state": "open"}
+	rebuild_floor_index()
+	var distances = {"0,0": 0}
+	var queue: Array = ["0,0"]
+	while not queue.is_empty():
+		var key: String = queue.pop_front()
+		for next in neighbors(key):
+			if not distances.has(next):
+				distances[next] = distances[key] + 1
+				queue.append(next)
+	if distances.size() != rooms.size():
+		return false
+	keys.sort_custom(func(a, b): return distances[a] > distances[b] or (distances[a] == distances[b] and a < b))
+	for role in ["boss", "treasure", "shop", "rest"]:
+		var assigned := false
+		for key in keys:
+			var room: Dictionary = rooms[key]
+			if room.type == "combat" and role in Content.get_def("rooms", room.template).roles:
+				room.type = role
+				assigned = true
+				break
+		if not assigned:
+			return false
+	var large := 0
+	for key in keys:
+		rooms[key]["depth"] = distances[key]
+		rooms[key]["seed"] = seed_value + floor_number * 10007 + coord(key).x * 719 + coord(key).y * 1117
+		if rooms[key].cells.size() > 1: large += 1
+	return singles_only or large >= 1
 
 func mark_cleared() -> void:
 	if rooms[current_room].cleared:
@@ -247,7 +457,8 @@ func snapshot() -> Dictionary:
 		"coins": coins, "kills": kills, "cleared": cleared, "elapsed": elapsed, "daily": daily,
 		"rng_state": str(rng.state), "generator": generator, "keys": keys, "bombs": bombs, "wards": wards,
 		"active_item": active_item, "cooldowns": cooldowns, "modifiers": modifiers,
-		"reward_ledger": reward_ledger, "pending_bombs": pending_bombs, "next_entity": next_entity}
+		"reward_ledger": reward_ledger, "pending_bombs": pending_bombs, "next_entity": next_entity,
+		"portals": portals if generator != GENERATOR_LEGACY else {}, "checkpoint": checkpoint}
 
 func save_run() -> void:
 	if active:
@@ -294,6 +505,9 @@ func load_run() -> bool:
 	reward_ledger = d.reward_ledger
 	pending_bombs = d.pending_bombs
 	next_entity = int(d.next_entity)
+	portals = d.get("portals", {})
+	checkpoint = d.get("checkpoint", {})
+	rebuild_floor_index()
 	rng.seed = seed_value
 	rng.state = int(d.get("rng_state", str(rng.state)))
 	rebuild_stats()
@@ -323,6 +537,8 @@ func migrate_save(d: Dictionary) -> Dictionary:
 			for drop in room.get("pickups", []):
 				highest = maxi(highest, int(drop.get("id", 0)))
 		d.next_entity = highest
+		d.portals = {}
+		d.checkpoint = {}
 		d.version = 2
 		version = 2
 	if version != SAVE_VERSION:
@@ -332,6 +548,11 @@ func migrate_save(d: Dictionary) -> Dictionary:
 			return {}
 	if not d.active_item is Dictionary or not d.cooldowns is Dictionary or not d.reward_ledger is Dictionary:
 		return {}
+	if not d.get("portals", {}) is Dictionary or not d.get("rooms") is Dictionary:
+		return {}
+	for portal in d.get("portals", {}).values():
+		if not portal is Dictionary or not d.rooms.has(portal.get("a", "")) or not d.rooms.has(portal.get("b", "")):
+			return {}
 	return d
 
 func _atomic_json(path: String, value: Dictionary) -> void:

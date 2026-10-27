@@ -90,7 +90,49 @@ func validate() -> Array[String]:
 			var validator: String = "_validate_" + family
 			if has_method(validator):
 				call(validator, problems, record)
+	if not by_family.get("rooms", {}).has("hall_single"):
+		problems.append("rooms: the single-cell template hall_single is required")
 	return problems
+
+const ROOM_ROLES = ["start", "combat", "treasure", "shop", "rest", "boss", "secret"]
+
+func _validate_rooms(problems: Array[String], room: Dictionary) -> void:
+	var cells = room.get("cells")
+	var set := {}
+	if not cells is Array or cells.is_empty() or cells.size() > 4:
+		problems.append("room %s needs one to four footprint cells" % room.get("id"))
+		return
+	for c in cells:
+		if not c is Array or c.size() != 2 or not (c[0] is float or c[0] is int) or not (c[1] is float or c[1] is int):
+			problems.append("room %s has an invalid cell" % room.get("id"))
+			return
+		var cell := Vector2i(int(c[0]), int(c[1]))
+		if set.has(cell):
+			problems.append("room %s repeats a footprint cell" % room.get("id"))
+		set[cell] = true
+	if not set.has(Vector2i.ZERO):
+		problems.append("room %s footprint must include its origin cell" % room.get("id"))
+	# Footprint cells must form one 4-connected shape.
+	var seen := {Vector2i.ZERO: true}
+	var queue: Array = [Vector2i.ZERO]
+	while not queue.is_empty():
+		var at: Vector2i = queue.pop_front()
+		for d in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+			if set.has(at + d) and not seen.has(at + d):
+				seen[at + d] = true
+				queue.append(at + d)
+	if seen.size() != set.size():
+		problems.append("room %s footprint is not connected" % room.get("id"))
+	var rotations = room.get("rotations")
+	if not rotations is Array or rotations.is_empty() or rotations.any(func(r): return not (r is float or r is int) or int(r) < 0 or int(r) > 3):
+		problems.append("room %s has invalid rotations" % room.get("id"))
+	var roles = room.get("roles")
+	if not roles is Array or roles.is_empty() or roles.any(func(r): return r not in ROOM_ROLES):
+		problems.append("room %s has unknown roles" % room.get("id"))
+	if not (room.get("weight") is float or room.get("weight") is int) or float(room.weight) <= 0:
+		problems.append("room %s needs a positive weight" % room.get("id"))
+	if not (room.get("revision") is float or room.get("revision") is int):
+		problems.append("room %s needs a revision" % room.get("id"))
 
 func _check_id(problems: Array[String], id_regex: RegEx, seen: Dictionary, label: String, record: Dictionary) -> void:
 	var id = record.get("id")

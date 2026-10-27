@@ -71,17 +71,23 @@ func update_sim(delta: float) -> void:
 	var target_position = global_position + movement
 	var query = PhysicsRayQueryParameters3D.create(global_position, target_position, 1)
 	var hit = get_world_3d().direct_space_state.intersect_ray(query)
-	var boundary = absf(target_position.x) > 8.9 or absf(target_position.z) > 6.9
+	var geometry: RoomGeometry = game.room.geometry
+	var boundary = not geometry.contains(target_position, .1)
 	if not hit.is_empty() or boundary:
 		if bounces > 0:
 			bounces -= 1
-			var normal: Vector3 = hit.normal if not hit.is_empty() else (Vector3(-signf(direction.x), 0, 0) if absf(target_position.x) > 8.9 else Vector3(0, 0, -signf(direction.z)))
+			# Ricochet off the wall actually struck: the physics normal, or the
+			# nearest exposed edge of the footprint (doorways, L corners).
+			var edge := geometry.boundary_normal(target_position)
+			var normal: Vector3 = hit.normal if not hit.is_empty() else Vector3(edge.x, 0, edge.y)
+			normal.y = 0
+			normal = normal.normalized()
 			direction = direction.bounce(normal).normalized()
 			if not hit.is_empty():
 				global_position = hit.position + normal * .12
 			else:
-				global_position.x = clampf(global_position.x, -8.8, 8.8)
-				global_position.z = clampf(global_position.z, -6.8, 6.8)
+				var inside := geometry.nearest_inside(global_position, .2)
+				global_position = Vector3(inside.x, global_position.y, inside.y)
 		else:
 			Effects.burst(game, global_position, tint, 2, .35)
 			remove()
