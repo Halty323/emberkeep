@@ -29,6 +29,11 @@ var interaction_target: Dictionary = {}
 var pending_portal := ""
 var interactions := InteractionRegistry.new()
 var actions := GameActions.new()
+var items: ItemSystem
+## Visual nodes for durable bombs in the current room, by bomb record id.
+var bomb_nodes: Dictionary = {}
+var request_active = false
+var request_bomb = false
 var transition_cooldown = 0.0
 var entity_counter = 10
 var chosen_reward_shop = false
@@ -40,6 +45,7 @@ var screen_down = Vector3(18, 0, 22).normalized()
 
 func _ready() -> void:
 	setup_inputs()
+	items = ItemSystem.new(self)
 	# Reserve a useful 512px tile for the single optional lantern shadow.
 	get_viewport().positional_shadow_atlas_quad_0 = Viewport.SHADOW_ATLAS_QUADRANT_SUBDIV_1
 	room_environment = WorldEnvironment.new()
@@ -96,6 +102,8 @@ func _ready() -> void:
 	actions.register("Interact", _action_interact)
 	actions.register("CollectPickup", _action_collect_pickup)
 	actions.register("EnterPortal", _action_enter_portal)
+	actions.register("UseActive", func(_action): return items.use_active() if is_playing() else GameActions.fail("not_playing"))
+	actions.register("PlaceBomb", _action_place_bomb)
 	# Commands from the transport boundary use the same validated handlers.
 	Session.command_received.connect(func(_peer_id, command): perform_action(command))
 	get_tree().auto_accept_quit = false
@@ -106,14 +114,16 @@ func _ready() -> void:
 func setup_inputs() -> void:
 	var actions = {"move_left": [KEY_A, KEY_LEFT], "move_right": [KEY_D, KEY_RIGHT],
 		"move_up": [KEY_W, KEY_UP], "move_down": [KEY_S, KEY_DOWN],
-		"dash": [KEY_SPACE, KEY_SHIFT], "interact": [KEY_E], "pause_game": [KEY_ESCAPE, KEY_P], "journal": [KEY_TAB], "map": [KEY_M]}
+		"dash": [KEY_SPACE, KEY_SHIFT], "interact": [KEY_E], "pause_game": [KEY_ESCAPE, KEY_P], "journal": [KEY_TAB], "map": [KEY_M],
+		"active": [KEY_F], "bomb": [KEY_B]}
 	for action in actions:
 		if not InputMap.has_action(action): InputMap.add_action(action)
 		for key in actions[action]:
 			var event = InputEventKey.new()
 			event.physical_keycode = key
 			InputMap.action_add_event(action, event)
-	var joy_actions = {"dash": JOY_BUTTON_RIGHT_SHOULDER, "interact": JOY_BUTTON_A, "pause_game": JOY_BUTTON_START}
+	var joy_actions = {"dash": JOY_BUTTON_RIGHT_SHOULDER, "interact": JOY_BUTTON_A, "pause_game": JOY_BUTTON_START,
+		"active": JOY_BUTTON_LEFT_SHOULDER, "bomb": JOY_BUTTON_X}
 	for action in joy_actions:
 		var event = InputEventJoypadButton.new()
 		event.button_index = joy_actions[action]
@@ -128,6 +138,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif ui.mode == "secret": ui.close_secret_code()
 	elif event.is_action_pressed("dash") and is_playing():
 		request_dash = true
+	elif event.is_action_pressed("active") and is_playing():
+		request_active = true
+	elif event.is_action_pressed("bomb") and is_playing():
+		request_bomb = true
 	elif event.is_action_pressed("interact") and is_playing():
 		interact()
 	elif event.is_action_pressed("journal") and is_playing():
@@ -137,7 +151,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif ui.mode == "map": ui.close_map()
 	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and is_playing():
 		var p = ui.local_point(event.position)
-		if ui.INTERACTION_RECT.has_point(p) and interaction_text != "":
+		var button = ui.action_button_at(p) if ui.touch_controls_visible() else ""
+		if button != "":
+			ui.press_action_button(button)
+		elif ui.INTERACTION_RECT.has_point(p) and interaction_text != "":
 			interact()
 
 func _notification(what: int) -> void:
@@ -193,6 +210,17 @@ func _physics_process(delta: float) -> void:
 	if request_dash:
 		player.dash()
 		request_dash = false
+	# Only a fresh press uses an item; holding never re-fires at cooldown expiry.
+	if request_active:
+		request_active = false
+		var used := perform_action({"type": "UseActive"})
+		if not used.ok and used.reason in ["insufficient_coins", "not_useful"]:
+			ui.notify(items.equipped_def().get("name", ""), "Not enough coins." if used.reason == "insufficient_coins" else "You are already at full health.", Color("efbd9f"))
+	if request_bomb:
+		request_bomb = false
+		perform_action({"type": "PlaceBomb"})
+	for bomb in items.tick(delta):
+		detonate_bomb(bomb)
 	player.update_sim(delta, move_input, aim, shooting)
 	for enemy in enemies.duplicate():
 		if is_instance_valid(enemy) and is_playing(): enemy.update_sim(delta)
@@ -261,6 +289,7 @@ func clean_room() -> void:
 		if is_instance_valid(enemy): enemy.queue_free()
 	for pickup in pickups:
 		if is_instance_valid(pickup): pickup.queue_free()
+	bomb_nodes.clear()
 	shots.clear()
 	enemies.clear()
 	pickups.clear()
@@ -339,7 +368,7 @@ func enter_room(spawn: Vector3, via_portal := "") -> void:
 	if not data.cleared and data.type in ["combat", "boss"]:
 		room.set_open(false)
 		if data.type == "boss":
-			spawn_enemy(Vector3(0, 0, -2.5), "boss")
+			spawn_enemy(Vector3(0, 0, -2.5), "boss", "%d:%s:boss" % [Run.floor_number, Run.current_room])
 		else:
 			var choices = ["mote", "spitter", "charger", "splitter", "brute"]
 			var cells: Array[Vector2i] = room.geometry.cells
@@ -359,7 +388,8 @@ func enter_room(spawn: Vector3, via_portal := "") -> void:
 				var inside := room.geometry.nearest_inside(p, .6)
 				p = Vector3(inside.x, 0, inside.y)
 				var kind: String = choices[gen.randi_range(0, mini(choices.size() - 1, 2 + Run.floor_number))]
-				spawn_enemy(p, kind)
+				# Deterministic source IDs: a restarted encounter cannot pay twice.
+				spawn_enemy(p, kind, "%d:%s:%d" % [Run.floor_number, Run.current_room, i])
 	else:
 		room.set_open(true)
 		if not data.cleared:
@@ -374,9 +404,14 @@ func enter_room(spawn: Vector3, via_portal := "") -> void:
 			make_marker("treasure")
 		elif data.type == "boss":
 			make_marker("exit", Vector3(0, 0, -1.5))
-		for drop in data.get("pickups", []):
-			spawn_pickup(Vector3(drop.position[0], 0, drop.position[1]), drop.kind, int(drop.value), int(drop.id))
 		Run.save_run()
+	# Persistent drops, chests, dropped actives and live bombs return with the room.
+	for drop in data.get("pickups", []):
+		spawn_pickup(Vector3(drop.position[0], 0, drop.position[1]), drop.kind, int(drop.value), int(drop.id))
+	build_room_objects()
+	for bomb in Run.pending_bombs:
+		if bomb.room == Run.current_room:
+			make_bomb_node(bomb)
 	if data.type == "boss" and not data.cleared:
 		ui.notify("The hearth is stirring", "Watch the windup. Dash through danger.", Color("e0a18b"))
 	update_camera(0.0, true)
@@ -434,11 +469,13 @@ func checkpoint_spawn() -> Vector3:
 		return portal_entry(Run.current_room, portal)
 	return Vector3(0, 0, 2.0)
 
-func spawn_enemy(at: Vector3, kind: String) -> DungeonEnemy:
+## `source` is the stable reward identity; summoned foes pass "" and never pay.
+func spawn_enemy(at: Vector3, kind: String, source := "") -> DungeonEnemy:
 	var enemy = DungeonEnemy.new()
 	scene_root.add_child(enemy)
 	entity_counter += 1
 	enemy.setup(self, kind, entity_counter)
+	enemy.source = source
 	enemy.position = at
 	enemy.last_valid = at
 	enemies.append(enemy)
@@ -476,6 +513,11 @@ func blast(at: Vector3, radius: float, damage: float, friendly: bool, excluded: 
 			player.hurt(1, at)
 
 func on_enemy_killed(enemy: DungeonEnemy) -> void:
+	# Reward credit and its drops are one transaction keyed by the source ID.
+	if enemy.source == "" or Run.reward_ledger.has(enemy.source):
+		return
+	Run.reward_ledger[enemy.source] = true
+	Run.kills += 1
 	var expected = 1.35 * (1.0 + Run.stats.coin_bonus)
 	var amount = int(floor(expected)) + int(Run.rng.randf() < fposmod(expected, 1.0))
 	if enemy.boss:
@@ -485,9 +527,10 @@ func on_enemy_killed(enemy: DungeonEnemy) -> void:
 		for shot in shots:
 			if is_instance_valid(shot) and not shot.friendly: shot.remove()
 	for i in (4 if enemy.boss else 1):
-		spawn_pickup(enemy.global_position + Vector3(sin(i * 2.4) * .4, 0, cos(i * 2.4) * .4), "coin", amount / 4 if enemy.boss else amount)
-	if Run.rng.randf() < .10 + Run.stats.luck * .025:
-		spawn_pickup(enemy.global_position + Vector3(.4, 0, -.3), "heart", 1)
+		spawn_pickup(enemy.global_position + Vector3(sin(i * 2.4) * .4, 0, cos(i * 2.4) * .4), "copper_coin", amount / 4 if enemy.boss else amount)
+	var bonus := ItemSystem.roll_table("enemy_bonus", Run.rng, Run.stats.luck)
+	for i in bonus.size():
+		spawn_pickup(enemy.global_position + Vector3(.4, 0, -.3 + i * .35), bonus[i], int(ItemSystem.pickup_def(bonus[i]).amount))
 
 func spawn_pickup(at: Vector3, kind: String, amount: int, restored_id := -1) -> void:
 	var pickup = DungeonPickup.new()
@@ -514,7 +557,11 @@ func clear_room() -> void:
 		make_marker("treasure")
 	else:
 		data.claimed = true
-		if Run.rng.randf() < .4: spawn_pickup(Vector3.ZERO, "heart", 1)
+		var drops := ItemSystem.roll_table("room_clear", Run.rng)
+		for i in drops.size():
+			spawn_pickup(Vector3(i * .6, 0, 0), drops[i], int(ItemSystem.pickup_def(drops[i]).amount))
+	# Chests become interactable once the room is safe.
+	build_room_objects()
 	Run.save_run()
 
 func ensure_offers(premium := false) -> void:
@@ -522,14 +569,19 @@ func ensure_offers(premium := false) -> void:
 	if data.has("offers"): return
 	var gen = RandomNumberGenerator.new()
 	gen.seed = int(data.seed) + 991
-	var items = Content.roll_items(gen, 3, Run.inventory, premium, Run.stats.luck)
+	var relics = Content.roll_items(gen, 3, Run.inventory, premium, Run.stats.luck)
 	var offers: Array = []
-	for item in items:
+	for item in relics:
 		var price: int = {"common": 8, "uncommon": 12, "rare": 17, "mythic": 24}[item.rarity]
 		offers.append({"kind": "item", "id": item.id, "price": price})
 	if gen.randf() < .5 or data.type == "shop":
 		var weapon: Dictionary = Content.weapons[gen.randi_range(0, Content.weapons.size() - 1)]
 		offers[2] = {"kind": "weapon", "id": weapon.id, "price": 14}
+	# Active items: always offered in a first-floor treasure room without one equipped.
+	var actives: Array = Content.families.get("actives", [])
+	if not actives.is_empty() and (gen.randf() < .3 or (data.type == "treasure" and Run.floor_number == 1 and Run.active_item.is_empty())):
+		var active: Dictionary = actives[gen.randi_range(0, actives.size() - 1)]
+		offers[1] = {"kind": "active", "id": active.id, "price": 15}
 	data.offers = offers
 	Run.save_run()
 
@@ -596,7 +648,7 @@ func _action_interact(action: Dictionary) -> Dictionary:
 	match target.kind:
 		"treasure", "shop":
 			ensure_offers(data.type == "treasure")
-			chosen_reward_shop = interaction_kind == "shop"
+			chosen_reward_shop = target.kind == "shop"
 			ui.offers = data.offers
 			ui.shop = chosen_reward_shop
 			paused = true
@@ -615,11 +667,21 @@ func _action_interact(action: Dictionary) -> Dictionary:
 				Run.next_floor()
 				enter_room(Vector3(0, 0, 2.0))
 				ui.notify("A little deeper", "A new floor. A fresh breath of warmth.")
+		"chest":
+			var result := open_chest(target.data.chest_id)
+			if not result.ok:
+				if result.reason == "no_key":
+					ui.notify("A locked chest", "You need a key.", Color("efbd9f"))
+					Audio.play_sound("hurt", 1.6)
+				return result
+		"active":
+			var result := take_dropped_active(target.data.drop_id)
+			if not result.ok: return result
 	if is_playing(): update_interaction()
 	return GameActions.ok({"kind": target.kind})
 
 func pickup_useful(kind: String) -> bool:
-	return kind != "heart" or Run.hp < Run.stats.max_hp
+	return items.pickup_useful(kind)
 
 func _action_collect_pickup(action: Dictionary) -> Dictionary:
 	var drop_id := int(action.get("drop_id", -1))
@@ -638,15 +700,11 @@ func _action_collect_pickup(action: Dictionary) -> Dictionary:
 	# Remove the persistent record and grant the effect in one step.
 	pickup.collected = true
 	data.pickups = records.filter(func(drop): return int(drop.id) != drop_id)
-	if pickup.kind == "coin":
-		Run.coins += pickup.value
-		Audio.play_sound("coin", 1.0 + float(pickup.value) * .05)
-	else:
-		Run.heal(pickup.value)
-		Audio.play_sound("item", 1.2)
-	Run.changed.emit()
-	if data.cleared:
-		Run.save_run()
+	items.apply_pickup(pickup.kind, pickup.value)
+	var effect: String = ItemSystem.pickup_def(pickup.kind).effect
+	Audio.play_sound("coin" if effect == "coins" else "item", 1.0 + float(pickup.value) * .05 if effect == "coins" else 1.2)
+	Effects.burst(scene_root, pickup.global_position + Vector3.UP * .3, Color(ItemSystem.pickup_def(pickup.kind).color), 4, .45)
+	Run.save_run()
 	pickup.queue_free()
 	return GameActions.ok({"kind": pickup.kind, "value": pickup.value})
 
@@ -665,12 +723,163 @@ func choose_offer(index: int) -> void:
 		Run.changed.emit()
 		ui.notify(Content.weapon_by_id[offer.id].name, "A new way to carry the light.")
 		Audio.play_sound("item")
+	elif offer.kind == "active":
+		equip_active(offer.id)
 	else:
 		Run.gain_item(offer.id)
 	remove_marker()
 	if data.type == "boss": make_marker("exit", Vector3(0, 0, -1.5))
 	Run.save_run()
 	close_reward()
+
+## Equip an active; a held one is set down on the floor where it can be swapped
+## back. Its cooldown entry keeps ticking either way.
+func equip_active(id: String, instance := -1) -> void:
+	var previous := items.equip(id, instance)
+	var def: Dictionary = Content.get_def("actives", id)
+	ui.notify(def.name, def.description, Color(def.color))
+	Audio.play_sound("item")
+	if not previous.is_empty():
+		var data: Dictionary = Run.rooms[Run.current_room]
+		if not data.has("actives"): data.actives = []
+		var at := room.geometry.nearest_inside(Vector2(player.position.x + 1.1, player.position.z + .6), .6)
+		data.actives.append({"id": Run.new_entity_id(), "active": previous.id, "instance": int(previous.instance), "position": [at.x, at.y]})
+		build_room_objects()
+
+func take_dropped_active(drop_id: int) -> Dictionary:
+	var data: Dictionary = Run.rooms[Run.current_room]
+	var records: Array = data.get("actives", [])
+	var index := -1
+	for i in records.size():
+		if int(records[i].id) == drop_id: index = i
+	if index < 0:
+		return GameActions.fail("unknown_drop")
+	var record: Dictionary = records[index]
+	records.remove_at(index)
+	equip_active(record.active, int(record.instance))
+	build_room_objects()
+	Run.save_run()
+	return GameActions.ok()
+
+## Spend a key and grant the chest's drops in one transaction.
+func open_chest(chest_id: String) -> Dictionary:
+	var data: Dictionary = Run.rooms[Run.current_room]
+	var chest: Dictionary = {}
+	for record in data.get("chests", []):
+		if record.id == chest_id: chest = record
+	if chest.is_empty() or chest.opened:
+		return GameActions.fail("unknown_chest")
+	if chest.locked and Run.keys <= 0:
+		return GameActions.fail("no_key")
+	if chest.locked: Run.keys -= 1
+	chest.opened = true
+	var drops := ItemSystem.roll_table(chest.get("table", "chest"), Run.rng, Run.stats.luck)
+	var at := Vector3(chest.position[0], 0, chest.position[1])
+	for i in drops.size():
+		var offset := Vector3(cos(i * 2.1), 0, sin(i * 2.1)) * .9 + Vector3(0, 0, .8)
+		var spot := room.geometry.nearest_inside(at + offset, .5)
+		spawn_pickup(Vector3(spot.x, 0, spot.y), drops[i], int(ItemSystem.pickup_def(drops[i]).amount))
+	Audio.play_sound("item", 1.1)
+	Effects.burst(scene_root, at + Vector3.UP * .6, Color("e8c77a"), 10, .9)
+	build_room_objects()
+	Run.save_run()
+	return GameActions.ok({"drops": drops})
+
+## Chests and dropped actives: interactable once the room is safe.
+func build_room_objects() -> void:
+	for node in scene_root.get_children():
+		if node.has_meta("room_object"):
+			interactions.unregister(node.get_meta("target_id"))
+			node.queue_free()
+	var data: Dictionary = Run.rooms[Run.current_room]
+	for chest in data.get("chests", []):
+		var node := Node3D.new()
+		scene_root.add_child(node)
+		node.position = Vector3(chest.position[0], 0, chest.position[1])
+		node.set_meta("room_object", true)
+		var target_id: String = "chest:" + chest.id
+		node.set_meta("target_id", target_id)
+		var wood := Color("6b5137") if not chest.opened else Color("4e3f31")
+		Geo.box(node, Vector3(0, .32, 0), Vector3(1.1, .62, .72), wood)
+		var lid = Geo.box(node, Vector3(0, .7, 0), Vector3(1.16, .18, .78), Color("7d5f40"))
+		Geo.box(node, Vector3(0, .42, -.37), Vector3(.2, .22, .06), Color("d6b36f"), .4 if chest.locked and not chest.opened else 0.0)
+		if chest.opened:
+			lid.position = Vector3(0, .95, .32)
+			lid.rotation_degrees.x = -62
+		else:
+			Geo.halo(node, Vector3(0, .03, 0), 2.2, Color(1, .75, .35, .18))
+		Geo.collider(node, Vector3(0, .5, 0), Vector3(1.1, 1.0, .72))
+		if not chest.opened and data.cleared:
+			interactions.register(target_id, "chest", node.position,
+				"Open the chest · 1 key" if chest.locked else "Open the chest", 2.1, {"chest_id": chest.id})
+	for record in data.get("actives", []):
+		var def: Dictionary = Content.get_def("actives", record.active)
+		var node := Node3D.new()
+		scene_root.add_child(node)
+		node.position = Vector3(record.position[0], 0, record.position[1])
+		node.set_meta("room_object", true)
+		var target_id: String = "active:%d" % int(record.id)
+		node.set_meta("target_id", target_id)
+		Geo.cylinder(node, Vector3(0, .12, 0), .38, .24, Color("5b5547"))
+		Geo.sphere(node, Vector3(0, .55, 0), .2, Color(def.color), 1.2)
+		Geo.halo(node, Vector3(0, .03, 0), 2.0, Color(Color(def.color), .2))
+		interactions.register(target_id, "active", node.position,
+			("Swap for " if not Run.active_item.is_empty() else "Take ") + def.name, 1.8, {"drop_id": int(record.id)})
+
+func _action_place_bomb(_action: Dictionary) -> Dictionary:
+	if not is_playing():
+		return GameActions.fail("not_playing")
+	if Run.bombs <= 0:
+		return GameActions.fail("no_bombs")
+	# Debit, record and fuse are saved together; reload never refunds it.
+	Run.bombs -= 1
+	var bomb := {"id": Run.new_entity_id(), "room": Run.current_room, "position": [player.position.x, player.position.z],
+		"fuse": ItemSystem.BOMB_FUSE, "floor": Run.floor_number}
+	Run.pending_bombs.append(bomb)
+	make_bomb_node(bomb)
+	Run.changed.emit()
+	Run.save_run()
+	Audio.play_sound("door", .7)
+	return GameActions.ok({"bomb": bomb.id})
+
+func make_bomb_node(bomb: Dictionary) -> void:
+	var node := Node3D.new()
+	scene_root.add_child(node)
+	node.position = Vector3(bomb.position[0], 0, bomb.position[1])
+	Geo.sphere(node, Vector3(0, .32, 0), .3, Color("3b3f45"))
+	Geo.cylinder(node, Vector3(0, .66, 0), .04, .14, Color("a08a68"))
+	var spark = Geo.sphere(node, Vector3(0, .76, 0), .07, Color("ffd38a"), 2.2)
+	spark.name = "Spark"
+	# The radius is visible while the fuse burns.
+	Geo.ring(node, Vector3(0, .04, 0), ItemSystem.BOMB_RADIUS, Color("d9825e"), .03)
+	bomb_nodes[int(bomb.id)] = node
+
+func detonate_bomb(bomb: Dictionary) -> void:
+	var at := Vector3(bomb.position[0], 0, bomb.position[1])
+	if bomb.room == Run.current_room and bomb.get("floor", Run.floor_number) == Run.floor_number:
+		var node: Node3D = bomb_nodes.get(int(bomb.id))
+		if is_instance_valid(node): node.queue_free()
+		bomb_nodes.erase(int(bomb.id))
+		Effects.ring_burst(scene_root, at, Color("f2a066"), ItemSystem.BOMB_RADIUS)
+		Effects.burst(scene_root, at + Vector3.UP * .4, Color("f2c27a"), 12, 1.6)
+		shake = maxf(shake, .3)
+		Audio.play_sound("kill", .5)
+		var damage: float = ItemSystem.BOMB_DAMAGE * (1.0 + (Run.floor_number - 1) * .4)
+		for enemy in enemies.duplicate():
+			if is_instance_valid(enemy) and enemy.alive and enemy.global_position.distance_to(at) < ItemSystem.BOMB_RADIUS + enemy.radius:
+				enemy.take_hit(damage, (enemy.global_position - at).normalized() * 4, false)
+		# Bomb self-damage is defined separately from friendly weapon blasts.
+		if is_instance_valid(player) and player.global_position.distance_to(at) < ItemSystem.BOMB_RADIUS * .8:
+			player.hurt(1, at)
+	breach(bomb.room, at, ItemSystem.BOMB_RADIUS)
+	Run.pending_bombs = Run.pending_bombs.filter(func(b): return int(b.id) != int(bomb.id))
+	if Run.active:
+		Run.save_run()
+
+## Breach effects resolve from saved room state, so a bomb in an unloaded
+## room still opens what it should without creating offscreen visuals.
+func breach(_room_id: String, _at: Vector3, _radius: float) -> void:
+	pass
 
 func close_reward() -> void:
 	paused = false

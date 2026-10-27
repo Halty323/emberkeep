@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "actives": [
+    {"id": "pocket_hearth", "name": "Pocket Hearth", "description": "Heal 2 health for 3 coins.", "handler": "heal", "cooldown": 60, "color": "#f4a76b", "params": {"heal": 2, "cost": 3}},
+    {"id": "ember_flask", "name": "Ember Flask", "description": "Release a ring of burning embers.", "handler": "ember_burst", "cooldown": 25, "color": "#f28a55", "params": {"count": 14, "damage": 7, "burn": 1.5}}
+  ]
+}

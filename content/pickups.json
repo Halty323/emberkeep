@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "pickups": [
+    {"id": "copper_coin", "name": "Copper coin", "effect": "coins", "amount": 1, "visual": "coin", "color": "#e7bd70"},
+    {"id": "silver_coin", "name": "Silver coin", "effect": "coins", "amount": 5, "visual": "coin", "color": "#d9dde0"},
+    {"id": "half_heart", "name": "Half heart", "effect": "heal", "amount": 1, "visual": "heart", "color": "#d99083"},
+    {"id": "full_heart", "name": "Full heart", "effect": "heal", "amount": 2, "visual": "heart", "color": "#ec8d7c"},
+    {"id": "ward", "name": "Ward", "effect": "ward", "amount": 1, "cap": 4, "visual": "ward", "color": "#a3dacf"},
+    {"id": "key", "name": "Key", "effect": "keys", "amount": 1, "cap": 9, "visual": "key", "color": "#e8c77a"},
+    {"id": "bomb", "name": "Bomb", "effect": "bombs", "amount": 1, "cap": 9, "visual": "bomb", "color": "#4b4f55"},
+    {"id": "small_battery", "name": "Small battery", "effect": "recharge", "amount": 15, "visual": "battery", "color": "#9fd3e8"},
+    {"id": "full_battery", "name": "Full battery", "effect": "recharge_full", "amount": 0, "visual": "battery", "color": "#c7f0ff"}
+  ]
+}

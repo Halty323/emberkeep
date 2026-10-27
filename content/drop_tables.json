@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "drop_tables": [
+    {"id": "enemy_bonus", "rolls": 1, "luck": "half_heart", "entries": [
+      {"pickup": "half_heart", "weight": 10}, {"pickup": "key", "weight": 2.5}, {"pickup": "bomb", "weight": 2.5},
+      {"pickup": "small_battery", "weight": 1.5}, {"pickup": "ward", "weight": 0.8}, {"pickup": "", "weight": 82.7}]},
+    {"id": "room_clear", "rolls": 1, "entries": [
+      {"pickup": "half_heart", "weight": 40}, {"pickup": "key", "weight": 8}, {"pickup": "bomb", "weight": 8},
+      {"pickup": "small_battery", "weight": 4}, {"pickup": "", "weight": 40}]},
+    {"id": "chest", "rolls": 2, "entries": [
+      {"pickup": "silver_coin", "weight": 4}, {"pickup": "full_heart", "weight": 2}, {"pickup": "bomb", "weight": 2},
+      {"pickup": "key", "weight": 1}, {"pickup": "full_battery", "weight": 1}, {"pickup": "ward", "weight": 2}]},
+    {"id": "secret_cache", "rolls": 3, "entries": [
+      {"pickup": "silver_coin", "weight": 4}, {"pickup": "full_heart", "weight": 2}, {"pickup": "bomb", "weight": 2},
+      {"pickup": "key", "weight": 2}, {"pickup": "full_battery", "weight": 1}, {"pickup": "ward", "weight": 2}]},
+    {"id": "prop_small", "rolls": 1, "entries": [
+      {"pickup": "copper_coin", "weight": 30}, {"pickup": "half_heart", "weight": 6}, {"pickup": "bomb", "weight": 2},
+      {"pickup": "key", "weight": 1.5}, {"pickup": "", "weight": 60.5}]}
+  ]
+}

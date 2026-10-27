@@ -89,7 +89,8 @@ func reset_run_extras() -> void:
 	generator = GENERATOR_V2
 	checkpoint = {}
 	keys = 0
-	bombs = 0
+	# One bomb to start exploring; the boss route never needs it.
+	bombs = 1
 	wards = 0
 	active_item = {}
 	cooldowns = {}
@@ -416,7 +417,20 @@ func _generate_v2(attempt: int, singles_only: bool) -> bool:
 		rooms[key]["depth"] = distances[key]
 		rooms[key]["seed"] = seed_value + floor_number * 10007 + coord(key).x * 719 + coord(key).y * 1117
 		if rooms[key].cells.size() > 1: large += 1
+		_place_chests(key)
 	return singles_only or large >= 1
+
+## Locked chests, rolled from each room's own seed so they never disturb the
+## layout stream. They sit beside the north wall, clear of the door lane.
+func _place_chests(key: String) -> void:
+	var room: Dictionary = rooms[key]
+	var chance: float = {"combat": .2, "treasure": .5}.get(room.type, 0.0)
+	var gen := RandomNumberGenerator.new()
+	gen.seed = int(room.seed) + 31337
+	if gen.randf() >= chance:
+		return
+	var side := -1 if gen.randf() < .5 else 1
+	room["chests"] = [{"id": "%s:0" % key, "position": [side * 5.5, -3.8], "locked": true, "opened": false, "table": "chest"}]
 
 func mark_cleared() -> void:
 	if rooms[current_room].cleared:

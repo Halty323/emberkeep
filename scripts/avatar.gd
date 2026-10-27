@@ -166,6 +166,14 @@ func hurt(amount: float, source: Vector3) -> void:
 		Effects.ring_burst(game, global_position, Color("a3dacf"), 1.8)
 		Audio.play_sound("coin", .7)
 		return
+	if Run.wards > 0:
+		# Wards are durable run state: one blocks one hit, then it is gone.
+		Run.wards -= 1
+		invulnerability = .7
+		Effects.ring_burst(game, global_position, Color("9fc3e6"), 1.8)
+		Audio.play_sound("coin", .6)
+		Run.changed.emit()
+		return
 	Run.hp = maxf(0, Run.hp - amount)
 	invulnerability = 1.0
 	game.shake = .22

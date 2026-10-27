@@ -27,6 +27,9 @@ var warning: MeshInstance3D
 var boss = false
 var boss_cycle = 0
 var summon_timer = 9.0
+## Deterministic reward source ("floor:room:i"); empty for summons, which
+## never pay out.
+var source := ""
 var color = Color("bb7667")
 var last_valid = Vector3.ZERO
 var path := PackedVector2Array()
@@ -221,12 +224,12 @@ func die() -> void:
 	alive = false
 	collision_layer = 0
 	collision_mask = 0
-	Run.kills += 1
 	game.player.haste_time = 2.0
 	Effects.burst(game, global_position + Vector3.UP * .5, color, 9 if boss else 6, 1.5 if boss else 1)
 	Audio.play_sound("kill", .6 if boss else 1)
 	if kind == "splitter":
 		for side in [-1, 1]:
-			game.spawn_enemy(global_position + Vector3(side * .45, 0, 0), "wisp")
+			var child_source := "" if source == "" else source + ":%d" % (0 if side < 0 else 1)
+			game.spawn_enemy(global_position + Vector3(side * .45, 0, 0), "wisp", child_source)
 	game.on_enemy_killed(self)
 	queue_free()

@@ -1,7 +1,7 @@
 class_name DungeonPickup
 extends Node3D
 var game: Node3D
-var kind = "coin"
+var kind = "copper_coin"
 var value = 1
 var age = 0.0
 var visual: Node3D
@@ -15,13 +15,31 @@ func setup(owner_game: Node3D, at: Vector3, type: String, amount := 1) -> void:
 	value = amount
 	visual = Node3D.new()
 	add_child(visual)
-	if kind == "coin":
-		var coin = Geo.cylinder(visual, Vector3(0, .3, 0), .14, .075, Color("e7bd70"), .5)
-		coin.rotation_degrees.x = 75
-		Geo.halo(self, Vector3(0, .025, 0), .8, Color(1, .7, .25, .2))
-	else:
-		Geo.box(visual, Vector3(0, .3, 0), Vector3(.35, .13, .13), Color("d99083"), .6)
-		Geo.box(visual, Vector3(0, .3, 0), Vector3(.13, .35, .13), Color("d99083"), .6)
+	var def := ItemSystem.pickup_def(kind)
+	var color := Color(def.get("color", "#e7bd70"))
+	match def.get("visual", "coin"):
+		"coin":
+			var coin = Geo.cylinder(visual, Vector3(0, .3, 0), .14 if def.get("amount", 1) < 5 else .18, .075, color, .5)
+			coin.rotation_degrees.x = 75
+			Geo.halo(self, Vector3(0, .025, 0), .8, Color(color, .2))
+		"heart":
+			var size := .35 if def.get("amount", 1) > 1 else .27
+			Geo.box(visual, Vector3(0, .3, 0), Vector3(size, .13, .13), color, .6)
+			Geo.box(visual, Vector3(0, .3, 0), Vector3(.13, size, .13), color, .6)
+		"ward":
+			Geo.box(visual, Vector3(0, .32, 0), Vector3(.28, .32, .08), color, .7)
+			Geo.halo(self, Vector3(0, .025, 0), .7, Color(color, .18))
+		"key":
+			Geo.cylinder(visual, Vector3(-.1, .32, 0), .09, .05, color, .6).rotation_degrees.x = 90
+			Geo.box(visual, Vector3(.08, .32, 0), Vector3(.26, .05, .05), color, .6)
+			Geo.box(visual, Vector3(.18, .27, 0), Vector3(.05, .1, .05), color, .6)
+		"bomb":
+			Geo.sphere(visual, Vector3(0, .3, 0), .18, color)
+			Geo.box(visual, Vector3(.06, .5, 0), Vector3(.04, .1, .04), Color("f2b46b"), .9)
+		"battery":
+			Geo.box(visual, Vector3(0, .32, 0), Vector3(.16, .3, .16), color, .7)
+			Geo.box(visual, Vector3(0, .5, 0), Vector3(.07, .06, .07), Color("f5ead2"), .5)
+			Geo.halo(self, Vector3(0, .025, 0), .7, Color(color, .2))
 
 func update_sim(delta: float) -> void:
 	if collected:

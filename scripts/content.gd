@@ -94,6 +94,46 @@ func validate() -> Array[String]:
 		problems.append("rooms: the single-cell template hall_single is required")
 	return problems
 
+const PICKUP_EFFECTS = ["coins", "heal", "ward", "keys", "bombs", "recharge", "recharge_full"]
+const PICKUP_VISUALS = ["coin", "heart", "ward", "key", "bomb", "battery"]
+## Active handlers implemented by ItemSystem. A definition naming anything
+## else is rejected rather than silently doing nothing.
+const ACTIVE_HANDLERS = ["heal", "ember_burst"]
+
+static func _number(value) -> bool:
+	return value is float or value is int
+
+func _validate_pickups(problems: Array[String], pickup: Dictionary) -> void:
+	if pickup.get("effect") not in PICKUP_EFFECTS:
+		problems.append("pickup %s has unknown effect %s" % [pickup.get("id"), str(pickup.get("effect"))])
+	if not _number(pickup.get("amount")) or float(pickup.amount) < 0:
+		problems.append("pickup %s needs a non-negative amount" % pickup.get("id"))
+	if pickup.get("visual") not in PICKUP_VISUALS:
+		problems.append("pickup %s has unknown visual" % pickup.get("id"))
+	if pickup.has("cap") and (not _number(pickup.cap) or float(pickup.cap) < 1):
+		problems.append("pickup %s has an impossible cap" % pickup.get("id"))
+
+func _validate_drop_tables(problems: Array[String], table: Dictionary) -> void:
+	if not _number(table.get("rolls")) or int(table.rolls) < 1:
+		problems.append("drop table %s needs at least one roll" % table.get("id"))
+	var entries = table.get("entries")
+	if not entries is Array or entries.is_empty():
+		problems.append("drop table %s has no entries" % table.get("id"))
+		return
+	for entry in entries:
+		if not entry is Dictionary or not _number(entry.get("weight")) or float(entry.weight) <= 0:
+			problems.append("drop table %s has an entry without a positive weight" % table.get("id"))
+		elif entry.get("pickup", "") != "" and not by_family.get("pickups", {}).has(entry.pickup):
+			problems.append("drop table %s references missing pickup %s" % [table.get("id"), str(entry.pickup)])
+
+func _validate_actives(problems: Array[String], active: Dictionary) -> void:
+	if active.get("handler") not in ACTIVE_HANDLERS:
+		problems.append("active %s uses unknown handler %s" % [active.get("id"), str(active.get("handler"))])
+	if not _number(active.get("cooldown")) or float(active.cooldown) <= 0:
+		problems.append("active %s needs a positive cooldown" % active.get("id"))
+	if not active.get("params") is Dictionary or not active.get("name") is String:
+		problems.append("active %s needs a name and params" % active.get("id"))
+
 const ROOM_ROLES = ["start", "combat", "treasure", "shop", "rest", "boss", "secret"]
 
 func _validate_rooms(problems: Array[String], room: Dictionary) -> void:
