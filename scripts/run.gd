@@ -1,7 +1,10 @@
 extends Node
 signal changed
 signal item_gained(item: Dictionary)
-const SAVE_VERSION := 1
+const SAVE_VERSION := 2
+## Floor generator revisions. A run keeps the generator it started with, so a
+## migrated save never regenerates its floor or advances its gameplay RNG.
+const GENERATOR_LEGACY := 1
 const ALL_RELICS_CODE := "ALLRELICS"
 const PROFILE_PATH := "user://profile.json"
 const SAVE_PATH := "user://run.json"
@@ -20,17 +23,39 @@ var cleared = 0
 var elapsed = 0.0
 var active = false
 var daily = false
-var profile = {"version": 1, "runs": 0, "wins": 0, "kills": 0, "best_floor": 0,
-	"discovered": [], "sound": true, "music": true, "shake": true, "touch": false, "quality": true}
+var generator = GENERATOR_LEGACY
+## Exploration resources and equipment (save v2).
+var keys = 0
+var bombs = 0
+var wards = 0
+var active_item: Dictionary = {}
+var cooldowns: Dictionary = {}
+var modifiers: Array = []
+## Deterministic source IDs that already granted loot or kill credit.
+var reward_ledger: Dictionary = {}
+var pending_bombs: Array = []
+var next_entity = 1000
+## Device preferences moved to Settings (user://settings.json); the profile
+## holds only progress that would follow a player between devices.
+const PROFILE_DEFAULTS = {"version": 2, "runs": 0, "wins": 0, "kills": 0, "best_floor": 0, "discovered": []}
+var profile: Dictionary = PROFILE_DEFAULTS.duplicate(true)
 
 func _ready() -> void:
+	load_profile()
+	stats = Content.base_stats()
+
+func load_profile() -> void:
+	profile = PROFILE_DEFAULTS.duplicate(true)
 	if FileAccess.file_exists(PROFILE_PATH):
 		var saved = JSON.parse_string(FileAccess.get_file_as_string(PROFILE_PATH))
 		if saved is Dictionary:
 			for key in profile:
-				if saved.has(key):
+				if key == "version" or not saved.has(key):
+					continue
+				if profile[key] is int and saved[key] is float:
+					profile[key] = int(saved[key])
+				elif typeof(saved[key]) == typeof(profile[key]):
 					profile[key] = saved[key]
-	stats = Content.base_stats()
 
 func start_run(chosen_weapon: String, seed_input := 0, is_daily := false) -> void:
 	seed_value = seed_input if seed_input != 0 else int(Time.get_unix_time_from_system()) % 99999999
@@ -43,6 +68,7 @@ func start_run(chosen_weapon: String, seed_input := 0, is_daily := false) -> voi
 	cleared = 0
 	elapsed = 0.0
 	daily = is_daily
+	reset_run_extras()
 	active = true
 	profile.runs += 1
 	rebuild_stats()
@@ -51,6 +77,23 @@ func start_run(chosen_weapon: String, seed_input := 0, is_daily := false) -> voi
 	save_profile()
 	save_run()
 	changed.emit()
+
+func reset_run_extras() -> void:
+	generator = GENERATOR_LEGACY
+	keys = 0
+	bombs = 0
+	wards = 0
+	active_item = {}
+	cooldowns = {}
+	modifiers = []
+	reward_ledger = {}
+	pending_bombs = []
+	next_entity = 1000
+
+## Stable, persisted identifiers for drops, props and other durable records.
+func new_entity_id() -> int:
+	next_entity += 1
+	return next_entity
 
 func daily_seed() -> int:
 	var date = Time.get_date_string_from_system(true).replace("-", "")
@@ -202,7 +245,9 @@ func snapshot() -> Dictionary:
 	return {"version": SAVE_VERSION, "seed": seed_value, "floor": floor_number, "rooms": rooms,
 		"current_room": current_room, "inventory": inventory, "weapon": weapon_id, "hp": hp,
 		"coins": coins, "kills": kills, "cleared": cleared, "elapsed": elapsed, "daily": daily,
-		"rng_state": str(rng.state)}
+		"rng_state": str(rng.state), "generator": generator, "keys": keys, "bombs": bombs, "wards": wards,
+		"active_item": active_item, "cooldowns": cooldowns, "modifiers": modifiers,
+		"reward_ledger": reward_ledger, "pending_bombs": pending_bombs, "next_entity": next_entity}
 
 func save_run() -> void:
 	if active:
@@ -215,7 +260,10 @@ func load_run() -> bool:
 	if not has_save():
 		return false
 	var d = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
-	if not d is Dictionary or int(d.get("version", -1)) != SAVE_VERSION:
+	if not d is Dictionary:
+		return false
+	d = migrate_save(d)
+	if d.is_empty():
 		return false
 	for key in ["seed", "floor", "rooms", "current_room", "inventory", "weapon", "hp", "coins", "kills", "cleared", "elapsed"]:
 		if not d.has(key):
@@ -236,6 +284,16 @@ func load_run() -> bool:
 	cleared = int(d.cleared)
 	elapsed = float(d.elapsed)
 	daily = d.get("daily", false)
+	generator = int(d.generator)
+	keys = int(d.keys)
+	bombs = int(d.bombs)
+	wards = int(d.wards)
+	active_item = d.active_item
+	cooldowns = d.cooldowns
+	modifiers = d.modifiers
+	reward_ledger = d.reward_ledger
+	pending_bombs = d.pending_bombs
+	next_entity = int(d.next_entity)
 	rng.seed = seed_value
 	rng.state = int(d.get("rng_state", str(rng.state)))
 	rebuild_stats()
@@ -243,6 +301,38 @@ func load_run() -> bool:
 	active = true
 	changed.emit()
 	return true
+
+## Upgrade an older run save one version at a time. Returns {} when the save
+## cannot be understood. Migration never regenerates rooms or touches RNG state.
+func migrate_save(d: Dictionary) -> Dictionary:
+	d = d.duplicate(true)
+	var version = int(d.get("version", -1))
+	if version == 1:
+		# Legacy 1×1 floors: keep the graph, rooms, offers, drops and RNG as saved.
+		d.generator = GENERATOR_LEGACY
+		d.keys = 0
+		d.bombs = 0
+		d.wards = 0
+		d.active_item = {}
+		d.cooldowns = {}
+		d.modifiers = []
+		d.reward_ledger = {}
+		d.pending_bombs = []
+		var highest = 1000
+		for room in d.get("rooms", {}).values():
+			for drop in room.get("pickups", []):
+				highest = maxi(highest, int(drop.get("id", 0)))
+		d.next_entity = highest
+		d.version = 2
+		version = 2
+	if version != SAVE_VERSION:
+		return {}
+	for key in ["generator", "keys", "bombs", "wards", "active_item", "cooldowns", "modifiers", "reward_ledger", "pending_bombs", "next_entity"]:
+		if not d.has(key):
+			return {}
+	if not d.active_item is Dictionary or not d.cooldowns is Dictionary or not d.reward_ledger is Dictionary:
+		return {}
+	return d
 
 func _atomic_json(path: String, value: Dictionary) -> void:
 	var file = FileAccess.open(path + ".tmp", FileAccess.WRITE)

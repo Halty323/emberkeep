@@ -25,6 +25,9 @@ var hurt_flash = 0.0
 var request_dash = false
 var interaction_text = ""
 var interaction_kind = ""
+var interaction_target: Dictionary = {}
+var interactions := InteractionRegistry.new()
+var actions := GameActions.new()
 var transition_cooldown = 0.0
 var entity_counter = 10
 var chosen_reward_shop = false
@@ -89,6 +92,10 @@ func _ready() -> void:
 	layer.add_child(ui)
 	ui.setup(self)
 	Run.item_gained.connect(on_item_gained)
+	actions.register("Interact", _action_interact)
+	actions.register("CollectPickup", _action_collect_pickup)
+	# Commands from the transport boundary use the same validated handlers.
+	Session.command_received.connect(func(_peer_id, command): perform_action(command))
 	get_tree().auto_accept_quit = false
 	show_title_room()
 	if "--quickstart" in OS.get_cmdline_user_args():
@@ -223,7 +230,7 @@ func update_camera(delta: float, snap := false) -> void:
 			if is_instance_valid(enemy) and enemy.alive: actors.append(enemy.position)
 		if is_instance_valid(room): room.update_wall_visibility(player.position, 0.0 if snap else delta, actors)
 	camera_focus = target if snap else camera_focus.lerp(target, 1.0 - exp(-7.0 * delta))
-	var amount = shake if Run.profile.shake else 0.0
+	var amount = shake if Settings.values.shake else 0.0
 	# Translate the camera without rotating it: movement and aiming axes stay fixed.
 	camera.position = camera_home + camera_focus + Vector3(sin(Time.get_ticks_msec() * .081), cos(Time.get_ticks_msec() * .067), 0) * amount
 
@@ -244,6 +251,8 @@ func clean_room() -> void:
 	add_child(scene_root)
 	marker = null
 	marker_visual = null
+	interactions.clear()
+	interaction_target = {}
 	interaction_text = ""
 	interaction_kind = ""
 
@@ -410,13 +419,12 @@ func spawn_pickup(at: Vector3, kind: String, amount: int, restored_id := -1) -> 
 	pickup.setup(self, at, kind, amount)
 	var data: Dictionary = Run.rooms[Run.current_room]
 	if restored_id < 0:
-		entity_counter += 1
-		pickup.drop_id = entity_counter
+		# Persisted drop IDs come from the run, never from disposable scene counters.
+		pickup.drop_id = Run.new_entity_id()
 		if not data.has("pickups"): data.pickups = []
 		data.pickups.append({"id": pickup.drop_id, "kind": kind, "value": amount, "position": [at.x, at.z]})
 	else:
 		pickup.drop_id = restored_id
-		entity_counter = maxi(entity_counter, restored_id)
 	pickups.append(pickup)
 
 func clear_room() -> void:
@@ -449,13 +457,26 @@ func ensure_offers(premium := false) -> void:
 	data.offers = offers
 	Run.save_run()
 
-func make_marker(kind: String, at := Vector3.ZERO) -> void:
-	if marker and is_instance_valid(marker): marker.queue_free()
+func interaction_prompt(kind: String) -> String:
+	return {"treasure": "Choose a little treasure", "shop": "Browse the merchant’s wares", "rest": "Warm your hands · heal 3",
+		"exit": "Carry the light home" if Run.floor_number == 3 else "Descend to the next floor"}.get(kind, "")
+
+func remove_marker() -> void:
+	if marker and is_instance_valid(marker):
+		interactions.unregister(marker.get_meta("target_id"))
+		marker.queue_free()
+	marker = null
 	marker_visual = null
+
+func make_marker(kind: String, at := Vector3.ZERO) -> void:
+	remove_marker()
 	marker = Node3D.new()
 	scene_root.add_child(marker)
 	marker.position = at
 	marker.set_meta("kind", kind)
+	var target_id = "%s:%s" % [Run.current_room, kind]
+	marker.set_meta("target_id", target_id)
+	interactions.register(target_id, kind, at, interaction_prompt(kind))
 	if kind == "exit":
 		Geo.ring(marker, Vector3(0, .09, 0), 1.05, Color("a3d5c2"), .09)
 		Geo.halo(marker, Vector3(0, .02, 0), 5.0, Color(.35, .8, .6, .32))
@@ -474,16 +495,29 @@ func make_marker(kind: String, at := Vector3.ZERO) -> void:
 		Geo.light(marker, Vector3(0, 1.5, 0), Color("f0c68c"), .55, 3.5)
 
 func update_interaction() -> void:
-	interaction_text = ""
-	interaction_kind = ""
-	if marker and is_instance_valid(marker) and player.position.distance_to(marker.position) < 2.1:
-		interaction_kind = marker.get_meta("kind")
-		interaction_text = {"treasure": "Choose a little treasure", "shop": "Browse the merchant’s wares", "rest": "Warm your hands · heal 3", "exit": "Carry the light home" if Run.floor_number == 3 else "Descend to the next floor"}.get(interaction_kind, "")
+	interaction_target = interactions.select(player.position) if is_instance_valid(player) else {}
+	interaction_kind = interaction_target.get("kind", "")
+	interaction_text = interaction_target.get("prompt", "")
+
+func perform_action(action: Dictionary) -> Dictionary:
+	return actions.perform(action)
 
 func interact() -> void:
-	if not is_playing() or interaction_kind == "": return
+	if not is_playing(): return
+	update_interaction()
+	if interaction_target.is_empty(): return
+	perform_action({"type": "Interact", "target": interaction_target.id})
+
+func _action_interact(action: Dictionary) -> Dictionary:
+	if not is_playing():
+		return GameActions.fail("not_playing")
+	var target: Dictionary = interactions.get_target(str(action.get("target", "")))
+	if target.is_empty() or not target.enabled:
+		return GameActions.fail("unknown_target")
+	if player.position.distance_to(target.position) >= target.radius:
+		return GameActions.fail("out_of_range")
 	var data: Dictionary = Run.rooms[Run.current_room]
-	match interaction_kind:
+	match target.kind:
 		"treasure", "shop":
 			ensure_offers(data.type == "treasure")
 			chosen_reward_shop = interaction_kind == "shop"
@@ -494,8 +528,7 @@ func interact() -> void:
 		"rest":
 			Run.heal(3)
 			data.claimed = true
-			marker.queue_free()
-			marker = null
+			remove_marker()
 			Run.save_run()
 			Audio.play_sound("item")
 			ui.notify("A moment of warmth", "Recovered 3 health.")
@@ -506,7 +539,40 @@ func interact() -> void:
 				Run.next_floor()
 				enter_room(Vector3(0, 0, 2.0))
 				ui.notify("A little deeper", "A new floor. A fresh breath of warmth.")
-	update_interaction()
+	if is_playing(): update_interaction()
+	return GameActions.ok({"kind": target.kind})
+
+func pickup_useful(kind: String) -> bool:
+	return kind != "heart" or Run.hp < Run.stats.max_hp
+
+func _action_collect_pickup(action: Dictionary) -> Dictionary:
+	var drop_id := int(action.get("drop_id", -1))
+	var pickup: DungeonPickup = null
+	for candidate in pickups:
+		if is_instance_valid(candidate) and candidate.drop_id == drop_id and not candidate.collected:
+			pickup = candidate
+	if pickup == null:
+		return GameActions.fail("unknown_drop")
+	if not pickup_useful(pickup.kind):
+		return GameActions.fail("not_useful")
+	var data: Dictionary = Run.rooms[Run.current_room]
+	var records: Array = data.get("pickups", [])
+	if not records.any(func(drop): return int(drop.id) == drop_id):
+		return GameActions.fail("already_collected")
+	# Remove the persistent record and grant the effect in one step.
+	pickup.collected = true
+	data.pickups = records.filter(func(drop): return int(drop.id) != drop_id)
+	if pickup.kind == "coin":
+		Run.coins += pickup.value
+		Audio.play_sound("coin", 1.0 + float(pickup.value) * .05)
+	else:
+		Run.heal(pickup.value)
+		Audio.play_sound("item", 1.2)
+	Run.changed.emit()
+	if data.cleared:
+		Run.save_run()
+	pickup.queue_free()
+	return GameActions.ok({"kind": pickup.kind, "value": pickup.value})
 
 func choose_offer(index: int) -> void:
 	var data: Dictionary = Run.rooms[Run.current_room]
@@ -525,8 +591,7 @@ func choose_offer(index: int) -> void:
 		Audio.play_sound("item")
 	else:
 		Run.gain_item(offer.id)
-	if marker and is_instance_valid(marker): marker.queue_free()
-	marker = null
+	remove_marker()
 	if data.type == "boss": make_marker("exit", Vector3(0, 0, -1.5))
 	Run.save_run()
 	close_reward()

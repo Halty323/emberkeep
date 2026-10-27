@@ -52,6 +52,16 @@ var secret_taps = 0
 var secret_key_buffer = ""
 var secret_field: LineEdit
 var secret_feedback = ""
+var settings_page = "display"
+var fps_value = 0.0
+var fps_frames = 0
+var fps_time = 0.0
+const SETTINGS_PAGES := [["display", "Display", 180.0], ["graphics", "Graphics", 180.0], ["controls", "Sound & Controls", 208.0]]
+const SETTINGS_ROWS := {
+	"display": [["render_scale", "Render resolution"], ["fps_limit", "FPS limit"], ["vsync", "VSync"], ["show_fps", "Show FPS"]],
+	"graphics": [["effects_detail", "Effects detail"], ["small_details", "Small details"], ["shadows", "Lantern shadows"]],
+	"controls": [["sound", "Sound effects"], ["music", "Ambient music"], ["shake", "Camera shake"], ["touch", "Touch controls"]]}
+const SETTINGS_RECT := Rect2(300, 60, 680, 610)
 
 func setup(owner_game: Node3D) -> void:
 	game = owner_game
@@ -190,7 +200,7 @@ func build_surfaces() -> void:
 			boss_surface = make_surface(Rect2(430, 119, 420, 12), Color("2e3430"), Color("bb8969"), true)
 		"pause": make_surface(Rect2(376, 108, 528, 520))
 		"secret": make_surface(Rect2(376, 140, 528, 448))
-		"settings": make_surface(Rect2(350, 72, 580, 588))
+		"settings": make_surface(SETTINGS_RECT)
 		"reward":
 			for i in offers.size():
 				var offer: Dictionary = offers[i]
@@ -345,16 +355,39 @@ func open_settings(back: String) -> void:
 	previous_mode = back
 	show_screen("settings")
 
+func settings_value_label(key: String) -> String:
+	var value = Settings.get_value(key)
+	match key:
+		"render_scale": return Settings.render_scale_label()
+		"fps_limit": return Settings.fps_label()
+		"vsync": return Settings.effective_vsync_label()
+		"effects_detail", "small_details": return String(value).capitalize()
+	return "ON" if value else "OFF"
+
 func build_settings() -> void:
-	button("← Back", Rect2(396, 572, 488, 58), func(): close_subscreen())
-	var options = [["sound", "Sound effects"], ["music", "Ambient music"], ["shake", "Camera shake"], ["touch", "Touch controls"], ["quality", "Lantern shadows"]]
-	for i in options.size():
-		var option: Array = options[i]
-		button("%s     %s" % [option[1], "ON" if Run.profile[option[0]] else "OFF"], Rect2(396, 206 + i * 70, 488, 56), func():
-			Run.profile[option[0]] = not Run.profile[option[0]]
-			Run.save_profile()
-			Audio.refresh()
+	var x = SETTINGS_RECT.position.x + 46
+	for page in SETTINGS_PAGES:
+		var id: String = page[0]
+		var tab = button(page[1], Rect2(x, 182, page[2], 56), func():
+			settings_page = id
+			show_screen("settings"), id == settings_page)
+		tab.name = "SettingsTab_" + id
+		tab.set_meta("control_id", "SettingsTab_" + id)
+		x += page[2] + 10
+	var rows: Array = SETTINGS_ROWS[settings_page]
+	for i in rows.size():
+		var key: String = rows[i][0]
+		# Each row owns its lit stone slab and hit target together.
+		var row = button("%s     %s" % [rows[i][1], settings_value_label(key)], Rect2(346, 256 + i * 66, 588, 56), func():
+			Settings.cycle(key)
 			show_screen("settings"))
+		row.name = "Setting_" + key
+		row.set_meta("control_id", "Setting_" + key)
+		if key == "vsync" and not Settings.vsync_supported():
+			# Show the platform's real behaviour instead of a switch that does nothing.
+			row.disabled = true
+			row.get_meta("surface").modulate = Color(.7, .7, .65)
+	button("← Back", Rect2(346, 582, 588, 58), func(): close_subscreen())
 
 func close_subscreen() -> void:
 	if previous_mode == "menu":
@@ -413,6 +446,14 @@ func damage_number(at: Vector2, amount: float, critical: bool) -> void:
 
 func _process(delta: float) -> void:
 	elapsed_ui += delta
+	# A smoothed readout, refreshed four times per second.
+	fps_frames += 1
+	fps_time += delta
+	if fps_time >= .25:
+		var sample = fps_frames / fps_time
+		fps_value = sample if fps_value <= 0 else lerpf(fps_value, sample, .5)
+		fps_frames = 0
+		fps_time = 0.0
 	toast_time = maxf(0, toast_time - delta)
 	for number in floating_numbers:
 		number.age += delta
@@ -509,8 +550,12 @@ func _draw() -> void:
 			centered(secret_feedback, 640, 401, 17, Color("efbd9f"))
 		"reward": draw_rewards()
 		"settings":
-			hearth_emblem(Vector2(640, 109), 11)
-			centered("Make yourself at home", 640, 169, 32, INK, heading)
+			hearth_emblem(Vector2(640, 92), 11)
+			centered("Make yourself at home", 640, 152, 32, INK, heading)
+			var notes = {"display": "Resolution scales only the dungeon; text stays sharp. Your display or GPU may cap the frame rate.",
+				"graphics": "Detail changes decoration and particles. Collision and combat cues stay the same.",
+				"controls": "Touch controls also appear automatically on phones and tablets."}
+			draw_multiline_string(body, Vector2(346, 542), notes[settings_page], HORIZONTAL_ALIGNMENT_CENTER, 588, 15, 2, MUTED)
 		"journal": draw_journal()
 		"dead", "won": draw_end()
 	if mode == "play":
@@ -601,7 +646,7 @@ func draw_hud() -> void:
 	if game.interaction_text != "":
 		centered(game.interaction_text, 640, 596, 21, GOLD, bold)
 		centered("Tap to interact  ·  E / A", 640, 624, 16, MUTED)
-	if touch_used or Run.profile.touch or is_touch_platform():
+	if touch_used or Settings.values.touch or is_touch_platform():
 		draw_stick(left_origin, left_vector, "MOVE", left_touch >= 0)
 		draw_stick(right_origin, right_vector, "AIM + FIRE", right_touch >= 0)
 		var ready: bool = game.player and game.player.dash_cooldown <= 0
@@ -612,6 +657,8 @@ func draw_hud() -> void:
 	else:
 		text("WASD move · Mouse fire · Space dash", Vector2(28, 660), 16, MUTED)
 	text("SEED %d" % Run.seed_value, Vector2(28, 697), 14, MUTED)
+	if Settings.values.show_fps:
+		text("%d FPS" % roundi(fps_value), Vector2(866, 60), 15, MUTED, bold)
 	text("%d:%02d" % [int(Run.elapsed) / 60, int(Run.elapsed) % 60], Vector2(1182, 697), 16, MUTED)
 
 func draw_stick(at: Vector2, value: Vector2, label: String, active_touch: bool) -> void:

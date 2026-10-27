@@ -96,7 +96,8 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 			Geo.collider(self, p + Vector3(0, 1.0, 0), Vector3(1.3, 2.0, 1.3))
 			obstacles.append({"position": p, "radius": 1.05})
 			make_candle(p + Vector3(0, 1.32, 0), .6)
-	for i in 10:
+	# Small details: decorative candles only; collision and layout never change.
+	for i in [4, 10, 14][Settings.detail_level()]:
 		var side = -1 if i % 2 == 0 else 1
 		var p = Vector3(decor_rng.randf_range(-6.5, 6.5), 0, side * 6.2)
 		if absf(p.x) < 1.7:
@@ -191,8 +192,9 @@ func make_embers() -> void:
 	mesh.radial_segments = 4
 	mesh.rings = 3
 	mm.mesh = mesh
-	mm.instance_count = 40
-	for i in 40:
+	var count = roundi(40 * Settings.effects_scale())
+	mm.instance_count = count
+	for i in count:
 		ember_origins.append(Vector3(decor_rng.randf_range(-9, 9), decor_rng.randf_range(.1, 4.0), decor_rng.randf_range(-7, 7)))
 	ember_mesh.multimesh = mm
 	ember_mesh.material_override = Geo.material(Color("efbc78"), 1.2)
@@ -205,7 +207,7 @@ func set_open(value: bool) -> void:
 		gate.get_node("Barrier").visible = not value
 
 func apply_lighting_quality() -> void:
-	var enabled: bool = Run.profile.quality
+	var enabled: bool = Settings.values.shadows
 	if _quality_enabled == enabled:
 		return
 	_quality_enabled = enabled

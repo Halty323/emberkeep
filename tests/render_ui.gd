@@ -69,9 +69,9 @@ func text_peak(image: Image) -> float:
 
 func capture() -> void:
 	run = root.get_node("Run")
-	run.profile.sound = false
-	run.profile.music = false
-	run.profile.touch = false
+	root.get_node("Settings").values.sound = false
+	root.get_node("Settings").values.music = false
+	root.get_node("Settings").values.touch = false
 	root.get_node("Audio").refresh()
 	game = load("res://scenes/main.tscn").instantiate()
 	root.add_child(game)
@@ -102,9 +102,9 @@ func capture() -> void:
 		if root.get_node("Content").item_by_id.has(id): run.gain_item(id)
 	game.ui.toast_time = 0
 	await save_capture("hud-desktop")
-	run.profile.touch = true
+	root.get_node("Settings").values.touch = true
 	await save_capture("hud-touch")
-	run.profile.touch = false
+	root.get_node("Settings").values.touch = false
 	# Click the actual native pause button, rather than emitting its signal.
 	await click(Vector2(1218, 53))
 	check(game.ui.mode == "pause" and game.paused, "native mouse click opens pause")

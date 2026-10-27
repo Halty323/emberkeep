@@ -11,7 +11,7 @@ func _initialize() -> void:
 func capture() -> void:
 	var output = OS.get_environment("EMBERKEEP_RENDER_OUTPUT")
 	var run = root.get_node("Run")
-	run.profile.quality = true
+	root.get_node("Settings").values.shadows = true
 	var game = load("res://scenes/main.tscn").instantiate()
 	root.add_child(game)
 	current_scene = game
@@ -34,7 +34,7 @@ func capture() -> void:
 	game.spawn_shot(Vector3(1, .65, 1), Vector3.RIGHT, 5, 10, {}, Color("ffc474"), true)
 	var failures = 0
 	for setting in [true, false]:
-		run.profile.quality = setting
+		root.get_node("Settings").values.shadows = setting
 		game.room.apply_lighting_quality()
 		for frame in 8: await process_frame
 		await RenderingServer.frame_post_draw

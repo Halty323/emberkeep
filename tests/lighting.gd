@@ -58,7 +58,7 @@ func verify_room_budget(room: Node3D, enabled: bool, label: String) -> void:
 	check(halo_count > 0, label + ": the room keeps its cozy glow effects")
 
 func new_room(enabled: bool) -> Node3D:
-	run.profile.quality = enabled
+	root.get_node("Settings").values.shadows = enabled
 	# Resolve this gameplay script after project autoloads are registered. A
 	# static DungeonRoom annotation in a SceneTree entry script loads it too soon.
 	var room = load("res://scripts/world.gd").new()
@@ -84,7 +84,7 @@ func test_lighting() -> void:
 	if room.has_method("apply_lighting_quality"):
 		for enabled in [false, true, false, true]:
 			var fill_energy = room.lamps.map(func(light): return light.light_energy)
-			run.profile.quality = enabled
+			root.get_node("Settings").values.shadows = enabled
 			room.call("apply_lighting_quality")
 			verify_room_budget(room, enabled, "quality toggle")
 			check(room.lamps.map(func(light): return light.light_energy) == fill_energy,

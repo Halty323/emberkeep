@@ -4,6 +4,7 @@ extends Node3D
 static func burst(parent: Node3D, at: Vector3, color: Color, count := 6, strength := 1.0) -> void:
 	if parent.get_tree().get_nodes_in_group("effects").size() > 65:
 		return
+	count = maxi(1, roundi(count * Settings.effects_scale()))
 	var fx = Node3D.new()
 	parent.add_child(fx)
 	fx.add_to_group("effects")

@@ -1,18 +1,105 @@
 extends Node
+## Immutable definitions with stable IDs. Relics and weapons are authored in
+## tools/make_content.py (assets/data.json); newer families live in canonical
+## res://content/<family>.json files. Nothing here holds per-run quantities.
 var items: Array = []
 var weapons: Array = []
 var item_by_id: Dictionary = {}
 var weapon_by_id: Dictionary = {}
+## family name -> Array of definitions, and family name -> id -> definition.
+var families: Dictionary = {}
+var by_family: Dictionary = {}
+var errors: Array[String] = []
 const RARITY_COLORS = {"common": Color("c6d3bf"), "uncommon": Color("96d9ba"), "rare": Color("b9b2e9"), "mythic": Color("f1c579")}
+const FAMILIES = ["rooms", "furniture", "pickups", "actives", "effects", "drop_tables", "paintings", "collections"]
+const ID_PATTERN = "^[a-z0-9_]+$"
 
 func _ready() -> void:
-	var data = JSON.parse_string(FileAccess.get_file_as_string("res://assets/data.json"))
-	items = data.items
-	weapons = data.weapons
+	load_catalog()
+	if not errors.is_empty():
+		for message in errors:
+			push_error("Content: " + message)
+
+func load_catalog(data_path := "res://assets/data.json", content_dir := "res://content") -> void:
+	items = []
+	weapons = []
+	item_by_id = {}
+	weapon_by_id = {}
+	families = {}
+	by_family = {}
+	var data = JSON.parse_string(FileAccess.get_file_as_string(data_path))
+	if data is Dictionary:
+		items = data.get("items", [])
+		weapons = data.get("weapons", [])
 	for item in items:
 		item_by_id[item.id] = item
 	for weapon in weapons:
 		weapon_by_id[weapon.id] = weapon
+	for family in FAMILIES:
+		var path = "%s/%s.json" % [content_dir, family]
+		var records: Array = []
+		if FileAccess.file_exists(path):
+			var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
+			if parsed is Dictionary and parsed.get(family) is Array:
+				records = parsed[family]
+			else:
+				records = [{"__invalid_file": path}]
+		families[family] = records
+		by_family[family] = {}
+		for record in records:
+			if record is Dictionary and record.get("id") is String:
+				by_family[family][record.id] = record
+	errors = validate()
+
+func get_def(family: String, id: String) -> Dictionary:
+	return by_family.get(family, {}).get(id, {})
+
+func has_def(family: String, id: String) -> bool:
+	return by_family.get(family, {}).has(id)
+
+## Reference and schema validation. Returns human-readable problems; an empty
+## array means every definition can be used safely at runtime.
+func validate() -> Array[String]:
+	var problems: Array[String] = []
+	var id_regex = RegEx.create_from_string(ID_PATTERN)
+	var stats := base_stats()
+	var seen := {}
+	for item in items:
+		_check_id(problems, id_regex, seen, "relic", item)
+		if not RARITY_COLORS.has(item.get("rarity", "")):
+			problems.append("relic %s has unknown rarity" % item.get("id"))
+		for key in item.get("effects", {}):
+			if not stats.has(key):
+				problems.append("relic %s uses unknown effect %s" % [item.get("id"), key])
+	seen = {}
+	for weapon in weapons:
+		_check_id(problems, id_regex, seen, "weapon", weapon)
+		for key in ["damage", "cooldown", "speed", "count", "spread"]:
+			if not (weapon.get(key) is float or weapon.get(key) is int) or float(weapon[key]) < 0:
+				problems.append("weapon %s has invalid %s" % [weapon.get("id"), key])
+		for key in weapon.get("effects", {}):
+			if not stats.has(key):
+				problems.append("weapon %s uses unknown effect %s" % [weapon.get("id"), key])
+	for family in families:
+		seen = {}
+		for record in families[family]:
+			if not record is Dictionary or record.has("__invalid_file"):
+				problems.append("%s: file must contain an object with a \"%s\" array" % [family, family])
+				continue
+			_check_id(problems, id_regex, seen, family, record)
+			var validator: String = "_validate_" + family
+			if has_method(validator):
+				call(validator, problems, record)
+	return problems
+
+func _check_id(problems: Array[String], id_regex: RegEx, seen: Dictionary, label: String, record: Dictionary) -> void:
+	var id = record.get("id")
+	if not id is String or id_regex.search(id) == null:
+		problems.append("%s has missing or malformed id: %s" % [label, str(id)])
+	elif seen.has(id):
+		problems.append("duplicate %s id: %s" % [label, id])
+	else:
+		seen[id] = true
 
 func roll_items(rng: RandomNumberGenerator, count: int, owned: Array = [], premium := false, luck_value := 0.0) -> Array:
 	var result: Array = []

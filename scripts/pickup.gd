@@ -30,22 +30,10 @@ func update_sim(delta: float) -> void:
 	visual.position.y = sin(age * 3) * .06
 	visual.rotation.y += delta * 1.5
 	var to_player: Vector3 = game.player.global_position - global_position
-	if kind == "heart" and Run.hp >= Run.stats.max_hp:
+	# Pickups that would do nothing (a heart at full health) stay on the ground.
+	if not game.pickup_useful(kind):
 		return
 	if age > .25 and to_player.length() < float(Run.stats.magnet):
 		position += to_player.normalized() * delta * 8.0
 	if age > .25 and to_player.length() < .65:
-		collected = true
-		var data: Dictionary = Run.rooms[Run.current_room]
-		if data.has("pickups"):
-			data.pickups = data.pickups.filter(func(drop): return int(drop.id) != drop_id)
-		if kind == "coin":
-			Run.coins += value
-			Audio.play_sound("coin", 1.0 + float(value) * .05)
-		else:
-			Run.heal(value)
-			Audio.play_sound("item", 1.2)
-		Run.changed.emit()
-		if Run.rooms[Run.current_room].cleared:
-			Run.save_run()
-		queue_free()
+		game.perform_action({"type": "CollectPickup", "drop_id": drop_id})
