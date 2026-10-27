@@ -20,9 +20,11 @@ assets/fonts/licenses/Open-Sans-Notice.txt
 assets/icon.svg
 assets/icon.svg.import
 docs/ANDROID.md
+docs/EXPANSION_PLAN.md
 docs/FILES.md
 docs/IOS.md
 docs/ONLINE.md
+docs/PAINTING_COLLECTION_PLAN.md
 docs/TESTING.md
 export_presets.cfg
 project.godot

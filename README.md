@@ -35,6 +35,10 @@ iPhone/iPad: [unsigned iOS builds and sideloading](docs/IOS.md) are available th
 
 The sticks float to the initial touch position. Release the aiming stick to stop firing. Dash grants a short invulnerability window. Doors open after all enemies in a combat room are defeated; walk through the middle of a doorway to enter the next room.
 
+## Planned expansion
+
+The [graphics, exploration and collection implementation plan](docs/EXPANSION_PLAN.md) covers display settings, multi-cell rooms, furniture, secrets, timed active items, new pickups, and twelve classical paintings unlocking Paint Sprayer. This is a planning document; those features are not implemented yet. [Painting source research](docs/PAINTING_COLLECTION_PLAN.md) records the proposed collection and remaining asset preparation.
+
 ## Current content
 
 - Three seeded floors with connected, branching room layouts; combat, treasure, merchant, rest and boss rooms.
