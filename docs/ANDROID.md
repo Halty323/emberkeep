@@ -1,8 +1,8 @@
 # Android export
 
-The project targets a **landscape, native Android game** using Godot’s GL Compatibility renderer. The preset is configured for Android 8.0+ (API 26), arm64 devices and x86_64 emulators, with package ID `org.emberkeep.game`. It exports an APK through Godot’s built-in templates; Gradle and custom Android source builds are disabled.
+The project targets a **landscape, native Android game** using Godot’s GL Compatibility renderer. The preset exports an APK for arm64 devices and x86_64 emulators, with package ID `org.emberkeep.game`, through Godot’s built-in templates; Gradle and custom Android source builds are disabled. The APK therefore uses the template’s own SDK levels: with the 4.6.3 templates it installs on Android 7.0+ (API 24) and targets API 36. Godot refuses to export a template build whose preset overrides Min SDK or Target SDK, so those fields stay empty; choosing other levels needs a Gradle build.
 
-The source project has an export configuration, not a prebuilt APK. The implementation environment did not have Android SDK/export templates installed. An on-device build and performance pass are still required.
+The source project has an export configuration, not a prebuilt APK. A debug APK has been exported and inspected (see `docs/TESTING.md`), but an on-device run and performance pass are still required.
 
 ## Prerequisites
 
