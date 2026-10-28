@@ -14,6 +14,9 @@ var invulnerability = 0.0
 var fire_cooldown = 0.0
 var shield = 0
 var haste_time = 0.0
+## Bell Jar: untouchable without the hurt flicker, under a glass dome.
+var bell_time = 0.0
+var bell_dome: MeshInstance3D
 var walk_time = 0.0
 var recoil = 0.0
 var orbit_meshes: Array[MeshInstance3D] = []
@@ -68,6 +71,8 @@ var stride := 0.0
 
 func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting: bool) -> void:
 	invulnerability = maxf(0, invulnerability - delta)
+	bell_time = maxf(0, bell_time - delta)
+	if bell_dome: bell_dome.visible = bell_time > 0
 	dash_cooldown = maxf(0, dash_cooldown - delta)
 	fire_cooldown -= delta
 	haste_time = maxf(0, haste_time - delta)
@@ -113,7 +118,7 @@ func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting:
 	visual.position.y = absf(sin(walk_time)) * .055
 	visual.rotation.y = lerp_angle(visual.rotation.y, atan2(-aim_direction.x, -aim_direction.z), delta * 18)
 	visual.rotation.z = -direction.x * .07
-	visual.visible = not (invulnerability > 0 and dash_time <= 0 and int(invulnerability * 18) % 2 == 0)
+	visual.visible = bell_time > 0 or not (invulnerability > 0 and dash_time <= 0 and int(invulnerability * 18) % 2 == 0)
 	gun.rotation.y = atan2(-aim_direction.x, -aim_direction.z)
 	gun.position = -aim_direction * recoil
 	if shooting and fire_cooldown <= 0 and dash_time <= 0:
@@ -174,6 +179,18 @@ func dash() -> void:
 		for i in 12:
 			var direction = Vector3.RIGHT.rotated(Vector3.UP, TAU * i / 12)
 			game.spawn_shot(global_position + Vector3(0, .5, 0), direction, 5.0 * Run.stats.dash_nova, 10.0, effects, Color("b6e2e5"), true)
+
+func bell_jar(duration: float) -> void:
+	bell_time = duration
+	invulnerability = maxf(invulnerability, duration)
+	if not bell_dome:
+		bell_dome = Geo.sphere(self, Vector3(0, .55, 0), .75, Color(.84, .9, .96, .22), .4)
+		bell_dome.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var glass: StandardMaterial3D = bell_dome.material_override.duplicate()
+		glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		bell_dome.material_override = glass
+	bell_dome.visible = true
+	Effects.ring_burst(game, global_position, Color("d6e4f0"), 1.2)
 
 func hurt(amount: float, source: Vector3) -> void:
 	if invulnerability > 0 or not Run.active:

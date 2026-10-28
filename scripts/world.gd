@@ -229,6 +229,24 @@ func remove_prop(id: String) -> void:
 		obstacles.erase(entry.obstacle)
 		navigation = RoomNavigation.new(geometry, obstacles)
 
+## Miner's Lantern: make every concealed seam in this room glow for a while.
+## The hint only points; the wall still needs a bomb or breach to open.
+func highlight_seams(duration: float) -> Array:
+	var lit: Array = []
+	for socket in sockets:
+		if not concealed.has(socket.portal): continue
+		var center := geometry.cell_center(socket.cell)
+		var direction: Vector2i = socket.dir
+		var at := Vector3(center.x + direction.x * 9.15, 0, center.y + direction.y * 7.15) - Vector3(direction.x, 0, direction.y) * .3
+		var glow := Geo.halo(self, at + Vector3(0, .04, 0), 3.0, Color(.95, .78, .45, .5))
+		var seam := Geo.box(self, at + Vector3(0, .9, 0), Vector3(.06, 1.6, .06), Color("f1cc8a"), 2.4)
+		for node in [glow, seam]:
+			node.name = "SeamHint"
+			concealed[socket.portal].append(node)
+			get_tree().create_timer(duration).timeout.connect(func(): if is_instance_valid(node): node.queue_free())
+		lit.append(socket.portal)
+	return lit
+
 ## Open a concealed doorway in place: drop the wall and debris, build a gate.
 func reveal_socket(portal: String) -> void:
 	for socket in sockets:

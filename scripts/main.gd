@@ -2,6 +2,9 @@ extends Node3D
 const CAMERA_GAME_SIZE = 14.4
 const CAMERA_MENU_SIZE = 18.8
 const CAMERA_FOLLOW_GAIN = .45
+## Why an active did nothing, told once per fresh press. Cooldown has its own ring.
+const ACTIVE_REASONS = {"insufficient_coins": "Not enough coins.", "not_useful": "You are already at full health.",
+	"no_target": "Nothing here for it to act on.", "no_capacity": "Your moths are still out."}
 const CAMERA_FOCUS_LIMIT = Vector2(3.6, 2.8)
 var room: DungeonRoom
 var camera: Camera3D
@@ -15,6 +18,7 @@ var marker: Node3D
 var marker_visual: Node3D
 var enemies: Array = []
 var shots: Array = []
+var companions: Array = []
 var pickups: Array = []
 var paused = true
 var in_menu = true
@@ -218,8 +222,8 @@ func _physics_process(delta: float) -> void:
 	if request_active:
 		request_active = false
 		var used := perform_action({"type": "UseActive"})
-		if not used.ok and used.reason in ["insufficient_coins", "not_useful"]:
-			ui.notify(items.equipped_def().get("name", ""), "Not enough coins." if used.reason == "insufficient_coins" else "You are already at full health.", Color("efbd9f"))
+		if not used.ok and ACTIVE_REASONS.has(used.reason):
+			ui.notify(items.equipped_def().get("name", ""), ACTIVE_REASONS[used.reason], Color("efbd9f"))
 	if request_bomb:
 		request_bomb = false
 		perform_action({"type": "PlaceBomb"})
@@ -229,6 +233,9 @@ func _physics_process(delta: float) -> void:
 	for enemy in enemies.duplicate():
 		if is_instance_valid(enemy) and is_playing(): enemy.update_sim(delta)
 	enemies = enemies.filter(func(e): return is_instance_valid(e) and e.alive)
+	for moth in companions:
+		if is_instance_valid(moth) and is_playing(): moth.update_sim(delta)
+	companions = live_companions()
 	for shot in shots.duplicate():
 		if is_instance_valid(shot) and is_playing(): shot.update_sim(delta)
 	shots = shots.filter(func(s): return is_instance_valid(s) and s.alive)
@@ -295,6 +302,9 @@ func clean_room() -> void:
 	for pickup in pickups:
 		if is_instance_valid(pickup): pickup.queue_free()
 	bomb_nodes.clear()
+	for moth in companions:
+		if is_instance_valid(moth): moth.queue_free()
+	companions.clear()
 	shots.clear()
 	enemies.clear()
 	pickups.clear()
@@ -489,6 +499,18 @@ func spawn_enemy(at: Vector3, kind: String, source := "") -> DungeonEnemy:
 	enemy.last_valid = at
 	enemies.append(enemy)
 	return enemy
+
+func live_companions() -> Array:
+	return companions.filter(func(m): return is_instance_valid(m) and m.alive())
+
+func release_moths(count: int, duration: float, damage: float) -> void:
+	for i in count:
+		var moth := Moth.new()
+		scene_root.add_child(moth)
+		moth.setup(self, i, duration, damage)
+		moth.global_position = player.global_position + Vector3.UP * .9
+		companions.append(moth)
+	Effects.pickup_glint(player.global_position + Vector3.UP * .9, Color("efe2b4"))
 
 func spawn_shot(at: Vector3, direction: Vector3, damage: float, speed_value: float, stats: Dictionary, color: Color, friendly: bool) -> EmberShot:
 	if shots.size() >= 200: return null

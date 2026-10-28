@@ -89,6 +89,25 @@ func equip(id: String, instance := -1) -> Dictionary:
 	Run.changed.emit()
 	return previous
 
+## Room capacity for active-item companions.
+const COMPANION_BUDGET := 2
+
+## Something in the room worth spending a cooldown on.
+func threatened() -> bool:
+	return game.enemies.any(func(e): return is_instance_valid(e) and e.alive) \
+		or game.shots.any(func(s): return is_instance_valid(s) and s.alive and not s.friendly)
+
+## Hostile shots inside a radius of the player.
+func hostile_shots_near(radius: float) -> Array:
+	var at: Vector3 = game.player.global_position
+	return game.shots.filter(func(s): return is_instance_valid(s) and s.alive and not s.friendly \
+		and Vector2(s.global_position.x - at.x, s.global_position.z - at.z).length() <= radius)
+
+func enemies_near(radius: float) -> Array:
+	var at: Vector3 = game.player.global_position
+	return game.enemies.filter(func(e): return is_instance_valid(e) and e.alive \
+		and Vector2(e.global_position.x - at.x, e.global_position.z - at.z).length() <= radius)
+
 ## Why the equipped active cannot be used right now, or "" when it can.
 func active_block_reason() -> String:
 	var def := equipped_def()
@@ -99,6 +118,15 @@ func active_block_reason() -> String:
 		"heal":
 			if Run.hp >= Run.stats.max_hp: return "not_useful"
 			if Run.coins < int(params.get("cost", 0)): return "insufficient_coins"
+		"gale":
+			if hostile_shots_near(params.radius).is_empty() and enemies_near(params.radius).is_empty(): return "no_target"
+		"slow", "modifier", "invulnerable":
+			if not threatened(): return "no_target"
+		"companions":
+			if not threatened(): return "no_target"
+			if game.live_companions().size() + int(params.count) > COMPANION_BUDGET: return "no_capacity"
+		"reveal_hint":
+			if not is_instance_valid(game.room) or game.room.concealed.is_empty(): return "no_target"
 	return ""
 
 func use_active() -> Dictionary:
@@ -124,6 +152,34 @@ func use_active() -> Dictionary:
 				game.spawn_shot(game.player.global_position + Vector3(0, .6, 0), direction,
 					float(params.damage) * float(Run.stats.damage), 12.0, stats, Color(def.color), true)
 			Effects.ring_burst(game.scene_root, game.player.global_position, Color(def.color), 2.4)
+		"gale":
+			for shot in hostile_shots_near(params.radius):
+				shot.remove()
+			for enemy in enemies_near(params.radius * 1.4):
+				var away: Vector3 = enemy.global_position - game.player.global_position
+				away.y = 0
+				enemy.knock_velocity += away.normalized() * float(params.push) / (2.5 if enemy.boss else 1.0)
+			Effects.ring_burst(game.scene_root, game.player.global_position, Color(def.color), float(params.radius))
+		"slow":
+			for enemy in game.enemies:
+				if not is_instance_valid(enemy) or not enemy.alive: continue
+				var scale := float(params.get("boss_scale", .5)) if enemy.boss else 1.0
+				enemy.chill_time = maxf(enemy.chill_time, float(params.duration) * scale)
+				enemy.chill_power = maxf(enemy.chill_power, float(params.power) * scale)
+			Effects.ring_burst(game.scene_root, game.player.global_position, Color(def.color), 6.0)
+		"modifier":
+			# Refresh, never stack: a second use only restores the full duration.
+			Run.modifiers = Run.modifiers.filter(func(m): return m.id != def.id)
+			Run.modifiers.append({"id": def.id, "time": float(params.duration), "stats": params.stats.duplicate()})
+			Run.rebuild_stats()
+			Effects.ring_burst(game.scene_root, game.player.global_position, Color(def.color), 1.4)
+		"companions":
+			game.release_moths(int(params.count), float(params.duration), float(params.damage))
+		"reveal_hint":
+			game.room.highlight_seams(float(params.duration))
+			Effects.ring_burst(game.scene_root, game.player.global_position, Color(def.color), 2.0)
+		"invulnerable":
+			game.player.bell_jar(float(params.duration))
 	Run.cooldowns[def.id] = float(def.cooldown)
 	Audio.play_sound("item", .9)
 	Run.changed.emit()
@@ -136,6 +192,14 @@ func use_active() -> Dictionary:
 func tick(delta: float) -> Array:
 	for id in Run.cooldowns:
 		Run.cooldowns[id] = maxf(0.0, float(Run.cooldowns[id]) - delta)
+	if not Run.modifiers.is_empty():
+		for modifier in Run.modifiers:
+			modifier.time = float(modifier.time) - delta
+		var kept: Array = Run.modifiers.filter(func(m): return float(m.time) > 0)
+		if kept.size() != Run.modifiers.size():
+			Run.modifiers = kept
+			Run.rebuild_stats()
+			Run.changed.emit()
 	var detonated: Array = []
 	for bomb in Run.pending_bombs:
 		bomb.fuse = float(bomb.fuse) - delta

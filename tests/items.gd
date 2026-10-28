@@ -310,6 +310,90 @@ func test_generation() -> void:
 	run.generate_floor()
 	check(JSON.stringify(first) == JSON.stringify(run.rooms), "chest placement is deterministic")
 
+## Phase 7: the remaining six actives. Each refuses (no cooldown) when it
+## would do nothing, then acts once and starts its declared cooldown.
+func use_fresh(id: String) -> Dictionary:
+	game.equip_active(id)
+	run.cooldowns[id] = 0.0
+	return game.perform_action({"type": "UseActive"})
+
+func test_all_actives() -> void:
+	var defs: Array = root.get_node("Content").families.actives
+	check(defs.size() == 8, "all eight actives are in the catalog")
+	await fresh_run(31007)
+	for enemy in game.enemies: enemy.queue_free()
+	game.enemies.clear()
+	await process_frame
+	for id in ["gale_bell", "winter_globe", "copper_kettle", "moth_jar", "bell_jar"]:
+		var used := use_fresh(id)
+		check(not used.ok and used.reason == "no_target" and game.items.cooldown_left() == 0, id + " is refused in an empty room")
+	game.player.position = Vector3(0, 0, 0)
+	var near = game.spawn_enemy(Vector3(2, 0, 0), "brute", "")
+	var far = game.spawn_enemy(Vector3(-7, 0, -4), "mote", "")
+	var hostile = game.spawn_shot(Vector3(1.5, .6, 1), Vector3.LEFT, 1, 0.01, {}, Color.RED, false)
+	# Gale Bell clears nearby hostile shots and pushes foes away.
+	check(use_fresh("gale_bell").ok and not (is_instance_valid(hostile) and hostile.alive), "the gale clears a nearby hostile shot")
+	check(near.knock_velocity.x > 1.0, "the gale pushes a nearby foe away")
+	check(is_equal_approx(game.items.cooldown_left(), 35), "the gale starts its cooldown")
+	# Winter Globe slows everything; bosses resist.
+	far.boss = true
+	check(use_fresh("winter_globe").ok and is_equal_approx(near.chill_time, 4) and is_equal_approx(far.chill_time, 2), "the globe slows foes, half as long for bosses")
+	far.boss = false
+	# Copper Kettle: a refreshing, non-stacking layer that never eats relics.
+	var damage: float = run.stats.damage
+	check(use_fresh("copper_kettle").ok and is_equal_approx(run.stats.damage, damage + .35), "the kettle raises damage")
+	check(use_fresh("copper_kettle").ok and run.modifiers.size() == 1 and is_equal_approx(run.stats.damage, damage + .35), "a second kettle refreshes instead of stacking")
+	var relic: String = root.get_node("Content").items[0].id
+	run.gain_item(relic)
+	var with_relic: float = Content_damage_without_modifiers()
+	await reload()
+	check(run.modifiers.size() == 1 and run.stats.damage > with_relic, "the kettle layer survives Continue")
+	step(6.5)
+	check(run.modifiers.is_empty() and is_equal_approx(run.stats.damage, with_relic), "the kettle expires and the relic acquired during it stays")
+	near = game.spawn_enemy(Vector3(2, 0, 0), "brute", "")
+	# Moth Jar: two companions within the budget, room-scoped.
+	game.player.position = Vector3(0, 0, 0)
+	check(use_fresh("moth_jar").ok and game.live_companions().size() == 2, "the moth jar releases two moths")
+	check(use_fresh("moth_jar").reason == "no_capacity" and game.items.cooldown_left() == 0, "moths beyond the budget are refused for free")
+	var hp_before: float = near.hp
+	step(1.5)
+	check(not is_instance_valid(near) or not near.alive or near.hp < hp_before, "the moths attack")
+	step(10.0)
+	check(game.live_companions().is_empty(), "the moths leave when their time is up")
+	# Bell Jar: untouchable for its duration, then hits land again.
+	near = game.spawn_enemy(Vector3(3, 0, 0), "brute", "")
+	run.hp = 4
+	check(use_fresh("bell_jar").ok and game.player.bell_time > 0, "the bell jar covers the player")
+	game.player.hurt(1, Vector3.ZERO)
+	check(is_equal_approx(run.hp, 4), "no hit lands under the bell jar")
+	game.player.update_sim(3.0, Vector2.ZERO, Vector3.ZERO, false)
+	run.wards = 0
+	game.player.hurt(1, Vector3.ZERO)
+	check(is_equal_approx(run.hp, 3), "hits land again once it lifts")
+	# Miner's Lantern: only beside a concealed seam, and it never opens it.
+	check(use_fresh("miners_lantern").reason == "no_target", "the lantern is refused with no seam in the room")
+	var seam_room := ""
+	for key in run.rooms:
+		if run.rooms[key].type != "secret" and run.room_layout(key).sockets.any(func(s): return s.get("state", "open") == "concealed"):
+			seam_room = key
+	check(seam_room != "", "the floor has a room beside its secret")
+	run.current_room = seam_room
+	run.rooms[seam_room].cleared = true
+	game.enter_room(Vector3.ZERO)
+	await process_frame
+	var concealed: int = game.room.concealed.size()
+	check(use_fresh("miners_lantern").ok and is_equal_approx(game.items.cooldown_left(), 40), "the lantern lights a seam")
+	check(game.room.concealed.size() == concealed and game.room.find_children("SeamHint*", "", true, false).size() >= 2, "the seam glows but stays closed")
+
+func Content_damage_without_modifiers() -> float:
+	var saved_modifiers: Array = run.modifiers
+	run.modifiers = []
+	run.rebuild_stats()
+	var value: float = run.stats.damage
+	run.modifiers = saved_modifiers
+	run.rebuild_stats()
+	return value
+
 func test_items() -> void:
 	run = root.get_node("Run")
 	Items = load("res://scripts/items/item_system.gd")
@@ -326,6 +410,7 @@ func test_items() -> void:
 	await test_bombs()
 	await test_reward_ledger()
 	await test_actives()
+	await test_all_actives()
 	await test_touch()
 	game.end_run(false)
 	game.queue_free()

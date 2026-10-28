@@ -125,6 +125,11 @@ func rebuild_stats() -> void:
 	for id in inventory:
 		for key in Content.item_by_id[id].effects:
 			stats[key] += float(Content.item_by_id[id].effects[key])
+	# Temporary layers sit on top of relics: expiry rebuilds from the inventory,
+	# so a relic picked up during a buff is never lost with it.
+	for modifier in modifiers:
+		for key in modifier.stats:
+			stats[key] += float(modifier.stats[key])
 	stats.max_hp = maxf(2.0, stats.max_hp)
 	stats.damage = maxf(0.3, stats.damage)
 	stats.rate = clampf(stats.rate, 0.35, 5.0)

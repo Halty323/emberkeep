@@ -4,7 +4,28 @@ Verified with Godot 4.6.3 Standard in a headless Linux environment.
 
 `./tools/test.sh` completed with **2,514 checks, zero failures**: 1,033 gameplay checks, 367 lighting checks, 284 secret-code checks, 202 camera/wall presentation checks and 628 UI checks, with no runtime script errors or shutdown leak warnings. The wrapper imports the project, runs all suites with disposable user storage, and rejects script errors even if Godot returns a successful exit status. UI check counts depend on whether a prior suite left a resumable save, since the title then exposes an extra button.
 
-The suite covers:
+After the expansion, `./tools/test.sh` runs twelve suites with **109,207 checks and zero failures**:
+
+| Suite | Checks | Gate it guards |
+| --- | ---: | --- |
+| smoke | 1,034 | Original gameplay regressions, now with eleven weapons |
+| lighting | 367 | Lighting quality and the single local shadow budget |
+| secret_codes | 284 | ALLRELICS entry and effects |
+| presentation | 219 | Camera framing and wall cutaways |
+| ui_presentation | 672 | Native UI layout and input routing |
+| settings | 85 | Phase 1: settings service, resolution/FPS/VSync, migration of old preferences |
+| foundation | 44 | Phase 1: catalog validation, save/version adapters, action contracts |
+| rooms | 100,517 | Phase 2/4: thousands of seeded floors; no overlap, reciprocal portals, required rooms reachable without secrets, one secret per floor |
+| items | 1,333 | Phase 3/7: pickups, keys and chests, bombs across reload, the reward ledger, all eight actives and their refusal rules, cooldowns frozen while paused, touch action buttons |
+| furniture | 3,897 | Phase 4: every required object reachable, breakables and reveals persist across reload |
+| effects | 50 | Phase 5: per-detail budgets, essential cues survive saturation, cleanup with the room, Low/30 FPS and High/120 FPS give identical gameplay |
+| gallery | 705 | Phase 6: catalog and image checks, 11 stays locked and 12 unlocks once, every weapon entry point respects the lock, one guaranteed painting per floor, layout independent of collection progress, viewer and Paint Sprayer pigments |
+
+`./tools/check_package.sh` exports the Linux pack and runs it from an empty directory with `--verify-catalog`, which checks every content family, weapon and painting image from inside the pack. With `--release` it also fails while any painting is still pending import; today it reports all twelve as pending because the import environment could not reach the image hosts.
+
+Opt-in renders (`./tools/render.sh rooms|items|furniture|effects|gallery`) capture each phase with the real OpenGL Compatibility renderer under a virtual display.
+
+The original suites cover:
 
 - Connected and repeatable room graphs for 50 seeds across all three floors, including exactly one boss, treasure, merchant and rest room per floor.
 - All 60 relics and 10 weapon definitions, with valid effect keys.
@@ -54,6 +75,6 @@ Run `./tools/render_lighting.sh` with a working display to produce on/off PNGs, 
 
 The Android preset also exported `emberkeep.pck` successfully. That packaged resource set launched with the Godot executable for 120 headless frames using `--quickstart`, with no errors. Its catalog, compiled gameplay scripts and bundled font licenses were checked in the pack.
 
-No APK was built: the Android SDK and matching Android export templates are absent. OpenGL lighting and UI captures have been verified using software rendering; physical touch behavior, Android installation and device performance remain unverified. These checks are necessary before calling this a device-tested release.
+No APK or IPA was built for the expansion either: the Android SDK, export templates and a Mac/iOS runner are absent here. The iOS GitHub Actions workflow can still build an unsigned IPA from the branch. OpenGL lighting and UI captures have been verified using software rendering; physical touch behavior, Android installation and device performance remain unverified. These checks are necessary before calling this a device-tested release.
 
 See [ANDROID.md](ANDROID.md) for native export and device checks. The game is currently offline; see [ONLINE.md](ONLINE.md) for the planned online work.

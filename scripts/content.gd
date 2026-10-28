@@ -19,6 +19,35 @@ func _ready() -> void:
 	if not errors.is_empty():
 		for message in errors:
 			push_error("Content: " + message)
+	if OS.get_cmdline_user_args().has("--verify-catalog"):
+		call_deferred("report_catalog", OS.get_cmdline_user_args().has("--release"))
+
+## Packaged-build check (tools/check_package.sh): the exported pack carries a
+## valid catalog and every painting image it names. A release build refuses
+## paintings that are still pending import.
+func report_catalog(release: bool) -> void:
+	var problems: Array[String] = errors.duplicate()
+	var pending: Array = []
+	for record in families.get("paintings", []):
+		if not Gallery.has_image(record.id):
+			pending.append(record.id)
+			continue
+		var tex := Gallery.texture(record.id)
+		var aspect := float(tex.get_width()) / tex.get_height()
+		if absf(aspect - float(record.aspect)) > .01 * float(record.aspect):
+			problems.append("painting %s image aspect %.3f differs from its record" % [record.id, aspect])
+		if not record.has("provenance"):
+			problems.append("painting %s ships an image without provenance" % record.id)
+	if release and not pending.is_empty():
+		problems.append("release build has paintings pending import: " + ", ".join(pending))
+	var counts: Array = []
+	for family in FAMILIES:
+		counts.append("%s=%d" % [family, families.get(family, []).size()])
+	print("EMBERKEEP CATALOG %s weapons=%d items=%d pending_images=%d" % [" ".join(counts), weapons.size(), items.size(), pending.size()])
+	for problem in problems:
+		printerr("CATALOG PROBLEM: " + problem)
+	print("EMBERKEEP CATALOG RESULT: %s" % ("ok" if problems.is_empty() else "%d problems" % problems.size()))
+	get_tree().quit(0 if problems.is_empty() else 1)
 
 func load_catalog(data_path := "res://assets/data.json", content_dir := "res://content") -> void:
 	items = []
@@ -98,7 +127,7 @@ const PICKUP_EFFECTS = ["coins", "heal", "ward", "keys", "bombs", "recharge", "r
 const PICKUP_VISUALS = ["coin", "heart", "ward", "key", "bomb", "battery"]
 ## Active handlers implemented by ItemSystem. A definition naming anything
 ## else is rejected rather than silently doing nothing.
-const ACTIVE_HANDLERS = ["heal", "ember_burst"]
+const ACTIVE_HANDLERS = ["heal", "ember_burst", "gale", "slow", "modifier", "companions", "reveal_hint", "invulnerable"]
 
 static func _number(value) -> bool:
 	return value is float or value is int
@@ -133,6 +162,11 @@ func _validate_actives(problems: Array[String], active: Dictionary) -> void:
 		problems.append("active %s needs a positive cooldown" % active.get("id"))
 	if not active.get("params") is Dictionary or not active.get("name") is String:
 		problems.append("active %s needs a name and params" % active.get("id"))
+	elif active.handler == "modifier":
+		var base := base_stats()
+		for key in active.params.get("stats", {}):
+			if not base.has(key):
+				problems.append("active %s modifies unknown stat %s" % [active.get("id"), key])
 
 const PROP_PLACEMENTS = ["wall", "corner", "center", "scatter", "flank"]
 
