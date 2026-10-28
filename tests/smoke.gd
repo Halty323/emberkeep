@@ -23,6 +23,17 @@ func test_all() -> void:
 	var collection = root.get_node("Collection")
 	check(catalog.weapons.filter(func(w): return not w.has("requires")).size() == 10, "ten weapons need no unlock")
 	check(not collection.weapon_available("paint_sprayer") or "paint_sprayer" in run.profile.unlocks, "Paint Sprayer is locked until earned")
+	# Godot reads a forward loop through loop_end inclusive: it must be a real
+	# frame, or every wrap reads past the sample data (an Android crash).
+	var audio = root.get_node("Audio")
+	var streams: Array = audio.sounds.values() + [audio.music_player.stream]
+	for stream in streams:
+		var frames: int = stream.data.size() / 2
+		if stream.loop_mode == AudioStreamWAV.LOOP_DISABLED: continue
+		check(stream.loop_begin >= 0 and stream.loop_begin < stream.loop_end and stream.loop_end <= frames - 1,
+			"looping audio stays inside its %d frames (loop_end %d)" % [frames, stream.loop_end])
+		var seam = absi(stream.data.decode_s16(stream.loop_end * 2) - stream.data.decode_s16(stream.loop_begin * 2))
+		check(seam <= 2, "the music loop wraps without a click (seam %d)" % seam)
 	var valid_stats: Dictionary = catalog.base_stats()
 	for item in catalog.items:
 		for key in item.effects:

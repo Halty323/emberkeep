@@ -74,10 +74,13 @@ func tone(start: float, end: float, duration: float, amplitude: float) -> AudioS
 func make_ambient() -> AudioStreamWAV:
 	var bytes = PackedByteArray()
 	var count = 22050 * 12
-	bytes.resize(count * 2)
+	# Godot mixes a forward loop up to and including loop_end, so the data
+	# carries one frame past the period (the first frame again). Without it
+	# the mixer reads past the buffer at every wrap, which crashes Android.
+	bytes.resize((count + 1) * 2)
 	# Frequencies align to the loop period. Soft, original A-minor pad.
 	var notes = [110.0, 165.0, 220.0, 261.666667, 330.0]
-	for i in count:
+	for i in count + 1:
 		var t = float(i) / 22050
 		var value = 0.0
 		for n in notes.size():
