@@ -781,6 +781,44 @@
         "pierce": 3,
         "size": -0.25
       }
+    },
+    {
+      "id": "paint_sprayer",
+      "name": "Paint Sprayer",
+      "description": "Rapid close bursts of pigment: red burns, blue chills, green poisons.",
+      "color": "#e98aa6",
+      "damage": 2.6,
+      "cooldown": 0.1,
+      "speed": 14,
+      "count": 2,
+      "spread": 0.42,
+      "effects": {
+        "range": -0.45,
+        "size": -0.15
+      },
+      "pigments": [
+        {
+          "name": "red",
+          "color": "#e2574c",
+          "effects": {
+            "burn": 0.6
+          }
+        },
+        {
+          "name": "blue",
+          "color": "#4f8fe0",
+          "effects": {
+            "chill": 0.7
+          }
+        },
+        {
+          "name": "green",
+          "color": "#5cbf6a",
+          "effects": {
+            "poison": 0.7
+          }
+        }
+      ]
     }
   ]
 }

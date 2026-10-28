@@ -164,6 +164,64 @@ static func pillars(room: Dictionary, geometry: RoomGeometry) -> Array:
 			result.append({"def": "pillar", "position": center + p, "rotation": 0})
 	return result
 
+const MOUNT_SIZE := Vector2(2.6, 1.9)
+const MOUNT_HEIGHT := 1.55
+
+static func mount_point(mount: Dictionary) -> Vector2:
+	return Vector2(mount.position[0], mount.position[1])
+
+static func mount_dir(mount: Dictionary) -> Vector2:
+	return Vector2(mount.dir[0], mount.dir[1])
+
+## Where a viewer stands to inspect the painting.
+static func view_point(mount: Dictionary) -> Vector2:
+	return mount_point(mount) - mount_dir(mount) * 2.2
+
+static func mount_circles(mount: Dictionary) -> Array:
+	var m := mount_point(mount)
+	var d := mount_dir(mount)
+	var along := Vector2(absf(d.y), absf(d.x))
+	return [[m - d * .5 - along * .9, .9], [m - d * .5 + along * .9, .9], [m - d * .5, .9], [view_point(mount), 1.4]]
+
+## Paintings hang only on back walls, which stay visible when the near walls
+## cut away, clear of doorways, seams, chests and pillars.
+static func choose_mount(geometry: RoomGeometry, layout: Dictionary, chests: Array, placed: Array, gen: RandomNumberGenerator) -> Dictionary:
+	var candidates: Array = []
+	for side in geometry.exposed_sides():
+		var dir: Vector2i = side.dir
+		if dir.x + dir.y >= 0:
+			continue
+		var axis := Vector2(1, 0) if dir.y != 0 else Vector2(0, 1)
+		for along in ([-4.5, 4.5, -2.8, 2.8] if dir.y != 0 else [-3.4, 3.4]):
+			candidates.append({"cell": side.cell, "dir": dir, "point": side.mid + axis * along - Vector2(dir) * .05})
+	for i in range(candidates.size() - 1, 0, -1):
+		var j := gen.randi_range(0, i)
+		var t = candidates[i]
+		candidates[i] = candidates[j]
+		candidates[j] = t
+	for c in candidates:
+		var mount := {"cell": [c.cell.x, c.cell.y], "position": [c.point.x, c.point.y], "dir": [c.dir.x, c.dir.y],
+			"size": [MOUNT_SIZE.x, MOUNT_SIZE.y]}
+		var view := view_point(mount)
+		if not geometry.contains(view, .8):
+			continue
+		var clear := true
+		for socket in layout.get("sockets", []):
+			if geometry.socket_point(socket.cell, socket.dir).distance_to(c.point) < 2.9:
+				clear = false
+		for chest in chests:
+			if Vector2(chest.position[0], chest.position[1]).distance_to(view) < 2.4 or Vector2(chest.position[0], chest.position[1]).distance_to(c.point) < 2.2:
+				clear = false
+		for p in lantern_points(geometry):
+			if p.distance_to(c.point) < 1.9: clear = false
+		for piece in placed:
+			for circle in mount_circles(mount):
+				if _rect_hits_circle(footprint(Content.get_def("furniture", piece.def), piece.position, piece.rotation), circle[0], circle[1]):
+					clear = false
+		if clear:
+			return mount
+	return {}
+
 ## Plan a room's furniture. Returns saved prop records.
 static func plan(key: String, room: Dictionary, layout: Dictionary) -> Array:
 	var geometry := RoomGeometry.new(layout.cells)
@@ -178,6 +236,14 @@ static func plan(key: String, room: Dictionary, layout: Dictionary) -> Array:
 		for pillar in pillars(room, geometry):
 			placed.append(pillar)
 			nav.block_rect(footprint(Content.get_def("furniture", "pillar"), pillar.position, 0))
+	# A painting mount is reserved before any furniture, with its viewing spot.
+	room.erase("mount")
+	if room.get("gallery", "") != "":
+		var mount := choose_mount(geometry, layout, chests, placed, gen)
+		if not mount.is_empty():
+			room["mount"] = mount
+			reserved.append_array(mount_circles(mount))
+			required.append(view_point(mount))
 	var theme := pick_theme(room.type, gen)
 	room["theme"] = theme.get("id", "")
 	if not theme.is_empty():

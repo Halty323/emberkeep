@@ -74,8 +74,17 @@ weapons = [
 ('nova','Sunwheel','Eight sparks bloom in every direction.','#f9cb65',4.5,.62,13,8,6.28318,{'radial':1}),
 ('comet','Little Comet','Slow, seeking stars with a satisfying blast.','#f5aa80',16,.72,10,1,.01,{'homing':3.2,'explosion':1.3,'size':.6}),
 ('prism','Prism Lance','A narrow trio of fast, piercing light.','#b4e8ed',6,.3,27,3,.10,{'pierce':3,'size':-.25}),
+('paint_sprayer','Paint Sprayer','Rapid close bursts of pigment: red burns, blue chills, green poisons.','#e98aa6',2.6,.1,14,2,.42,{'range':-.45,'size':-.15}),
 ]
+# Pigments cycle deterministically shot by shot; the colour is gameplay state.
+pigments = {'paint_sprayer': [
+    {'name':'red','color':'#e2574c','effects':{'burn':.6}},
+    {'name':'blue','color':'#4f8fe0','effects':{'chill':.7}},
+    {'name':'green','color':'#5cbf6a','effects':{'poison':.7}},
+]}
 out={'version':1,'items':[{'id':i,'name':n,'description':d,'rarity':r,'tag':t,'effects':e} for i,n,d,r,t,e in items], 'weapons':[{'id':i,'name':n,'description':d,'color':c,'damage':dm,'cooldown':cd,'speed':sp,'count':ct,'spread':a,'effects':e} for i,n,d,c,dm,cd,sp,ct,a,e in weapons]}
+for weapon in out['weapons']:
+    if weapon['id'] in pigments: weapon['pigments'] = pigments[weapon['id']]
 p=Path(__file__).resolve().parents[1]/'assets'/'data.json'
 p.write_text(json.dumps(out,indent=2,ensure_ascii=False)+'\n')
 print(f'{len(items)} relics, {len(weapons)} weapons → {p}')

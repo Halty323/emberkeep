@@ -36,6 +36,8 @@ var starter_index = 0
 var selected_seed = ""
 var seed_field: LineEdit
 var offers: Array = []
+var painting_id := ""
+var painting_result: Dictionary = {}
 var shop = false
 var toast_text = ""
 var toast_detail = ""
@@ -172,6 +174,8 @@ func show_screen(screen: String) -> void:
 		"secret": build_secret_code()
 		"reward": build_rewards()
 		"journal": build_journal()
+		"painting": button("Back to the room", Rect2(880, 598, 300, 58), func(): close_painting(), true)
+		"gallery": button("← Back", Rect2(64, 36, 144, 56), func(): show_screen("journal"))
 		"map": button("← Back", Rect2(540, 600, 200, 58), func(): close_map())
 		"settings": build_settings()
 		"dead", "won":
@@ -233,6 +237,10 @@ func build_surfaces() -> void:
 		"secret": make_surface(Rect2(376, 140, 528, 448))
 		"settings": make_surface(SETTINGS_RECT)
 		"map": make_surface(Rect2(120, 60, 1040, 616))
+		"painting": make_surface(Rect2(60, 40, 1160, 640))
+		"gallery":
+			for slot in 12:
+				make_surface(gallery_rect(slot), PANEL, GOLD if slot < gallery_ids().size() and Gallery.is_discovered(gallery_ids()[slot]) else EDGE)
 		"reward":
 			for i in offers.size():
 				make_surface(reward_rect(i), PANEL, offer_info(offers[i]).color)
@@ -351,7 +359,10 @@ func build_menu() -> void:
 	button("Settings", Rect2(1080, 32, 154, 56), func(): open_settings("menu"))
 
 func cycle_weapon(step: int) -> void:
-	starter_index = posmod(starter_index + step, Content.weapons.size())
+	# Locked weapons are skipped; WeaponAvailability is the single gate.
+	for i in Content.weapons.size():
+		starter_index = posmod(starter_index + step, Content.weapons.size())
+		if WeaponAvailability.is_available(Content.weapons[starter_index].id): break
 	Audio.play_sound("coin", .75)
 	queue_redraw()
 
@@ -384,8 +395,82 @@ func open_journal(back: String) -> void:
 
 func build_journal() -> void:
 	button("← Back", Rect2(64, 36, 144, 56), func(): close_subscreen())
+	button("Paintings", Rect2(1040, 36, 176, 56), func(): show_screen("gallery"))
 	button("←", Rect2(1044, 626, 76, 58), func(): change_journal_page(-1))
 	button("→", Rect2(1136, 626, 76, 58), func(): change_journal_page(1))
+
+func open_painting(id: String, result: Dictionary) -> void:
+	painting_id = id
+	painting_result = result
+	show_screen("painting")
+
+func close_painting() -> void:
+	game.paused = false
+	show_screen("play")
+	if painting_result.get("new", false):
+		var p := Gallery.progress()
+		notify("A new painting", "%d of %d works in the collection." % [p.x, p.y], GOLD)
+	for weapon in painting_result.get("unlocked", []):
+		notify(Content.weapon_by_id[weapon].name + " unlocked", "The collection is complete. Choose it when you start a run.", Color("e98aa6"))
+	painting_result = {}
+
+func gallery_ids() -> Array:
+	return Content.get_def("collections", Gallery.COLLECTION).get("paintings", [])
+
+func gallery_rect(slot: int) -> Rect2:
+	return Rect2(64 + (slot % 4) * 292, 150 + (slot / 4) * 166, 276, 152)
+
+## Draw a painting's image inside `area`, whole and undistorted, or a plainly
+## marked plate while the reproduction is pending import.
+func draw_artwork(id: String, area: Rect2) -> void:
+	var record := Gallery.painting(id)
+	var aspect := float(record.get("aspect", 1.0))
+	var size := Vector2(area.size.x, area.size.x / aspect)
+	if size.y > area.size.y: size = Vector2(area.size.y * aspect, area.size.y)
+	var rect := Rect2(area.get_center() - size / 2.0, size)
+	draw_rect(rect.grow(6), Color("8a6a3c"))
+	var tex := Gallery.texture(id)
+	if tex:
+		draw_texture_rect(tex, rect, false)
+	else:
+		draw_rect(rect, Color("2b2a27"))
+		centered("Pending" if rect.size.x < 110 else "Image pending", rect.get_center().x, rect.get_center().y + 6, 15 if rect.size.x < 200 else 20, MUTED, bold)
+
+func draw_painting_view() -> void:
+	var record := Gallery.painting(painting_id)
+	if record.is_empty(): return
+	draw_artwork(painting_id, Rect2(96, 76, 640, 560))
+	var x := 780.0
+	text(record.title, Vector2(x, 130), 32, INK, heading)
+	text("%s, %s" % [record.artist, record.date], Vector2(x, 170), 19, GOLD)
+	text(record.institution, Vector2(x, 202), 16, MUTED)
+	if record.kind == "wall painting":
+		text("Reproduction of a wall painting", Vector2(x, 228), 15, MUTED)
+	divider(Vector2(x, 248), Vector2(1180, 248))
+	draw_multiline_string(body, Vector2(x, 282), record.caption, HORIZONTAL_ALIGNMENT_LEFT, 400, 18, 6, INK)
+	var p := Gallery.progress()
+	var status := "New discovery · %d / %d" % [p.x, p.y] if painting_result.get("new", false) else "In your collection · %d / %d" % [p.x, p.y]
+	text(status, Vector2(x, 470), 18, GOLD, bold)
+	for weapon in painting_result.get("unlocked", []):
+		text("%s unlocked!" % Content.weapon_by_id[weapon].name, Vector2(x, 500), 18, Color("e98aa6"), bold)
+	draw_multiline_string(body, Vector2(x, 548), Gallery.credit(painting_id), HORIZONTAL_ALIGNMENT_LEFT, 400, 13, 2, MUTED)
+
+func draw_gallery() -> void:
+	var p := Gallery.progress()
+	text("World Classics", Vector2(230, 78), 34, INK, heading)
+	text("%d / %d paintings found · discoveries are kept forever" % [p.x, p.y], Vector2(232, 112), 17, MUTED)
+	var sprayer := "Paint Sprayer unlocked" if WeaponAvailability.is_available("paint_sprayer") else "Find all twelve to unlock the Paint Sprayer"
+	text(sprayer, Vector2(820, 112), 16, Color("e98aa6") if WeaponAvailability.is_available("paint_sprayer") else MUTED, bold)
+	var ids := gallery_ids()
+	for slot in ids.size():
+		var rect := gallery_rect(slot)
+		var record := Gallery.painting(ids[slot])
+		if Gallery.is_discovered(ids[slot]):
+			draw_artwork(ids[slot], Rect2(rect.position + Vector2(14, 12), Vector2(rect.size.x - 28, 96)))
+			centered(record.title, rect.get_center().x, rect.end.y - 18, 15, INK, bold)
+		else:
+			diamond(rect.get_center() + Vector2(0, -16), 16, EDGE, false)
+			centered("Undiscovered", rect.get_center().x, rect.end.y - 18, 15, MUTED, bold)
 
 func open_settings(back: String) -> void:
 	previous_mode = back
@@ -642,6 +727,8 @@ func _draw() -> void:
 				"controls": "Touch controls also appear automatically on phones and tablets."}
 			draw_multiline_string(body, Vector2(346, 542), notes[settings_page], HORIZONTAL_ALIGNMENT_CENTER, 588, 15, 2, MUTED)
 		"journal": draw_journal()
+		"painting": draw_painting_view()
+		"gallery": draw_gallery()
 		"map": draw_full_map()
 		"dead", "won": draw_end()
 	if mode == "play":
@@ -680,7 +767,7 @@ func draw_menu() -> void:
 	text("60 RELICS TO DISCOVER", Vector2(66, 671), 14, GOLD, bold)
 	hearth_emblem(Vector2(798, 566), 10)
 	text("A warm place. A wild little dungeon.", Vector2(826, 574), 21, GOLD, heading)
-	text("60 stackable relics  ·  10 weapons  ·  3 floors", Vector2(789, 617), 18, INK)
+	text("60 stackable relics  ·  %d weapons  ·  3 floors" % WeaponAvailability.available().size(), Vector2(789, 617), 18, INK)
 	text("Strange combinations. One more little light.", Vector2(789, 650), 17, MUTED)
 
 func draw_hud() -> void:

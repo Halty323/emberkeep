@@ -124,6 +124,8 @@ func build(owner_game: Node3D, room: Dictionary, preview := false, layout := {})
 			if blocked_at(Vector2(p.x + center.x, p.z + center.y), .3, true):
 				continue
 			make_candle(p + Vector3(center.x, 0, center.y), decor_rng.randf_range(.45, .85))
+	if room.has("mount") and room.has("painting") and not preview:
+		build_painting(room.mount, room.painting)
 	var shelves: Array = []
 	for id in props:
 		if props[id].record.def in ["bookcase", "shelf"]:
@@ -153,6 +155,57 @@ func build_prop(record: Dictionary) -> void:
 		entry.obstacle = {"position": Vector3(rect.get_center().x, 0, rect.get_center().y), "radius": minf(rect.size.x, rect.size.y) / 2.0, "rect": rect}
 		obstacles.append(entry.obstacle)
 	props[record.id] = entry
+
+## A wall-mounted painting: procedural frame, the real reproduction scaled to
+## fit without cropping or stretching, and a plaque. While an image is still
+## pending import, a plainly marked plate stands in; never substitute art.
+func build_painting(mount: Dictionary, id: String) -> void:
+	var record := Gallery.painting(id)
+	if record.is_empty():
+		return
+	var node := Node3D.new()
+	add_child(node)
+	node.name = "Painting"
+	node.set_meta("painting", id)
+	var dir := Vector2(mount.dir[0], mount.dir[1])
+	node.position = Vector3(mount.position[0], Furnishing.MOUNT_HEIGHT, mount.position[1])
+	node.rotation.y = atan2(-dir.x, -dir.y)
+	var area := Vector2(mount.size[0], mount.size[1]) - Vector2(.3, .3)
+	var aspect: float = float(record.aspect)
+	var size := Vector2(area.x, area.x / aspect) if area.x / aspect <= area.y else Vector2(area.y * aspect, area.y)
+	var frame := Color("8a6a3c") if record.kind != "wall painting" else Color("6d6a62")
+	for side in [-1, 1]:
+		Geo.box(node, Vector3(side * (size.x / 2 + .07), 0, .03), Vector3(.14, size.y + .28, .08), frame)
+		Geo.box(node, Vector3(0, side * (size.y / 2 + .07), .03), Vector3(size.x + .28, .14, .08), frame)
+	var canvas := MeshInstance3D.new()
+	var quad := QuadMesh.new()
+	quad.size = size
+	canvas.mesh = quad
+	canvas.position = Vector3(0, 0, .04)
+	var mat := StandardMaterial3D.new()
+	mat.roughness = .9
+	var tex := Gallery.texture(id)
+	if tex:
+		mat.albedo_texture = tex
+		# A little self-light keeps the work readable in a dim room without
+		# adding a light (the local light budget stays unchanged).
+		mat.emission_enabled = true
+		mat.emission_texture = tex
+		mat.emission_energy_multiplier = .25
+	else:
+		mat.albedo_color = Color("2b2a27")
+		var note := Label3D.new()
+		note.text = "IMAGE PENDING\n" + record.title
+		note.font_size = 28
+		note.pixel_size = .006
+		note.modulate = Color("c4bda7")
+		note.position = Vector3(0, 0, .05)
+		node.add_child(note)
+	canvas.material_override = mat
+	canvas.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	canvas.name = "Canvas"
+	node.add_child(canvas)
+	Geo.box(node, Vector3(0, -size.y / 2 - .32, .05), Vector3(.7, .16, .04), Color("b1925c"), .15)
 
 ## True when p (XZ) is within `margin` of a blocking prop (or any prop).
 func blocked_at(p: Vector2, margin := .5, include_decor := false) -> bool:

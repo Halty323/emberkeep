@@ -132,6 +132,15 @@ func fire() -> void:
 	var damage: float = weapon.damage * stats.damage
 	if Run.hp <= Run.stats.max_hp / 2.0:
 		damage *= 1.0 + float(stats.low_hp)
+	var color := Color(weapon.color)
+	if weapon.has("pigments"):
+		# Pigments cycle shot by shot: gameplay state, saved with the run.
+		var pigment: Dictionary = weapon.pigments[posmod(Run.pigment_index, weapon.pigments.size())]
+		Run.pigment_index += 1
+		color = Color(pigment.color)
+		for key in pigment.effects:
+			stats[key] = float(stats.get(key, 0.0)) + float(pigment.effects[key])
+		stats["paint"] = 1.0
 	var count = mini(int(weapon.count + stats.shots), 15)
 	var spread: float = weapon.spread
 	if count > int(weapon.count) and stats.radial <= 0:
@@ -139,12 +148,12 @@ func fire() -> void:
 	for i in count:
 		var angle = TAU * float(i) / count if stats.radial > 0 else (float(i) / maxf(1, count - 1) - .5) * spread
 		var direction = aim_direction.rotated(Vector3.UP, angle)
-		game.spawn_shot(global_position + Vector3(0, .65, 0) + direction * .5, direction, damage, float(weapon.speed) * stats.shot_speed, stats, Color(weapon.color), true)
+		game.spawn_shot(global_position + Vector3(0, .65, 0) + direction * .5, direction, damage, float(weapon.speed) * stats.shot_speed, stats, color, true)
 	if stats.backshot > 0:
-		game.spawn_shot(global_position + Vector3(0, .65, 0), -aim_direction, damage, weapon.speed * stats.shot_speed, stats, Color(weapon.color), true)
+		game.spawn_shot(global_position + Vector3(0, .65, 0), -aim_direction, damage, weapon.speed * stats.shot_speed, stats, color, true)
 	if stats.side_shot > 0:
 		for side in [-1, 1]:
-			game.spawn_shot(global_position + Vector3(0, .65, 0), aim_direction.rotated(Vector3.UP, side * PI / 2), damage * .75, weapon.speed * stats.shot_speed, stats, Color(weapon.color), true)
+			game.spawn_shot(global_position + Vector3(0, .65, 0), aim_direction.rotated(Vector3.UP, side * PI / 2), damage * .75, weapon.speed * stats.shot_speed, stats, color, true)
 	fire_cooldown = maxf(.07, weapon.cooldown / (stats.rate + (stats.kill_haste if haste_time > 0 else 0)))
 	recoil = .17
 	Audio.play_sound("shoot", 1.0 + float(count) * .015)

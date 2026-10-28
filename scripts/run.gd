@@ -35,6 +35,11 @@ var modifiers: Array = []
 ## Deterministic source IDs that already granted loot or kill credit.
 var reward_ledger: Dictionary = {}
 var pending_bombs: Array = []
+## Guaranteed paintings already placed this run, so its floors offer different
+## unseen works.
+var assigned_paintings: Dictionary = {}
+## Paint Sprayer pigment cycle position (gameplay state, saved).
+var pigment_index := 0
 var next_entity = 1000
 ## Floor graph: explicit portals for v2 floors (derived for legacy floors).
 var portals: Dictionary = {}
@@ -44,7 +49,8 @@ var room_portal_ids: Dictionary = {}
 var checkpoint: Dictionary = {}
 ## Device preferences moved to Settings (user://settings.json); the profile
 ## holds only progress that would follow a player between devices.
-const PROFILE_DEFAULTS = {"version": 2, "runs": 0, "wins": 0, "kills": 0, "best_floor": 0, "discovered": []}
+const PROFILE_DEFAULTS = {"version": 2, "runs": 0, "wins": 0, "kills": 0, "best_floor": 0, "discovered": [],
+	"paintings": [], "unlocks": []}
 var profile: Dictionary = PROFILE_DEFAULTS.duplicate(true)
 
 func _ready() -> void:
@@ -63,13 +69,17 @@ func load_profile() -> void:
 					profile[key] = int(saved[key])
 				elif typeof(saved[key]) == typeof(profile[key]):
 					profile[key] = saved[key]
+	# Unknown painting IDs (from newer content) are kept; unlocks are reconciled
+	# here as well as on discovery so none can be lost.
+	Gallery.reconcile()
 
 func start_run(chosen_weapon: String, seed_input := 0, is_daily := false) -> void:
 	seed_value = seed_input if seed_input != 0 else int(Time.get_unix_time_from_system()) % 99999999
 	rng.seed = seed_value
 	floor_number = 1
 	inventory = []
-	weapon_id = chosen_weapon
+	# New and daily runs only start with an acquirable weapon.
+	weapon_id = chosen_weapon if WeaponAvailability.is_available(chosen_weapon) else "candle"
 	coins = 8
 	kills = 0
 	cleared = 0
@@ -98,6 +108,8 @@ func reset_run_extras() -> void:
 	reward_ledger = {}
 	pending_bombs = []
 	next_entity = 1000
+	assigned_paintings = {}
+	pigment_index = 0
 
 ## Stable, persisted identifiers for drops, props and other durable records.
 func new_entity_id() -> int:
@@ -422,11 +434,78 @@ func _generate_v2(attempt: int, singles_only: bool) -> bool:
 	# Optional content after the mandatory graph validates: the secret, then
 	# chests, then furniture around everything that must stay reachable.
 	_place_secret(gen)
+	_choose_gallery(gen)
 	for key in rooms:
 		_place_chests(key)
 	for key in rooms:
 		rooms[key]["props"] = Furnishing.plan(key, rooms[key], room_layout(key))
+	_ensure_gallery_mount()
+	assign_paintings()
 	return true
+
+## One guaranteed, accessible painting room per floor (never the secret, never
+## the boss), chosen by the layout stream so it never depends on progress.
+## Secret galleries add an optional second chance.
+func _choose_gallery(gen: RandomNumberGenerator) -> void:
+	var keys: Array = rooms.keys().filter(func(k): return rooms[k].type in ["combat", "treasure", "rest", "shop", "start"])
+	keys.sort()
+	if not keys.is_empty():
+		rooms[keys[gen.randi_range(0, keys.size() - 1)]]["gallery"] = "guaranteed"
+	for key in rooms:
+		if rooms[key].type == "secret" and rooms[key].get("variant") == "gallery":
+			rooms[key]["gallery"] = "optional"
+
+## If the chosen room had no legal wall for a painting, move the guaranteed
+## slot to the next eligible room so every floor keeps its opportunity.
+func _ensure_gallery_mount() -> void:
+	var guaranteed: Array = rooms.keys().filter(func(k): return rooms[k].get("gallery") == "guaranteed")
+	if guaranteed.is_empty() or rooms[guaranteed[0]].has("mount"):
+		return
+	rooms[guaranteed[0]].erase("gallery")
+	rooms[guaranteed[0]]["props"] = Furnishing.plan(guaranteed[0], rooms[guaranteed[0]], room_layout(guaranteed[0]))
+	var keys: Array = rooms.keys().filter(func(k): return rooms[k].type in ["combat", "treasure", "rest", "shop", "start"] and k != guaranteed[0])
+	keys.sort()
+	for key in keys:
+		rooms[key]["gallery"] = "guaranteed"
+		rooms[key]["props"] = Furnishing.plan(key, rooms[key], room_layout(key))
+		if rooms[key].has("mount"):
+			return
+		rooms[key].erase("gallery")
+		rooms[key]["props"] = Furnishing.plan(key, rooms[key], room_layout(key))
+
+## Resolve artworks into room state. Guaranteed slots pick first, from works
+## this profile has not seen (and this run has not placed); optional secret
+## slots never remove a work from later floors' pool. A separate stream keeps
+## layout, enemies and loot independent of collection progress. Daily runs
+## follow a fixed schedule instead of the profile.
+func assign_paintings() -> void:
+	var ids: Array = Content.get_def("collections", Gallery.COLLECTION).get("paintings", [])
+	if ids.is_empty():
+		return
+	var art := RandomNumberGenerator.new()
+	art.seed = hash("art:%d:%d" % [seed_value, floor_number])
+	var slots: Array = rooms.keys().filter(func(k): return rooms[k].has("mount"))
+	slots.sort_custom(func(a, b):
+		var ga: bool = rooms[a].gallery == "guaranteed"
+		var gb: bool = rooms[b].gallery == "guaranteed"
+		return ga if ga != gb else a < b)
+	# Works placed on the run's other floors; regenerating this floor replaces its own.
+	var elsewhere: Array = []
+	for other in assigned_paintings:
+		if int(other) != floor_number: elsewhere.append(assigned_paintings[other])
+	for i in slots.size():
+		var room: Dictionary = rooms[slots[i]]
+		var choice: String
+		if daily:
+			choice = ids[posmod(seed_value + floor_number * 5 + i * 7, ids.size())]
+		else:
+			var seen: Array = profile.get("paintings", [])
+			var pool: Array = ids.filter(func(id): return id not in seen and id not in elsewhere)
+			if pool.is_empty(): pool = ids.filter(func(id): return id not in seen)
+			if pool.is_empty(): pool = ids
+			choice = pool[art.randi_range(0, pool.size() - 1)]
+			if room.gallery == "guaranteed": assigned_paintings[str(floor_number)] = choice
+		room["painting"] = choice
 
 ## One optional secret room per floor: a single cell behind a concealed seam
 ## of a non-boss room. It is a leaf, so it is never on the required route.
@@ -516,6 +595,7 @@ func snapshot() -> Dictionary:
 		"rng_state": str(rng.state), "generator": generator, "keys": keys, "bombs": bombs, "wards": wards,
 		"active_item": active_item, "cooldowns": cooldowns, "modifiers": modifiers,
 		"reward_ledger": reward_ledger, "pending_bombs": pending_bombs, "next_entity": next_entity,
+		"assigned_paintings": assigned_paintings, "pigment_index": pigment_index,
 		"portals": portals if generator != GENERATOR_LEGACY else {}, "checkpoint": checkpoint}
 
 func save_run() -> void:
@@ -563,6 +643,8 @@ func load_run() -> bool:
 	reward_ledger = d.reward_ledger
 	pending_bombs = d.pending_bombs
 	next_entity = int(d.next_entity)
+	assigned_paintings = d.get("assigned_paintings", {})
+	pigment_index = int(d.get("pigment_index", 0))
 	portals = d.get("portals", {})
 	checkpoint = d.get("checkpoint", {})
 	rebuild_floor_index()

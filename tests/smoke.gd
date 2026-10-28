@@ -18,7 +18,8 @@ func test_all() -> void:
 	run = root.get_node("Run")
 	catalog = root.get_node("Content")
 	check(catalog.items.size() == 60, "60 relics loaded")
-	check(catalog.weapons.size() == 10, "10 weapons loaded")
+	check(catalog.weapons.size() == 11, "11 weapons loaded: ten starters and the Paint Sprayer")
+	check(catalog.weapons.filter(func(w): return w.has("pigments")).map(func(w): return w.id) == ["paint_sprayer"], "only the Paint Sprayer cycles pigments")
 	var valid_stats: Dictionary = catalog.base_stats()
 	for item in catalog.items:
 		for key in item.effects:

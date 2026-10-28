@@ -92,6 +92,9 @@ func update_sim(delta: float) -> void:
 				global_position = Vector3(inside.x, global_position.y, inside.y)
 		else:
 			Effects.impact(global_position, tint)
+			if stats.get("paint", 0) > 0:
+				# Cosmetic splash only: marks never deal damage.
+				Effects.floor_mark(Vector3(global_position.x, 0, global_position.z), Color(tint, .5), .32, 4.0)
 			remove()
 			return
 	else:

@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+"""Authoring-only import of the painting reproductions.
+
+Downloads each approved reproduction once, at about 1024 px on the longest
+edge, into assets/paintings/, and records its provenance (source page and
+revision, original file hash and size, rights statement, retrieval date and
+the SHA-256 of the shipped bytes) in content/paintings.json and
+docs/PAINTING_CREDITS.md. The game never downloads art at runtime.
+
+Usage: python3 tools/import_paintings.py [--only ID ...] [--force]
+
+Sources:
+  * Wikimedia Commons file pages (MediaWiki imageinfo API).
+  * Art Institute of Chicago (Water Lilies): only imported when the API says
+    is_public_domain=true with an image_id. Otherwise the tool stops and asks
+    for a decision about the documented fallback rather than guessing.
+"""
+import argparse
+import datetime
+import hashlib
+import html
+import json
+import re
+import sys
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+CATALOG = ROOT / "content" / "paintings.json"
+OUT = ROOT / "assets" / "paintings"
+CREDITS = ROOT / "docs" / "PAINTING_CREDITS.md"
+LONGEST_EDGE = 1024
+USER_AGENT = "EmberkeepAssetImport/1.0 (https://github.com/Halty323/emberkeep; authoring-time only)"
+COMMONS_API = "https://commons.wikimedia.org/w/api.php"
+
+
+def fetch(url: str) -> bytes:
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(request, timeout=60) as response:
+        return response.read()
+
+
+def plain(value: str) -> str:
+    return html.unescape(re.sub(r"<[^>]+>", "", value or "")).strip()
+
+
+def image_size(data: bytes) -> tuple[int, int]:
+    """Width and height of a JPEG or PNG without third-party libraries."""
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+    i = 2
+    while i < len(data):
+        if data[i] != 0xFF:
+            i += 1
+            continue
+        marker = data[i + 1]
+        if marker in (0xC0, 0xC1, 0xC2):
+            return int.from_bytes(data[i + 7:i + 9], "big"), int.from_bytes(data[i + 5:i + 7], "big")
+        i += 2 + int.from_bytes(data[i + 2:i + 4], "big")
+    raise ValueError("unrecognised image format")
+
+
+def commons(record: dict) -> tuple[bytes, dict]:
+    landscape = record["aspect"] >= 1.0
+    params = {
+        "action": "query", "format": "json", "prop": "imageinfo",
+        "titles": "File:" + record["source"]["file"],
+        "iiprop": "url|sha1|size|timestamp|extmetadata|canonicaltitle",
+        "iiurlwidth" if landscape else "iiurlheight": LONGEST_EDGE,
+    }
+    meta = json.loads(fetch(COMMONS_API + "?" + urllib.parse.urlencode(params)))
+    page = next(iter(meta["query"]["pages"].values()))
+    if "imageinfo" not in page:
+        raise SystemExit(f"{record['id']}: Commons has no file {record['source']['file']}")
+    info = page["imageinfo"][0]
+    ext = info.get("extmetadata", {})
+    data = fetch(info["thumburl"])
+    provenance = {
+        "source_page": info["descriptionurl"],
+        "source_revision": info["timestamp"],
+        "original_url": info["url"],
+        "original_sha1": info["sha1"],
+        "original_size": [info["width"], info["height"]],
+        "image_url": info["thumburl"],
+        "rights": {
+            "license": plain(ext.get("LicenseShortName", {}).get("value", "")),
+            "usage_terms": plain(ext.get("UsageTerms", {}).get("value", "")),
+            "credit": plain(ext.get("Credit", {}).get("value", "")),
+        },
+    }
+    return data, provenance
+
+
+def artic(record: dict) -> tuple[bytes, dict]:
+    artwork = record["source"]["artwork"]
+    fields = "id,title,is_public_domain,image_id,copyright_notice,artist_display,date_display"
+    meta = json.loads(fetch(f"https://api.artic.edu/api/v1/artworks/{artwork}?fields={fields}"))["data"]
+    if not meta.get("is_public_domain") or not meta.get("image_id"):
+        raise SystemExit(f"{record['id']}: AIC artwork {artwork} is not marked public domain with an image. "
+                         f"Decide on the documented fallback ({record['source'].get('fallback')}) before importing.")
+    url = f"https://www.artic.edu/iiif/2/{meta['image_id']}/full/843,/0/default.jpg"
+    data = fetch(url)
+    provenance = {
+        "source_page": f"https://www.artic.edu/artworks/{artwork}",
+        "source_revision": meta["image_id"],
+        "original_url": f"https://www.artic.edu/iiif/2/{meta['image_id']}/full/max/0/default.jpg",
+        "original_sha1": "",
+        "original_size": [],
+        "image_url": url,
+        "rights": {"license": "Public domain (Art Institute of Chicago open access, is_public_domain=true)",
+                   "usage_terms": "CC0 for public-domain artwork images", "credit": "Art Institute of Chicago"},
+    }
+    return data, provenance
+
+
+def write_credits(records: list) -> None:
+    lines = ["# Painting credits and provenance", "",
+             "Generated by `tools/import_paintings.py`. Every shipped reproduction is listed with its exact source,",
+             "the rights statement observed on the source page, and the SHA-256 of the bytes in this repository.",
+             "Rights labels are source evidence, not a blanket legal guarantee in every jurisdiction.", ""]
+    for r in records:
+        p = r.get("provenance")
+        lines.append(f"## {r['title']} — {r['artist']}, {r['date']}")
+        lines.append("")
+        lines.append(f"- Holding institution: [{r['institution']}]({r['record_url']})")
+        if not p:
+            lines += ["- **Image pending**: not yet imported; the game shows a marked placeholder plate.", ""]
+            continue
+        rights = p["rights"]
+        lines += [f"- Source: [{p['source_page']}]({p['source_page']}) (revision {p['source_revision']})",
+                  f"- Shipped file: `{r['image'].replace('res://', '')}`, {p['width']}×{p['height']}, SHA-256 `{p['sha256']}`",
+                  f"- Downloaded from: {p['image_url']} on {p['retrieved']}",
+                  f"- Rights observed: {rights['license'] or 'see source page'}"
+                  + (f" — {rights['usage_terms']}" if rights['usage_terms'] else ""),
+                  f"- Credit: {rights['credit'] or 'see source page'}", ""]
+    CREDITS.write_text("\n".join(lines))
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--only", nargs="*", default=[])
+    parser.add_argument("--force", action="store_true", help="re-download files that already have provenance")
+    args = parser.parse_args()
+    catalog = json.loads(CATALOG.read_text())
+    OUT.mkdir(parents=True, exist_ok=True)
+    for record in catalog["paintings"]:
+        if args.only and record["id"] not in args.only:
+            continue
+        if record.get("provenance") and not args.force:
+            continue
+        importer = commons if record["source"]["kind"] == "commons" else artic
+        data, provenance = importer(record)
+        width, height = image_size(data)
+        if provenance["original_size"]:
+            ow, oh = provenance["original_size"]
+            # A derivative must keep the whole composition and its proportions.
+            if abs(width / height - ow / oh) > 0.01 * (ow / oh):
+                raise SystemExit(f"{record['id']}: derivative {width}x{height} changes the aspect of {ow}x{oh}")
+        ext = ".png" if data[:4] == b"\x89PNG" else ".jpg"
+        target = OUT / (record["id"] + ext)
+        target.write_bytes(data)
+        record["image"] = "res://assets/paintings/" + target.name
+        record["aspect"] = round(width / height, 4)
+        provenance.update({"width": width, "height": height, "sha256": hashlib.sha256(data).hexdigest(),
+                           "retrieved": datetime.date.today().isoformat()})
+        record["provenance"] = provenance
+        print(f"{record['id']}: {width}x{height} {provenance['rights']['license']}")
+    CATALOG.write_text(json.dumps(catalog, indent=2, ensure_ascii=False) + "\n")
+    write_credits(catalog["paintings"])
+
+
+if __name__ == "__main__":
+    sys.exit(main())

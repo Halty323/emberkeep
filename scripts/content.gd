@@ -170,6 +170,37 @@ func _validate_layouts(problems: Array[String], layout: Dictionary) -> void:
 			if not by_family.get("furniture", {}).has(name) and not Furnishing.GROUPS.has(name):
 				problems.append("layout %s references missing furniture %s" % [layout.get("id"), str(name)])
 
+func _validate_paintings(problems: Array[String], painting: Dictionary) -> void:
+	for key in ["title", "artist", "date", "institution", "caption", "image", "kind"]:
+		if not painting.get(key) is String or painting[key] == "":
+			problems.append("painting %s needs %s" % [painting.get("id"), key])
+	if not _number(painting.get("aspect")) or float(painting.aspect) <= 0:
+		problems.append("painting %s needs a positive aspect" % painting.get("id"))
+	var source = painting.get("source")
+	if not source is Dictionary or source.get("kind") not in ["commons", "artic"]:
+		problems.append("painting %s needs a documented source" % painting.get("id"))
+	var provenance = painting.get("provenance", {})
+	if provenance is Dictionary and not provenance.is_empty():
+		for key in ["source_page", "image_url", "sha256", "retrieved", "rights"]:
+			if not provenance.has(key):
+				problems.append("painting %s provenance lacks %s" % [painting.get("id"), key])
+
+func _validate_collections(problems: Array[String], collection: Dictionary) -> void:
+	var ids = collection.get("paintings")
+	if not ids is Array or ids.is_empty():
+		problems.append("collection %s has no paintings" % collection.get("id"))
+		return
+	var seen := {}
+	for id in ids:
+		if not by_family.get("paintings", {}).has(id):
+			problems.append("collection %s references missing painting %s" % [collection.get("id"), str(id)])
+		if seen.has(id):
+			problems.append("collection %s repeats %s" % [collection.get("id"), str(id)])
+		seen[id] = true
+	var weapon = collection.get("unlocks", {}).get("weapon", "")
+	if weapon != "" and not weapon_by_id.has(weapon):
+		problems.append("collection %s unlocks missing weapon %s" % [collection.get("id"), str(weapon)])
+
 const ROOM_ROLES = ["start", "combat", "treasure", "shop", "rest", "boss", "secret"]
 
 func _validate_rooms(problems: Array[String], room: Dictionary) -> void:

@@ -492,6 +492,8 @@ func spawn_enemy(at: Vector3, kind: String, source := "") -> DungeonEnemy:
 
 func spawn_shot(at: Vector3, direction: Vector3, damage: float, speed_value: float, stats: Dictionary, color: Color, friendly: bool) -> EmberShot:
 	if shots.size() >= 200: return null
+	# Friendly volleys leave room for enemy attacks under the global cap.
+	if friendly and shots.filter(func(s): return is_instance_valid(s) and s.friendly).size() >= 160: return null
 	var shot = EmberShot.new()
 	scene_root.add_child(shot)
 	entity_counter += 1
@@ -585,7 +587,8 @@ func ensure_offers(premium := false) -> void:
 		var price: int = {"common": 8, "uncommon": 12, "rare": 17, "mythic": 24}[item.rarity]
 		offers.append({"kind": "item", "id": item.id, "price": price})
 	if gen.randf() < .5 or data.type == "shop":
-		var weapon: Dictionary = Content.weapons[gen.randi_range(0, Content.weapons.size() - 1)]
+		var choices: Array = WeaponAvailability.available()
+		var weapon: Dictionary = choices[gen.randi_range(0, choices.size() - 1)]
 		offers[2] = {"kind": "weapon", "id": weapon.id, "price": 14}
 	# Active items: always offered in a first-floor treasure room without one equipped.
 	var actives: Array = Content.families.get("actives", [])
@@ -687,8 +690,20 @@ func _action_interact(action: Dictionary) -> Dictionary:
 		"active":
 			var result := take_dropped_active(target.data.drop_id)
 			if not result.ok: return result
+		"painting":
+			inspect_painting(target.data.painting)
 	if is_playing(): update_interaction()
 	return GameActions.ok({"kind": target.kind})
+
+## Inspecting pauses solo play; the first inspection records the discovery
+## permanently and may complete the collection.
+func inspect_painting(id: String) -> void:
+	var result := Gallery.discover(id)
+	if result.new and is_instance_valid(room) and room.has_node("Painting"):
+		Effects.discovery_glint(room.get_node("Painting").global_position)
+	paused = true
+	ui.open_painting(id, result)
+	build_room_objects()
 
 func pickup_useful(kind: String) -> bool:
 	return items.pickup_useful(kind)
@@ -822,6 +837,11 @@ func build_room_objects() -> void:
 		if not chest.opened and data.cleared:
 			interactions.register(target_id, "chest", node.position,
 				"Open the chest · 1 key" if chest.locked else "Open the chest", 2.1, {"chest_id": chest.id})
+	if data.has("painting") and data.has("mount") and data.cleared:
+		var view := Furnishing.view_point(data.mount)
+		var title: String = Gallery.painting(data.painting).get("title", "a painting")
+		interactions.register("painting:" + Run.current_room, "painting", Vector3(view.x, 0, view.y),
+			"Inspect " + title + ("" if Gallery.is_discovered(data.painting) else " · new"), 2.0, {"painting": data.painting})
 	for record in data.get("actives", []):
 		var def: Dictionary = Content.get_def("actives", record.active)
 		var node := Node3D.new()
