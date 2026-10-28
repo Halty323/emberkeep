@@ -138,6 +138,14 @@ func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting:
 func fire() -> void:
 	var weapon: Dictionary = Content.weapon_by_id[Run.weapon_id]
 	var stats = Run.projectile_stats()
+	var tint = Color(weapon.color)
+	# Pigment is gameplay state: each burst takes the next colour in turn.
+	if weapon.has("cycle"):
+		var pigment: Dictionary = weapon.cycle[posmod(Run.pigment, weapon.cycle.size())]
+		Run.pigment += 1
+		for key in pigment.effects:
+			stats[key] = float(stats.get(key, 0)) + float(pigment.effects[key])
+		tint = Color(pigment.color)
 	var damage: float = weapon.damage * stats.damage
 	if Run.hp <= Run.stats.max_hp / 2.0:
 		damage *= 1.0 + float(stats.low_hp)
@@ -148,13 +156,13 @@ func fire() -> void:
 	for i in count:
 		var angle = TAU * float(i) / count if stats.radial > 0 else (float(i) / maxf(1, count - 1) - .5) * spread
 		var direction = aim_direction.rotated(Vector3.UP, angle)
-		game.spawn_shot(global_position + Vector3(0, .65, 0) + direction * .5, direction, damage, float(weapon.speed) * stats.shot_speed, stats, Color(weapon.color), true)
+		game.spawn_shot(global_position + Vector3(0, .65, 0) + direction * .5, direction, damage, float(weapon.speed) * stats.shot_speed, stats, tint, true)
 	if stats.backshot > 0:
-		game.spawn_shot(global_position + Vector3(0, .65, 0), -aim_direction, damage, weapon.speed * stats.shot_speed, stats, Color(weapon.color), true)
+		game.spawn_shot(global_position + Vector3(0, .65, 0), -aim_direction, damage, weapon.speed * stats.shot_speed, stats, tint, true)
 	if stats.side_shot > 0:
 		for side in [-1, 1]:
-			game.spawn_shot(global_position + Vector3(0, .65, 0), aim_direction.rotated(Vector3.UP, side * PI / 2), damage * .75, weapon.speed * stats.shot_speed, stats, Color(weapon.color), true)
-	Effects.play("muzzle", global_position + Vector3(0, .7, 0) + aim_direction * .75, Color(weapon.color), -1, 1.0, aim_direction)
+			game.spawn_shot(global_position + Vector3(0, .65, 0), aim_direction.rotated(Vector3.UP, side * PI / 2), damage * .75, weapon.speed * stats.shot_speed, stats, tint, true)
+	Effects.play("muzzle", global_position + Vector3(0, .7, 0) + aim_direction * .75, tint, -1, 1.0, aim_direction)
 	fire_cooldown = maxf(.07, weapon.cooldown / (stats.rate + (stats.kill_haste if haste_time > 0 else 0)))
 	recoil = .17
 	Audio.play_sound("shoot", 1.0 + float(count) * .015)

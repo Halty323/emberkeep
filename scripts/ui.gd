@@ -68,6 +68,11 @@ var secret_key_buffer = ""
 var secret_field: LineEdit
 var secret_feedback = ""
 var settings_page = "display"
+var journal_tab = "relics"
+var painting_id = ""
+var painting_back = "play"
+var painting_texture: Texture2D
+var painting_unlock = ""
 var fps_frames = 0
 var fps_time = 0.0
 var fps_value = 0.0
@@ -178,9 +183,10 @@ func show_screen(screen: String) -> void:
 		"secret": build_secret_code()
 		"reward": build_rewards()
 		"journal": build_journal()
+		"painting": button("← Back", Rect2(812, 598, 360, 58), func(): close_painting())
 		"settings": build_settings()
 		"dead", "won":
-			button("One more little light", Rect2(430, 457, 420, 62), func(): game.start_run(Content.weapons[starter_index].id, 0, false), true)
+			button("One more little light", Rect2(430, 457, 420, 62), func(): game.start_run(starter_weapon().id, 0, false), true)
 			button("Return to title", Rect2(430, 535, 420, 58), func(): game.return_to_title())
 	sync_lighting()
 	update_surface_visibility()
@@ -225,6 +231,11 @@ func build_surfaces() -> void:
 		"reward":
 			for i in offers.size():
 				make_surface(reward_rect(i), PANEL, offer_info(offers[i]).color)
+		"painting": make_surface(Rect2(80, 40, 1120, 640))
+		"journal" when journal_tab == "paintings":
+			var required = gallery_ids()
+			for i in required.size():
+				make_surface(gallery_rect(i), PANEL, GOLD if Collection.seen(required[i]) else EDGE)
 		"journal":
 			for slot in JOURNAL_PAGE_SIZE:
 				var index = journal_page * JOURNAL_PAGE_SIZE + slot
@@ -330,18 +341,18 @@ func build_menu() -> void:
 	content.add_child(seed_field)
 	button("‹", Rect2(64, 278, 56, 56), func(): cycle_weapon(-1))
 	button("›", Rect2(426, 278, 56, 56), func(): cycle_weapon(1))
-	button("Begin a run   →", Rect2(64, 458, 418, 60), func(): game.start_run(Content.weapons[starter_index].id, seed_field.text.to_int(), false), true)
+	button("Begin a run   →", Rect2(64, 458, 418, 60), func(): game.start_run(starter_weapon().id, seed_field.text.to_int(), false), true)
 	if Run.has_save():
 		button("Continue saved run", Rect2(64, 530, 418, 56), func(): game.continue_run())
-		button("Today’s seed", Rect2(64, 598, 201, 54), func(): game.start_run(Content.weapons[starter_index].id, Run.daily_seed(), true))
+		button("Today’s seed", Rect2(64, 598, 201, 54), func(): game.start_run(starter_weapon().id, Run.daily_seed(), true))
 		button("Relic journal", Rect2(281, 598, 201, 54), func(): open_journal("menu"))
 	else:
-		button("Today’s seed", Rect2(64, 536, 201, 56), func(): game.start_run(Content.weapons[starter_index].id, Run.daily_seed(), true))
+		button("Today’s seed", Rect2(64, 536, 201, 56), func(): game.start_run(starter_weapon().id, Run.daily_seed(), true))
 		button("Relic journal", Rect2(281, 536, 201, 56), func(): open_journal("menu"))
 	button("Settings", Rect2(1080, 32, 154, 56), func(): open_settings("menu"))
 
 func cycle_weapon(step: int) -> void:
-	starter_index = posmod(starter_index + step, Content.weapons.size())
+	starter_index = posmod(starter_index + step, Collection.available_weapons().size())
 	Audio.play_sound("coin", .75)
 	queue_redraw()
 
@@ -381,8 +392,58 @@ func open_journal(back: String) -> void:
 
 func build_journal() -> void:
 	button("← Back", Rect2(64, 36, 144, 56), func(): close_subscreen())
-	button("←", Rect2(1044, 626, 76, 58), func(): change_journal_page(-1))
-	button("→", Rect2(1136, 626, 76, 58), func(): change_journal_page(1))
+	button("Relics", Rect2(232, 36, 150, 56), func(): set_journal_tab("relics"), journal_tab == "relics")
+	button("Paintings", Rect2(394, 36, 190, 56), func(): set_journal_tab("paintings"), journal_tab == "paintings")
+	if journal_tab == "relics":
+		button("←", Rect2(1044, 626, 76, 58), func(): change_journal_page(-1))
+		button("→", Rect2(1136, 626, 76, 58), func(): change_journal_page(1))
+		return
+	# Discovered works open in the viewer straight from the journal.
+	var required = gallery_ids()
+	for i in required.size():
+		if not Collection.seen(required[i]): continue
+		var id: String = required[i]
+		var slot = Button.new()
+		slot.name = "Gallery_" + id
+		slot.position = gallery_rect(i).position
+		slot.size = gallery_rect(i).size
+		slot.focus_mode = Control.FOCUS_NONE
+		for state in ["normal", "hover", "pressed", "focus"]:
+			slot.add_theme_stylebox_override(state, StyleBoxEmpty.new())
+		slot.pressed.connect(func(): open_painting(id, "journal"))
+		content.add_child(slot)
+
+func set_journal_tab(tab: String) -> void:
+	journal_tab = tab
+	show_screen("journal")
+
+func gallery_ids() -> Array:
+	return Content.record("collections", Collection.FOUNDING).get("paintings", [])
+
+func gallery_rect(index: int) -> Rect2:
+	return Rect2(64 + (index % 6) * 196, 214 + (index / 6) * 206, 180, 192)
+
+func starter_weapon() -> Dictionary:
+	var arsenal = Collection.available_weapons()
+	return arsenal[posmod(starter_index, arsenal.size())]
+
+## The full-composition viewer: image, title, artist and date, medium, the
+## holding collection, an original caption, and the source credit. The large
+## image loads now and is released on close.
+func open_painting(id: String, back: String) -> void:
+	painting_id = id
+	painting_back = back
+	painting_texture = PaintingLibrary.inspection_texture(id)
+	game.paused = true
+	show_screen("painting")
+
+func close_painting() -> void:
+	painting_texture = null
+	painting_unlock = ""
+	if painting_back == "journal":
+		show_screen("journal")
+	else:
+		game.resume_game()
 
 func open_settings(back: String) -> void:
 	previous_mode = back
@@ -646,7 +707,8 @@ func _draw() -> void:
 			hearth_emblem(Vector2(640, 76), 11)
 			centered("Make yourself at home", 640, 134, 32, INK, heading)
 			draw_multiline_string(body, Vector2(340, 516), SETTINGS_NOTES[settings_page], HORIZONTAL_ALIGNMENT_CENTER, 600, 17, 2, MUTED)
-		"journal": draw_journal()
+		"journal": draw_journal() if journal_tab == "relics" else draw_gallery()
+		"painting": draw_painting()
 		"map": draw_full_map()
 		"dead", "won": draw_end()
 	if mode == "play":
@@ -678,16 +740,16 @@ func draw_menu() -> void:
 	text("Every little light fights back.", Vector2(65, 209), 23, GOLD, heading)
 	text("Find strange relics. Make beautiful trouble.", Vector2(65, 244), 17, MUTED)
 	divider(Vector2(64, 262), Vector2(482, 262))
-	var weapon: Dictionary = Content.weapons[starter_index]
+	var weapon: Dictionary = starter_weapon()
 	centered(weapon.name, 273, 314, 23, Color(weapon.color), heading)
 	draw_multiline_string(body, Vector2(65, 357), weapon.description, HORIZONTAL_ALIGNMENT_LEFT, 418, 17, 2, MUTED)
 	text("Optional seed", Vector2(274, 423), 18, MUTED)
 	if not Run.has_save():
 		text("%d runs  ·  %d victories" % [Run.profile.runs, Run.profile.wins], Vector2(66, 632), 17, MUTED)
-	text("60 RELICS TO DISCOVER", Vector2(66, 671), 14, GOLD, bold)
+	text("%d RELICS · %d PAINTINGS TO DISCOVER" % [Content.items.size(), gallery_ids().size()], Vector2(66, 671), 14, GOLD, bold)
 	hearth_emblem(Vector2(798, 566), 10)
 	text("A warm place. A wild little dungeon.", Vector2(826, 574), 21, GOLD, heading)
-	text("60 stackable relics  ·  10 weapons  ·  3 floors", Vector2(789, 617), 18, INK)
+	text("%d stackable relics  ·  %d weapons  ·  3 floors" % [Content.items.size(), Collection.available_weapons().size()], Vector2(789, 617), 18, INK)
 	text("Strange combinations. One more little light.", Vector2(789, 650), 17, MUTED)
 
 func draw_hud() -> void:
@@ -950,6 +1012,62 @@ func draw_journal() -> void:
 		draw_multiline_string(body, Vector2(x + 27, y + 73), item.description, HORIZONTAL_ALIGNMENT_LEFT, 510, 18, 2, MUTED)
 	text("%d / 60 found  ·  Filled diamonds are discovered relics" % Run.profile.discovered.size(), Vector2(66, 664), 17, MUTED)
 	centered("%d / %d" % [journal_page + 1, journal_page_count()], 976, 664, 20, GOLD)
+
+func draw_gallery() -> void:
+	text("The gallery we keep", Vector2(64, 146), 40, INK, heading)
+	var progress = Collection.progress()
+	var reward = "Paint Sprayer unlocked" if "paint_sprayer" in Run.profile.unlocks else "Find all twelve to unlock the Paint Sprayer"
+	text("%d / %d classics found  ·  %s" % [progress.x, progress.y, reward], Vector2(66, 184), 19, MUTED)
+	var required = gallery_ids()
+	for i in required.size():
+		var rect = gallery_rect(i)
+		var painting: Dictionary = Content.record("paintings", required[i])
+		var found = Collection.seen(painting.id)
+		var image_box = Rect2(rect.position + Vector2(14, 14), Vector2(152, 112))
+		if found:
+			var texture = PaintingLibrary.wall_texture(painting.id)
+			var size = PaintingLibrary.fit(float(painting.aspect), image_box.size)
+			var placed = Rect2(image_box.get_center() - size / 2, size)
+			draw_rect(placed.grow(3), Color("6d5232"))
+			if texture: draw_texture_rect(texture, placed, false)
+			else: draw_rect(placed, Color("5c5348"))
+			draw_multiline_string(bold, Vector2(rect.position.x + 10, rect.position.y + 148), painting.title, HORIZONTAL_ALIGNMENT_CENTER, 160, 15, 2, INK)
+			draw_string(body, Vector2(rect.position.x + 10, rect.end.y - 10), painting.artist, HORIZONTAL_ALIGNMENT_CENTER, 160, 13, MUTED)
+		else:
+			draw_rect(image_box, Color(.06, .08, .07, .7))
+			diamond(image_box.get_center(), 16, Color(EDGE, .6), false)
+			centered("?", image_box.get_center().x, image_box.get_center().y + 8, 20, MUTED, heading)
+			centered("Undiscovered", rect.get_center().x, rect.position.y + 160, 15, MUTED)
+
+func draw_painting() -> void:
+	var painting: Dictionary = Content.record("paintings", painting_id)
+	if painting.is_empty():
+		return
+	var area = Rect2(116, 76, 660, 560)
+	var size = PaintingLibrary.fit(float(painting.aspect), area.size)
+	var image = Rect2(area.get_center() - size / 2, size)
+	draw_rect(image.grow(10), Color("6d5232"))
+	draw_rect(image.grow(4), Color("2e2a24"))
+	if painting_texture:
+		draw_texture_rect(painting_texture, image, false)
+	else:
+		draw_rect(image, Color("4d463e"))
+		centered("Reproduction awaiting import", image.get_center().x, image.get_center().y - 8, 20, INK, bold)
+		draw_multiline_string(body, Vector2(image.position.x + 16, image.get_center().y + 22), "The approved image is fetched with tools/import_paintings.py and bundled with the game.",
+			HORIZONTAL_ALIGNMENT_CENTER, image.size.x - 32, 15, 3, MUTED)
+	var x = 812.0
+	draw_multiline_string(heading, Vector2(x, 112), painting.title, HORIZONTAL_ALIGNMENT_LEFT, 360, 30, 2, INK)
+	text("%s · %s" % [painting.artist, painting.date], Vector2(x, 186), 18, GOLD, bold)
+	draw_multiline_string(body, Vector2(x, 214), painting.medium, HORIZONTAL_ALIGNMENT_LEFT, 360, 16, 2, MUTED)
+	draw_multiline_string(body, Vector2(x, 256), painting.holding, HORIZONTAL_ALIGNMENT_LEFT, 360, 16, 2, MUTED)
+	divider(Vector2(x, 290), Vector2(x + 360, 290))
+	draw_multiline_string(body, Vector2(x, 318), painting.caption, HORIZONTAL_ALIGNMENT_LEFT, 360, 17, 6, INK)
+	draw_multiline_string(body, Vector2(x, 470), "Source: " + painting.source.page, HORIZONTAL_ALIGNMENT_LEFT, 360, 12, 3, MUTED)
+	draw_multiline_string(body, Vector2(x, 516), painting.rights, HORIZONTAL_ALIGNMENT_LEFT, 360, 12, 3, MUTED)
+	var progress = Collection.progress()
+	text("Twelve Classics  ·  %d / %d" % [progress.x, progress.y], Vector2(x, 584), 15, GOLD, bold)
+	if painting_unlock != "":
+		centered("%s unlocked" % painting_unlock, area.get_center().x, 668, 20, GOLD, heading)
 
 func draw_end() -> void:
 	hearth_emblem(Vector2(640, 156), 22)

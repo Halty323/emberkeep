@@ -781,6 +781,45 @@
         "pierce": 3,
         "size": -0.25
       }
+    },
+    {
+      "id": "paint_sprayer",
+      "name": "Paint Sprayer",
+      "description": "Close-range pigment bursts cycle red, blue and green: burn, chill, poison.",
+      "color": "#e7d9c8",
+      "damage": 2.2,
+      "cooldown": 0.2,
+      "speed": 11,
+      "count": 3,
+      "spread": 0.45,
+      "effects": {
+        "range": -0.45,
+        "paint": 1
+      },
+      "requires": "world_classics_12_v1",
+      "cycle": [
+        {
+          "name": "red",
+          "color": "#d6503f",
+          "effects": {
+            "burn": 0.5
+          }
+        },
+        {
+          "name": "blue",
+          "color": "#4a7ad8",
+          "effects": {
+            "chill": 0.5
+          }
+        },
+        {
+          "name": "green",
+          "color": "#4fb065",
+          "effects": {
+            "poison": 0.5
+          }
+        }
+      ]
     }
   ]
 }

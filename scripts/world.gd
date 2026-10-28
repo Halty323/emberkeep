@@ -37,6 +37,7 @@ var occluders: Array = []
 var detail_meshes: Array = []
 var effects: EffectsPool
 var cloths: Array = []
+var paintings: Dictionary = {}
 var candle_points: Array[Vector3] = []
 
 func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
@@ -72,6 +73,7 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 	for chest in room.get("chests", []):
 		var at = Vector2(float(chest.position[0]), float(chest.position[1]))
 		obstacles.append({"position": Vector3(at.x, 0, at.y), "radius": .7, "rect": Rect2(at - Vector2(.5, .33), Vector2(1.0, .66))})
+	build_paintings()
 	make_candles()
 	make_embers()
 	add_ambient_emitters()
@@ -460,6 +462,14 @@ func make_embers() -> void:
 	ember_mesh.material_override = Geo.material(Color("efbc78"), 1.2)
 	ember_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(ember_mesh)
+
+func build_paintings() -> void:
+	for mount in data.get("mounts", []):
+		var painting: Dictionary = Content.record("paintings", mount.get("painting", ""))
+		if painting.is_empty():
+			continue
+		paintings[mount.id] = PaintingView.build(self, mount, painting, PaintingLibrary.wall_texture(painting.id))
+		paintings[mount.id]["painting"] = painting.id
 
 ## A few deliberate atmosphere sources rather than every object at once.
 func add_ambient_emitters() -> void:

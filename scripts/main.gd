@@ -103,6 +103,7 @@ func _ready() -> void:
 	Run.item_gained.connect(on_item_gained)
 	actions = GameActions.new(self)
 	Session.command_received.connect(on_command)
+	Collection.unlocked.connect(on_weapon_unlocked)
 	get_tree().auto_accept_quit = false
 	show_title_room()
 	if "--quickstart" in OS.get_cmdline_user_args():
@@ -131,6 +132,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if ui.mode == "play": pause_game()
 		elif ui.mode == "pause": resume_game()
 		elif ui.mode in ["journal", "settings", "map"]: ui.close_subscreen()
+		elif ui.mode == "painting": ui.close_painting()
 		elif ui.mode == "secret": ui.close_secret_code()
 	elif event.is_action_pressed("map") and not in_menu and Run.active:
 		if ui.mode == "map": ui.close_subscreen()
@@ -173,6 +175,7 @@ func _notification(what: int) -> void:
 			if ui.mode == "play": pause_game()
 			elif ui.mode == "pause": resume_game()
 			elif ui.mode in ["settings", "journal", "map"]: ui.close_subscreen()
+			elif ui.mode == "painting": ui.close_painting()
 			elif ui.mode == "secret": ui.close_secret_code()
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		get_tree().quit()
@@ -431,6 +434,10 @@ func enter_room(spawn: Vector3) -> void:
 	for chest in data.get("chests", []):
 		chest_views[chest.id] = ItemViews.chest(scene_root, chest)
 	refresh_items()
+	for mount_id in room.paintings:
+		var mount = GameActions.find_record(data.get("mounts", []), mount_id)
+		var view = Vector3(float(mount.view[0]), 0, float(mount.view[1]))
+		interactions.register("painting:" + mount_id, "painting", view, 2.0, "", room.paintings[mount_id].node)
 	for bomb in Run.pending_bombs:
 		if bomb.room == Run.current_room: spawn_bomb_view(bomb)
 	sync_companions()
@@ -573,7 +580,8 @@ func ensure_offers(premium := false) -> void:
 		var price: int = {"common": 8, "uncommon": 12, "rare": 17, "mythic": 24}[item.rarity]
 		offers.append({"kind": "item", "id": item.id, "price": price})
 	if gen.randf() < .5 or data.type == "shop":
-		var weapon: Dictionary = Content.weapons[gen.randi_range(0, Content.weapons.size() - 1)]
+		var arsenal = Collection.available_weapons()
+		var weapon: Dictionary = arsenal[gen.randi_range(0, arsenal.size() - 1)]
 		offers[2] = {"kind": "weapon", "id": weapon.id, "price": 14}
 	if gen.randf() < (.6 if data.type == "shop" else .3):
 		var pool = Content.families.actives.filter(func(active): return active.id != Run.active_item.get("def", ""))
@@ -626,6 +634,9 @@ func prompt_for(target: Dictionary) -> String:
 			var record = GameActions.find_record(Run.rooms[Run.current_room].get("items", []), target.id.trim_prefix("item:"))
 			var definition = Content.record("actives", record.get("def", ""))
 			return ("Swap for " if not Run.active_item.is_empty() else "Take ") + definition.get("name", "item")
+		"painting":
+			var painting_id: String = room.paintings.get(target.id.trim_prefix("painting:"), {}).get("painting", "")
+			return "Look at " + Content.record("paintings", painting_id).title if Collection.seen(painting_id) else "Look at the painting"
 	return target.prompt
 
 ## Loot, swaps and paintings wait until the room is safe; nothing interacts
@@ -679,8 +690,28 @@ func use_pedestal(target: Dictionary) -> Dictionary:
 				ui.notify("A little deeper", "A new floor. A fresh breath of warmth.")
 	return GameActions.result(true)
 
-func inspect_painting(_target: Dictionary) -> Dictionary:
-	return GameActions.result(false, "no painting here")
+## Inspecting discovers the work for good. The viewer pauses solo play.
+func inspect_painting(target: Dictionary) -> Dictionary:
+	var view: Dictionary = room.paintings.get(target.id.trim_prefix("painting:"), {})
+	if view.is_empty():
+		return GameActions.result(false, "no painting here")
+	var painting: Dictionary = Content.record("paintings", view.painting)
+	var unlocks_before: Array = Run.profile.unlocks.duplicate()
+	if Collection.discover(painting.id):
+		Effects.play("discovery_glint", view.node.global_position + Vector3(0, 0, 0))
+		var progress = Collection.progress()
+		ui.notify("A painting found · %d / %d" % [progress.x, progress.y], painting.title, Color("e9d6a8"))
+		Audio.play_sound("item", .85)
+	ui.painting_unlock = ""
+	for weapon in Run.profile.unlocks:
+		if weapon not in unlocks_before: ui.painting_unlock = Content.weapon_by_id[weapon].name
+	ui.open_painting(painting.id, "play")
+	return GameActions.result(true)
+
+## A newly earned weapon is announced; it never replaces the one in hand.
+func on_weapon_unlocked(weapon_id: String) -> void:
+	if is_instance_valid(ui):
+		ui.notify("%s unlocked" % Content.weapon_by_id[weapon_id].name, "Twelve classics found. Choose it when you begin a run.", Color("e7d9c8"))
 
 func choose_offer(index: int) -> void:
 	var data: Dictionary = Run.rooms[Run.current_room]

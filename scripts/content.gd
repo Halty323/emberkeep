@@ -15,7 +15,8 @@ var errors := PackedStringArray()
 const RARITY_COLORS = {"common": Color("c6d3bf"), "uncommon": Color("96d9ba"), "rare": Color("b9b2e9"), "mythic": Color("f1c579")}
 const CATALOG_PATH := "res://assets/data.json"
 const FAMILY_DIR := "res://content/"
-const FAMILIES := ["rooms", "furniture", "pickups", "actives", "drop_tables", "effects"]
+const FAMILIES := ["rooms", "furniture", "pickups", "actives", "drop_tables", "effects", "paintings", "collections"]
+const SOURCE_TYPES := {"commons": "file", "nga": "object", "met": "object", "aic": "object"}
 const EFFECT_CHANNELS := ["important", "atmosphere", "ambient"]
 const EFFECT_SPREADS := ["sphere", "up", "ring", "forward"]
 # Extra record lists that live in a family's file.
@@ -111,6 +112,16 @@ func validate() -> PackedStringArray:
 	for weapon in weapons:
 		for key in weapon.effects:
 			if not valid_stats.has(key): problems.append("weapon %s uses unknown effect '%s'" % [weapon.id, key])
+		if weapon.has("requires") and not by_id.get("collections", {}).has(weapon.requires):
+			problems.append("weapon %s requires missing collection '%s'" % [weapon.id, weapon.requires])
+		for entry in weapon.get("cycle", []):
+			if not Color.html_is_valid(str(entry.get("color", ""))): problems.append("weapon %s has an invalid pigment color" % weapon.id)
+			for key in entry.get("effects", {}):
+				if not valid_stats.has(key): problems.append("weapon %s pigment uses unknown effect '%s'" % [weapon.id, key])
+	for painting in families.get("paintings", []):
+		problems.append_array(validate_painting(painting))
+	for collection in families.get("collections", []):
+		problems.append_array(validate_collection(collection))
 	for template in families.get("rooms", []):
 		problems.append_array(validate_template(template))
 	for prop in families.get("furniture", []):
@@ -176,6 +187,54 @@ func validate_effect(effect: Dictionary) -> PackedStringArray:
 	if effect.get("color") != "inherit" and not Color.html_is_valid(str(effect.get("color", ""))): problems.append("effect %s has an invalid color" % effect.id)
 	if effect.get("channel") == "ambient" and (not is_number(effect.get("rate")) or effect.rate <= 0): problems.append("ambient effect %s needs an emission rate" % effect.id)
 	if effect.has("mark") and (not is_number(effect.mark.get("size")) or not is_number(effect.mark.get("lifetime")) or effect.mark.lifetime > 10): problems.append("effect %s has an invalid floor mark" % effect.id)
+	return problems
+
+## A painting needs its full provenance: the holding institution's record,
+## the exact reproduction source and its rights basis, a credit line and an
+## original caption. Imported files must also carry hashes and dimensions
+## that match the expected composition.
+func validate_painting(painting: Dictionary) -> PackedStringArray:
+	var problems := PackedStringArray()
+	for key in ["title", "artist", "date", "medium", "holding", "rights", "credit", "caption"]:
+		if str(painting.get(key, "")).strip_edges().is_empty(): problems.append("painting %s has no %s" % [painting.id, key])
+	if not str(painting.get("record_url", "")).begins_with("https://"): problems.append("painting %s has no institutional record" % painting.id)
+	var source = painting.get("source", {})
+	if not source is Dictionary or not SOURCE_TYPES.has(source.get("type", "")):
+		problems.append("painting %s has no recognised reproduction source" % painting.id)
+	else:
+		if not str(source.get("page", "")).begins_with("https://"): problems.append("painting %s has no source page" % painting.id)
+		if not source.has(SOURCE_TYPES[source.type]): problems.append("painting %s source lacks its %s" % [painting.id, SOURCE_TYPES[source.type]])
+	if painting.get("verification") not in ["observed", "required"]: problems.append("painting %s has an unknown verification state" % painting.id)
+	if not is_number(painting.get("aspect")) or painting.aspect < .2 or painting.aspect > 5: problems.append("painting %s has an impossible aspect ratio" % painting.id)
+	var asset = painting.get("asset", {})
+	if asset.get("status") not in ["pending", "imported"]:
+		problems.append("painting %s has an unknown asset status" % painting.id)
+	elif asset.status == "imported":
+		for key in ["sha256_wall", "sha256_full"]:
+			if not str(asset.get(key, "")).is_valid_hex_number() or str(asset.get(key, "")).length() != 64: problems.append("painting %s is missing its %s" % [painting.id, key])
+		for key in ["retrieved", "revision", "image_url"]:
+			if str(asset.get(key, "")).is_empty(): problems.append("painting %s is missing its %s" % [painting.id, key])
+		if not is_number(asset.get("width")) or not is_number(asset.get("height")) or asset.width <= 0 or asset.height <= 0:
+			problems.append("painting %s has no recorded dimensions" % painting.id)
+		elif absf(float(asset.width) / asset.height / painting.aspect - 1.0) > .03:
+			problems.append("painting %s file does not match its composition's aspect" % painting.id)
+	return problems
+
+func validate_collection(collection: Dictionary) -> PackedStringArray:
+	var problems := PackedStringArray()
+	var ids: Array = collection.get("paintings", [])
+	if ids.is_empty(): problems.append("collection %s has no paintings" % collection.id)
+	var seen := {}
+	for id in ids:
+		if seen.has(id): problems.append("collection %s repeats %s" % [collection.id, id])
+		seen[id] = true
+		var painting = by_id.get("paintings", {}).get(id, {})
+		if painting.is_empty(): problems.append("collection %s names missing painting '%s'" % [collection.id, id])
+		elif painting.verification != "observed": problems.append("collection %s includes unverified painting '%s'" % [collection.id, id])
+	var weapon = collection.get("unlocks", {}).get("weapon", "")
+	if weapon != "":
+		if not weapon_by_id.has(weapon): problems.append("collection %s unlocks missing weapon '%s'" % [collection.id, weapon])
+		elif weapon_by_id[weapon].get("requires", "") != collection.id: problems.append("collection %s reward is not gated by it" % collection.id)
 	return problems
 
 func validate_pickup(pickup: Dictionary) -> PackedStringArray:
@@ -320,4 +379,4 @@ func base_stats() -> Dictionary:
 		"thorns": 0.0, "coin_bonus": 0.0, "room_heal": 0.0,
 		"kill_haste": 0.0, "low_hp": 0.0, "execute": 0.0,
 		"knockback": 1.0, "backshot": 0.0, "side_shot": 0.0,
-		"returning": 0.0, "wave": 0.0, "radial": 0.0, "heal_each_room": 0.0}
+		"returning": 0.0, "wave": 0.0, "radial": 0.0, "heal_each_room": 0.0, "paint": 0.0}

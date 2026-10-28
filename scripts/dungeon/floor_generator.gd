@@ -441,4 +441,9 @@ static func from_legacy(old_rooms: Dictionary) -> Dictionary:
 		for direction in [Vector2i.RIGHT, Vector2i.DOWN]:
 			if old_rooms.has(key_of(legacy_coord(key) + direction)):
 				add_portal(floor_data, legacy_coord(key), direction)
+	# Rest rooms gain a painting mount; nothing else about a v1 room changes.
+	for key in floor_data.rooms:
+		var room: Dictionary = floor_data.rooms[key]
+		if room.type == "rest" and not room.has("mounts"):
+			room["mounts"] = painting_mounts(room, RoomGeometry.new([Vector2i.ZERO]), reserved_zones(floor_data, room), MOUNT_ROOMS.rest)
 	return floor_data

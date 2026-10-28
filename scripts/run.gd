@@ -34,6 +34,11 @@ var modifiers: Array = []
 var pending_bombs: Array = []
 var instance_counter = 0
 var processed_events: Array = []
+# Paint Sprayer's red-blue-green position: gameplay state, saved with the run.
+var pigment = 0
+# Paintings this run has placed in guaranteed slots, so each floor offers a
+# different unseen work.
+var painting_slots: Array = []
 const START_BOMBS := 1
 const EVENT_MEMORY := 64
 var kills = 0
@@ -43,7 +48,8 @@ var active = false
 var daily = false
 # Device preferences live in the Settings service, never in the profile.
 const PROFILE_VERSION := 2
-var profile = {"version": PROFILE_VERSION, "runs": 0, "wins": 0, "kills": 0, "best_floor": 0, "discovered": []}
+var profile = {"version": PROFILE_VERSION, "runs": 0, "wins": 0, "kills": 0, "best_floor": 0, "discovered": [],
+	"paintings": [], "unlocks": []}
 
 func _ready() -> void:
 	if FileAccess.file_exists(PROFILE_PATH):
@@ -60,7 +66,10 @@ func start_run(chosen_weapon: String, seed_input := 0, is_daily := false) -> voi
 	floor_number = 1
 	generator_version = FloorGenerator.VERSION
 	inventory = []
-	weapon_id = chosen_weapon
+	# Locked weapons can never start a run, whatever asked for them.
+	weapon_id = chosen_weapon if Collection.weapon_available(chosen_weapon) else "candle"
+	pigment = 0
+	painting_slots = []
 	coins = 8
 	keys = 0
 	bombs = START_BOMBS
@@ -80,6 +89,7 @@ func start_run(chosen_weapon: String, seed_input := 0, is_daily := false) -> voi
 	rebuild_stats()
 	hp = stats.max_hp
 	generate_floor()
+	assign_paintings()
 	save_profile()
 	save_run()
 	changed.emit()
@@ -268,6 +278,46 @@ func generate_floor() -> void:
 	entry = {"room": current_room, "position": [0.0, 2.0]}
 	profile.best_floor = maxi(profile.best_floor, floor_number)
 
+## Fills this floor's painting mounts from a dedicated stream that depends on
+## collection progress, never the other way round: topology, encounters and
+## loot ignore it. The guaranteed slot (the rest room) takes an unseen work
+## not already placed this run, so a player inspecting every guaranteed
+## painting completes twelve within four runs. Optional galleries add chances
+## without removing anything from later floors' pool. Daily runs use a fixed
+## seed-based schedule instead of each profile's progress.
+func assign_paintings() -> void:
+	var required: Array = Content.record("collections", Collection.FOUNDING).get("paintings", [])
+	if required.is_empty():
+		return
+	var stream = RandomNumberGenerator.new()
+	stream.seed = Content.stable_hash("paintings:%d:%d" % [seed_value, floor_number])
+	var ids: Array = rooms.keys()
+	ids.sort()
+	var guaranteed = ids.filter(func(id): return rooms[id].type == "rest" and not rooms[id].get("mounts", []).is_empty())
+	if not guaranteed.is_empty():
+		var mount: Dictionary = rooms[guaranteed[0]].mounts[0]
+		if mount.painting == "":
+			var pick: String
+			if daily:
+				pick = required[posmod(seed_value + floor_number * 5, required.size())]
+			else:
+				var pool = required.filter(func(id): return not Collection.seen(id) and id not in painting_slots)
+				if pool.is_empty(): pool = required.filter(func(id): return id not in painting_slots)
+				if pool.is_empty(): pool = required
+				pick = pool[stream.randi_range(0, pool.size() - 1)]
+			mount.painting = pick
+			painting_slots.append(pick)
+	for id in ids:
+		var room: Dictionary = rooms[id]
+		var placed: Array = room.get("mounts", []).map(func(m): return m.painting).filter(func(p): return p != "")
+		for mount in room.get("mounts", []):
+			if mount.painting != "": continue
+			var pool = required.filter(func(p): return p not in placed and (daily or not Collection.seen(p)))
+			if pool.is_empty(): pool = required.filter(func(p): return p not in placed)
+			if pool.is_empty(): break
+			mount.painting = pool[stream.randi_range(0, pool.size() - 1)]
+			placed.append(mount.painting)
+
 func mark_cleared() -> void:
 	if rooms[current_room].cleared:
 		return
@@ -284,6 +334,7 @@ func next_floor() -> void:
 	floor_number += 1
 	heal(2)
 	generate_floor()
+	assign_paintings()
 	save_profile()
 	save_run()
 	changed.emit()
@@ -307,7 +358,7 @@ func snapshot() -> Dictionary:
 		"current_room": current_room, "entry": entry, "inventory": inventory, "weapon": weapon_id, "hp": hp,
 		"coins": coins, "keys": keys, "bombs": bombs, "wards": wards, "active": active_item, "cooldowns": cooldowns,
 		"modifiers": modifiers, "pending_bombs": pending_bombs, "instance_counter": instance_counter,
-		"events": processed_events, "kills": kills, "cleared": cleared, "elapsed": elapsed, "daily": daily,
+		"events": processed_events, "pigment": pigment, "painting_slots": painting_slots, "kills": kills, "cleared": cleared, "elapsed": elapsed, "daily": daily,
 		"rng_state": str(rng.state)}
 
 ## Drop records name a pickup definition. Version 1 records used a bare kind;
@@ -393,6 +444,8 @@ func load_run() -> bool:
 	pending_bombs = d.get("pending_bombs", [])
 	instance_counter = int(d.get("instance_counter", 0))
 	processed_events = d.get("events", [])
+	pigment = int(d.get("pigment", 0))
+	painting_slots = d.get("painting_slots", [])
 	kills = int(d.kills)
 	cleared = int(d.cleared)
 	elapsed = float(d.elapsed)
@@ -401,6 +454,8 @@ func load_run() -> bool:
 	rng.state = int(d.get("rng_state", str(rng.state)))
 	rebuild_stats()
 	hp = clampf(float(d.hp), 0.5, stats.max_hp)
+	# Floors saved before galleries existed gain their paintings once.
+	assign_paintings()
 	active = true
 	changed.emit()
 	return true

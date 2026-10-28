@@ -92,6 +92,7 @@ func update_sim(delta: float) -> void:
 				global_position = hit.position + normal * .12
 		else:
 			Effects.play("impact", global_position, tint)
+			splash()
 			remove()
 			return
 	else:
@@ -115,8 +116,14 @@ func update_sim(delta: float) -> void:
 			game.player.hurt(damage, global_position)
 			remove()
 
+## Paint lands as a short-lived, budgeted floor mark; it deals no damage.
+func splash() -> void:
+	if friendly and float(stats.get("paint", 0)) > 0:
+		Effects.play("paint_splash", Vector3(global_position.x, .02, global_position.z), tint)
+
 func hit_enemy(enemy: DungeonEnemy) -> void:
 	hit_ids[enemy.entity_id] = true
+	splash()
 	var critical = Run.rng.randf() < float(stats.get("crit", .05))
 	var power = damage * (float(stats.get("crit_damage", 2.0)) if critical else 1.0)
 	if enemy.hp < enemy.max_hp * .35:
