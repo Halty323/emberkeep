@@ -677,6 +677,23 @@ func test_map_memory() -> void:
 	for i in range(2, path.size()):
 		if signf(path[i].y - path[i - 1].y) != signf(path[i - 1].y - path[i - 2].y): turns += 1
 	check(turns >= 8, "it zig-zags (%d turns)" % turns)
+	# It leans like a hand's scribble: strokes tipped off upright, and the
+	# turns clear of the cell's edge rising to the right.
+	var lean = []
+	for i in range(1, path.size()):
+		var stroke = path[i] - path[i - 1]
+		if stroke.length() > rect.size.y * .5: lean.append(rad_to_deg(atan2(stroke.x * signf(stroke.y), absf(stroke.y))))
+	var mean_lean = lean.reduce(func(a, b): return a + b, 0.0) / maxf(lean.size(), 1)
+	var rising = true
+	for top in [true, false]:
+		var ends = []
+		for i in range(1, path.size() - 1):
+			var turn = path[i].y < path[i - 1].y and path[i].y < path[i + 1].y if top else path[i].y > path[i - 1].y and path[i].y > path[i + 1].y
+			if turn and rect.grow(-.5).has_point(path[i]): ends.append(path[i])
+		var mid = ends.reduce(func(a, b): return a + b, Vector2.ZERO) / maxf(ends.size(), 1)
+		var slope = ends.reduce(func(a, p): return a + (p.x - mid.x) * (p.y - mid.y), 0.0)
+		rising = rising and ends.size() >= 3 and slope < 0.0
+	check(mean_lean > 16.0 and mean_lean < 28.0 and rising, "the zig-zag leans like a hand's scribble (%.0f°), its turns rising to the right" % mean_lean)
 	check([Rect2(0, 0, 14, 14), Rect2(0, 0, 30, 30)].all(func(r): var gap = ui.scribble_spacing(r); return gap > 2.0 and gap < 3.6),
 		"the minimap and the full map scribble with the same density")
 	var total = 0.0

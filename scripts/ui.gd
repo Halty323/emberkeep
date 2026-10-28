@@ -1004,28 +1004,45 @@ static func ghost_edge(rect: Rect2, direction: Vector2i) -> Array:
 static func scribble_spacing(rect: Rect2) -> float:
 	return rect.size.x / clampi(roundi(rect.size.x / 2.6), 4, 16)
 
-## A crayon's zig-zag fill: slanted strokes across the cell and back again,
-## half a stroke over, a little loose at the turns. Always the same per cell.
+## A crayon's zig-zag fill: strokes across the cell and back again, half a
+## stroke over, a little loose at the turns, the whole scribble leaning about
+## 22° the way a hand's does, its turns rising to the right. A turn that would
+## fall outside the cell slides in along its stroke to the edge. Always the
+## same per cell.
 static func scribble_path(rect: Rect2, cell: Vector2i, floor_number: int) -> PackedVector2Array:
 	var rng = RandomNumberGenerator.new()
 	rng.seed = hash([cell.x, cell.y, floor_number])
-	var spacing = scribble_spacing(rect)
-	var strokes = roundi(rect.size.x / spacing)
+	var tilt = deg_to_rad(22.0 + rng.randf_range(-3.0, 3.0))
+	# Along the line of turns, and down a stroke.
+	var along = Vector2(cos(tilt), -sin(tilt))
+	var down = Vector2(sin(tilt), cos(tilt))
+	var half = rect.size * .5
+	# Far enough along to reach every corner of the cell.
+	var reach = half.x * along.x + half.y * down.x
+	var strokes = maxi(roundi(reach * 2.0 / scribble_spacing(rect)), 2)
+	var step = reach * 2.0 / strokes
 	var points = PackedVector2Array()
 	for back in [0, 1]:
 		for k in strokes + 1:
 			var i = k if back == 0 else strokes - k
-			var x = rect.position.x + (i + .5 * back) * spacing + rng.randf_range(-.15, .15) * spacing
-			var turn = rng.randf_range(0.0, .06) * rect.size.y
-			var top = (i + back) % 2 == 0
-			var y = rect.position.y + turn if top else rect.end.y - turn
+			var u = -reach + (i + .5 * back) * step + rng.randf_range(-.15, .15) * step
+			var side = -1.0 if (i + back) % 2 == 0 else 1.0
+			var v = side * (half.y - rng.randf_range(0.0, .06) * rect.size.y)
 			# Swing round in a short hook rather than a sharp point.
-			var lean = (1.0 if back == 0 else -1.0) * spacing * .3
-			var dip = rect.size.y * .07 * (1.0 if top else -1.0)
-			points.append(Vector2(clampf(x - lean, rect.position.x, rect.end.x), y + dip))
-			points.append(Vector2(clampf(x, rect.position.x, rect.end.x), y))
-			points.append(Vector2(clampf(x + lean, rect.position.x, rect.end.x), y + dip))
+			var lean = (1.0 if back == 0 else -1.0) * step * .3
+			var dip = -side * rect.size.y * .07
+			for hook in [Vector2(u - lean, v + dip), Vector2(u, v), Vector2(u + lean, v + dip)]:
+				points.append(scribble_point(rect, along, down, clampf(hook.x, -reach, reach), hook.y))
 	return points
+
+## A point of the leaning scribble, `u` along its turns and `v` down its
+## strokes from the cell's centre, kept inside the cell along the stroke.
+static func scribble_point(rect: Rect2, along: Vector2, down: Vector2, u: float, v: float) -> Vector2:
+	var half = rect.size * .5
+	var low = maxf((-half.x - u * along.x) / down.x, (-half.y - u * along.y) / down.y)
+	var high = minf((half.x - u * along.x) / down.x, (half.y - u * along.y) / down.y)
+	var point = rect.get_center() + along * u + down * clampf(v, low, maxf(low, high))
+	return point.clamp(rect.position, rect.end)
 
 ## The first `progress` of a path's length, ending part-way along a segment.
 static func partial_path(points: PackedVector2Array, progress: float) -> PackedVector2Array:
