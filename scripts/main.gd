@@ -497,6 +497,7 @@ func spawn_shot(at: Vector3, direction: Vector3, damage: float, speed_value: flo
 	entity_counter += 1
 	shot.entity_id = entity_counter
 	shot.setup(self, at, direction, damage, speed_value, stats, color, friendly)
+	if friendly: Effects.muzzle(at, direction.normalized(), color)
 	shots.append(shot)
 	return shot
 
@@ -712,7 +713,7 @@ func _action_collect_pickup(action: Dictionary) -> Dictionary:
 	items.apply_pickup(pickup.kind, pickup.value)
 	var effect: String = ItemSystem.pickup_def(pickup.kind).effect
 	Audio.play_sound("coin" if effect == "coins" else "item", 1.0 + float(pickup.value) * .05 if effect == "coins" else 1.2)
-	Effects.burst(scene_root, pickup.global_position + Vector3.UP * .3, Color(ItemSystem.pickup_def(pickup.kind).color), 4, .45)
+	Effects.pickup_glint(pickup.global_position + Vector3.UP * .3, Color(ItemSystem.pickup_def(pickup.kind).color))
 	Run.save_run()
 	pickup.queue_free()
 	return GameActions.ok({"kind": pickup.kind, "value": pickup.value})
@@ -789,7 +790,7 @@ func open_chest(chest_id: String) -> Dictionary:
 		var spot := room.geometry.nearest_inside(at + offset, .5)
 		spawn_pickup(Vector3(spot.x, 0, spot.y), drops[i], int(ItemSystem.pickup_def(drops[i]).amount))
 	Audio.play_sound("item", 1.1)
-	Effects.burst(scene_root, at + Vector3.UP * .6, Color("e8c77a"), 10, .9)
+	Effects.chest_open(at)
 	build_room_objects()
 	Run.save_run()
 	return GameActions.ok({"drops": drops})
@@ -871,6 +872,7 @@ func detonate_bomb(bomb: Dictionary) -> void:
 		bomb_nodes.erase(int(bomb.id))
 		Effects.ring_burst(scene_root, at, Color("f2a066"), ItemSystem.BOMB_RADIUS)
 		Effects.burst(scene_root, at + Vector3.UP * .4, Color("f2c27a"), 12, 1.6)
+		Effects.floor_mark(at, Color(.08, .06, .05, .55), ItemSystem.BOMB_RADIUS * .45, 8.0)
 		shake = maxf(shake, .3)
 		Audio.play_sound("kill", .5)
 		var damage: float = ItemSystem.BOMB_DAMAGE * (1.0 + (Run.floor_number - 1) * .4)
@@ -969,7 +971,7 @@ func break_prop(room_id: String, record: Dictionary) -> Array:
 		prop_damage.erase(record.id)
 		for drop in drops:
 			spawn_pickup(Vector3(at.x, 0, at.y), drop, int(ItemSystem.pickup_def(drop).amount))
-		Effects.burst(scene_root, Vector3(at.x, .5, at.y), Color(def.get("color", "#7a5c3c")).lightened(.15), 8, 1.0)
+		Effects.prop_dust(Vector3(at.x, .5, at.y), Color(def.get("color", "#7a5c3c")).lightened(.15))
 		Audio.play_sound("kill", 1.3)
 	else:
 		var data: Dictionary = Run.rooms[room_id]

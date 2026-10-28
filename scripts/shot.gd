@@ -91,7 +91,7 @@ func update_sim(delta: float) -> void:
 				var inside := geometry.nearest_inside(global_position, .2)
 				global_position = Vector3(inside.x, global_position.y, inside.y)
 		else:
-			Effects.burst(game, global_position, tint, 2, .35)
+			Effects.impact(global_position, tint)
 			remove()
 			return
 	else:

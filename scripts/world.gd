@@ -12,8 +12,10 @@ var _quality_enabled = null
 var gates: Array[Node3D] = []
 var open = true
 var time = 0.0
+## The ambient batch of this room's effect pool (embers, wisps, dust).
 var ember_mesh: MultiMeshInstance3D
-var ember_origins: Array[Vector3] = []
+var effects: EffectPool
+var candle_points: Array = []
 var obstacles: Array[Dictionary] = []
 var front_walls: Array[Dictionary] = []
 const LIGHT_POOL = 4
@@ -35,6 +37,9 @@ func build(owner_game: Node3D, room: Dictionary, preview := false, layout := {})
 	geometry = RoomGeometry.new(layout.get("cells", [Vector2i.ZERO]))
 	# Every glow built for this room (and its actors) clips to its footprint.
 	Geo.footprint = geometry.shader_rects()
+	effects = EffectPool.new()
+	add_child(effects)
+	effects.setup(owner_game, geometry, int(room.get("seed", 53)))
 	sockets = layout.get("sockets", [])
 	if preview and sockets.is_empty():
 		for direction in RoomGeometry.DIRECTIONS:
@@ -119,7 +124,13 @@ func build(owner_game: Node3D, room: Dictionary, preview := false, layout := {})
 			if blocked_at(Vector2(p.x + center.x, p.z + center.y), .3, true):
 				continue
 			make_candle(p + Vector3(center.x, 0, center.y), decor_rng.randf_range(.45, .85))
-	make_embers()
+	var shelves: Array = []
+	for id in props:
+		if props[id].record.def in ["bookcase", "shelf"]:
+			var rect := Furnishing.record_rect(props[id].record)
+			shelves.append(Vector3(rect.get_center().x, 0, rect.get_center().y))
+	effects.populate_ambient(candle_points, lantern_points, shelves)
+	ember_mesh = effects.ambient_mesh
 	if geometry.cells.size() > 1 or not props.is_empty():
 		navigation = RoomNavigation.new(geometry, obstacles)
 	set_open(true)
@@ -356,28 +367,8 @@ func make_candle(p: Vector3, height: float) -> void:
 	wax.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var flame = Geo.sphere(self, p + Vector3(0, height + .1, 0), .11, Color("ffe0a1"), 2.0)
 	flame.scale = Vector3(.7, 1.5, .7)
+	candle_points.append(p + Vector3(0, height + .12, 0))
 	Geo.halo(self, p + Vector3(0, .025, 0), 2.3, Color(1, .5, .13, .14))
-
-func make_embers() -> void:
-	ember_mesh = MultiMeshInstance3D.new()
-	var mm = MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	var mesh = SphereMesh.new()
-	mesh.radius = .025
-	mesh.height = .05
-	mesh.radial_segments = 4
-	mesh.rings = 3
-	mm.mesh = mesh
-	# The ambient budget is an active-room total, spread over every cell.
-	var count = roundi(40 * Settings.effects_scale())
-	mm.instance_count = count
-	for i in count:
-		var center := geometry.cell_center(geometry.cells[i % geometry.cells.size()])
-		ember_origins.append(Vector3(center.x + decor_rng.randf_range(-9, 9), decor_rng.randf_range(.1, 4.0), center.y + decor_rng.randf_range(-7, 7)))
-	ember_mesh.multimesh = mm
-	ember_mesh.material_override = Geo.material(Color("efbc78"), 1.2)
-	ember_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(ember_mesh)
 
 func set_open(value: bool) -> void:
 	open = value
@@ -400,9 +391,3 @@ func _process(delta: float) -> void:
 		update_light_selection(game.player.position)
 	for i in lamps.size():
 		lamps[i].light_energy = .6 + sin(time * 3.1 + i * 2.4) * .025 + sin(time * 7.2 + i) * .012
-	if ember_mesh:
-		for i in ember_origins.size():
-			var p: Vector3 = ember_origins[i]
-			p.y = fposmod(p.y + time * .16, 4.0)
-			p.x += sin(time * .35 + i) * .25
-			ember_mesh.multimesh.set_instance_transform(i, Transform3D(Basis.IDENTITY, p))

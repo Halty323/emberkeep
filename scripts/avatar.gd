@@ -64,6 +64,8 @@ func refresh_orbitals() -> void:
 		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		orbit_meshes.append(mesh)
 
+var stride := 0.0
+
 func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting: bool) -> void:
 	invulnerability = maxf(0, invulnerability - delta)
 	dash_cooldown = maxf(0, dash_cooldown - delta)
@@ -87,7 +89,13 @@ func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting:
 		collision_mask = 5
 		var target = direction * 5.2 * float(Run.stats.speed)
 		velocity = velocity.move_toward(target, delta * 47.0)
+	var before := global_position
 	move_and_slide()
+	# Cosmetic stride motes; the stride counter never feeds gameplay.
+	stride += Vector2(global_position.x - before.x, global_position.z - before.z).length()
+	if stride > 1.1:
+		stride = 0.0
+		Effects.footstep(global_position)
 	position.y = 0
 	# Walls collide first; this only undoes numerical escape, and never
 	# teleports across the missing quadrant of an L-shaped room.
@@ -150,6 +158,7 @@ func dash() -> void:
 	invulnerability = .32
 	Audio.play_sound("dash")
 	Effects.ring_burst(game, global_position, Color("efd1a0"), 1.1)
+	Effects.dash_dust(global_position, dash_direction)
 	if Run.stats.dash_nova > 0:
 		var effects = Run.projectile_stats()
 		effects.chill += 1

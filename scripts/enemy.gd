@@ -217,7 +217,7 @@ func take_hit(damage: float, impulse: Vector3, critical := false, dot := false) 
 	knock_velocity += impulse / (2.5 if boss else 1.0)
 	if not dot:
 		visual.scale = Vector3(1.17, .85, 1.17)
-		Effects.burst(game, global_position + Vector3.UP * radius, Color("ffe0a8") if critical else color, 3, .55)
+		Effects.hit_spark(global_position + Vector3.UP * radius, color, critical)
 		Audio.play_sound("hit", 1.3 if critical else 1)
 		game.damage_number(global_position + Vector3.UP * 1.1, damage, critical)
 	if critical:
@@ -232,7 +232,7 @@ func die() -> void:
 	collision_layer = 0
 	collision_mask = 0
 	game.player.haste_time = 2.0
-	Effects.burst(game, global_position + Vector3.UP * .5, color, 9 if boss else 6, 1.5 if boss else 1)
+	Effects.death_puff(global_position + Vector3.UP * .5, color, boss)
 	Audio.play_sound("kill", .6 if boss else 1)
 	if kind == "splitter":
 		for side in [-1, 1]:
