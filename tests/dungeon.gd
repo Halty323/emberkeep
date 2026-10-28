@@ -253,6 +253,8 @@ func test_scenes() -> void:
 	game.clear_room()
 	game.clear_room()
 	check(run.cleared == cleared_before + 1, "a four-cell room counts one clear")
+	# From the halls up every lantern burns, so the fill pool has eight to choose from.
+	run.floor_number = 2
 	game.enter_room(Vector3(9, 0, 7))
 	check(game.room.open and game.enemies.is_empty(), "re-entering a cleared large room never relocks it")
 	# Close framing follows through every corner and door of the large room.

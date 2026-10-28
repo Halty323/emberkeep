@@ -99,5 +99,65 @@ func test_lighting() -> void:
 			"flicker updates do not rebuild lighting nodes")
 	stage.queue_free()
 	await process_frame
+	await test_floor_light()
 	print("EMBERKEEP LIGHTING TEST RESULT: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
+
+## The tower brightens floor by floor: a captive wakes in a near-dark cellar
+## and climbs toward the light. Visual only; the floors play the same.
+func test_floor_light() -> void:
+	var Light = load("res://scripts/dungeon/floor_light.gd")
+	var title: Dictionary = Light.profile(0)
+	var floors = [Light.profile(1), Light.profile(2), Light.profile(3)]
+	for key in ["ambient", "key", "lamp", "glow", "shadow"]:
+		check(floors[0][key] < floors[1][key] and floors[1][key] < floors[2][key], "each floor up has more " + key)
+		check(floors[0][key] < title[key], "the cellar is darker than the old baseline in " + key)
+	check(floors[0].lit < floors[1].lit and floors[1].lit == 1.0 and floors[2].lit == 1.0, "dead lanterns belong to the cellar")
+	check(floors[0].vignette > floors[1].vignette and floors[1].vignette > floors[2].vignette, "the edge of the view closes in lower down")
+	check(floors[0].background.get_luminance() < floors[1].background.get_luminance() and floors[1].background.get_luminance() < floors[2].background.get_luminance(),
+		"the void between rooms lightens as the tower rises")
+	check(floors[0].foe_glow > floors[1].foe_glow and floors[0].foe_body > 0, "foes carry their own glow where it is darkest")
+	for profile in floors:
+		check(profile.ambient < .36 and profile.key < .45 and profile.lamp < 2.0, "every floor keeps the shadow contrast")
+	# Which lanterns burn is the room's own, repeatable, and never all dark.
+	var burning: Array = Light.lit_lanterns(4, floors[0], 81)
+	check(burning.size() == 2 and burning == Light.lit_lanterns(4, floors[0], 81), "half the cellar's lanterns burn, the same ones every time")
+	check(Light.lit_lanterns(1, floors[0], 81).size() == 1 and Light.lit_lanterns(8, floors[0], 5).size() == 4, "a cellar room always keeps a light")
+	check(Light.lit_lanterns(4, floors[1], 81) == [0, 1, 2, 3], "from the halls up every lantern burns")
+	# Rooms in a real run take their floor's light.
+	var game = load("res://scenes/main.tscn").instantiate()
+	root.add_child(game)
+	current_scene = game
+	await process_frame
+	game.set_physics_process(false)
+	var environment: Environment = game.room_environment.environment
+	check(is_equal_approx(environment.ambient_light_energy, title.ambient) and is_equal_approx(game.key_light.light_energy, title.key), "the title keeps its own light")
+	game.start_run("candle", 61001, false)
+	var anchors: int = run.rooms["0,0"].get("lights", []).size()
+	var rng_state = run.rng.state
+	for floor in [1, 2, 3]:
+		var profile: Dictionary = floors[floor - 1]
+		run.floor_number = floor
+		run.current_room = "0,0"
+		game.enter_room(Vector3(0, 0, 2))
+		var room = game.room
+		check(is_equal_approx(environment.ambient_light_energy, profile.ambient) and is_equal_approx(game.key_light.light_energy, profile.key)
+			and environment.background_color == profile.background and is_equal_approx(game.vignette.get_shader_parameter("strength"), profile.vignette),
+			"floor %d sets its own ambient, key, void and vignette" % floor)
+		check(room.lantern_points.size() == Light.lit_lanterns(anchors, profile, int(run.rooms["0,0"].seed)).size(), "floor %d burns its share of lanterns" % floor)
+		check(room.lamps.size() == mini(room.MAX_ACTIVE_FILLS, room.lantern_points.size())
+			and room.lamps.all(func(lamp): return lamp.light_color == profile.lamp_color), "floor %d fills only from burning lanterns, in its colour" % floor)
+		var spot: SpotLight3D = room.shadow_lamps[0]
+		check(room.lantern_points.any(func(p): return (p + Vector3(0, 2.2, 0)).distance_to(spot.position) < .01) and is_equal_approx(spot.light_energy, profile.shadow),
+			"floor %d's shadow lamp hangs on a burning lantern" % floor)
+		var foe = game.spawn_enemy(Vector3(3, 0, 0), "mote")
+		var body: MeshInstance3D = foe.visual.get_child(0)
+		check((body.material_override.emission_enabled and is_equal_approx(body.material_override.emission_energy_multiplier, profile.foe_body)) == (profile.foe_body > 0),
+			"floor %d foes glow only where it is dark" % floor)
+		game.enemies.erase(foe)
+		foe.free()
+	check(anchors > 2 and run.rng.state == rng_state, "lighting floors never touches the gameplay random stream")
+	game.return_to_title()
+	check(is_equal_approx(environment.ambient_light_energy, title.ambient) and is_equal_approx(game.key_light.light_energy, title.key), "returning to the title restores its light")
+	game.queue_free()
+	await process_frame

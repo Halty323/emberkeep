@@ -2,6 +2,8 @@
 
 A native Godot prototype of a cozy, isometric 3D dungeon roguelike for Android and iOS. Characters, furniture and effects use simple procedural geometry and plain colors; the only bundled artwork will be the reproductions of twelve public-domain paintings. Warm lanterns, dynamic shadows, soft additive halos and drifting embers establish the atmosphere.
 
+You wake as a captive in the cellar of a tower, remembering nothing, with only a little light of your own. Each run climbs three floors toward the hearth at the top.
+
 ## Play from source
 
 Use **Godot 4.6.3 Standard**; no .NET, external libraries or asset downloads are required to run the source.
@@ -40,6 +42,7 @@ The sticks float to the initial touch position, and the Item, Bomb and Dash butt
 
 ## What is in the game
 
+- **A tower that brightens as you climb.** The Waking Cellar is nearly dark: a cold slit of moonlight, half its lanterns long dead, and your own light the brightest thing in the room; foes there carry a faint glow so they stay readable. The Mosslit Halls are lit as before, and The Last Hearth is warm with daylight, every lantern burning. Only the look changes; each floor plays the same.
 - **Rooms of several shapes.** Floors mix single rooms with 2×1 and 1×2 halls, 2×2 great halls and rotated three-cell L passages. Rooms join only through explicit doorways; a long wall can hold more than one. Enemies path around bends and furniture, and the camera keeps its close zoom while following you through large rooms.
 - **Furnished rooms.** Sixteen furniture families (bookcases, cupboards, tables and chairs, crates, barrels, jars, braziers, cots, workbenches, rugs and more) form reading rooms, storage, workshops, living quarters, shrines and galleries. Crates, barrels and jars break and stay broken.
 - **Secrets.** Every floor hides one optional room behind a wall with subtle cracks and rubble. A bomb opens it; the Miner's Lantern points to it. Secrets are never on the way to the boss.

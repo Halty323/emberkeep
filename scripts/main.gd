@@ -514,6 +514,7 @@ func show_title_room() -> void:
 	player.set_fade(.99)
 	fade_prewarm = 3
 	make_marker("treasure", Vector3(2.3, 0, -1.5))
+	apply_floor_light()
 	update_camera(0.0, true)
 
 func start_run(weapon: String, seed_input: int, is_daily: bool) -> void:
@@ -527,7 +528,7 @@ func start_run(weapon: String, seed_input: int, is_daily: bool) -> void:
 	entity_counter = 10
 	enter_room(Vector3(0, 0, 2.0))
 	ui.show_screen("play")
-	ui.notify("A little light wakes up", "Clear rooms. Find relics. Follow the hearth.")
+	ui.notify("You wake in the cellar", "Clear rooms, find relics, climb to the light.")
 
 func continue_run() -> void:
 	if not Run.load_run():
@@ -618,7 +619,12 @@ func enter_room(spawn: Vector3, keep_view := false) -> void:
 	sync_companions()
 	if data.type == "boss" and not data.cleared:
 		ui.notify("The hearth is stirring", "Watch the windup. Dash through danger.", Color("e0a18b"))
+	apply_floor_light()
 	update_camera(0.0, true)
+
+## The tower brightens floor by floor; the title keeps its own warm light.
+func apply_floor_light() -> void:
+	FloorLight.apply(FloorLight.profile(0 if in_menu else Run.floor_number), room_environment.environment, key_light, vignette)
 
 ## Each doorway trigger names one specific portal; the transition itself is
 ## scheduled for the end of the physics tick.
@@ -800,7 +806,7 @@ func prompt_for(target: Dictionary) -> String:
 		"treasure": return "Choose a little treasure"
 		"shop": return "Browse the merchant’s wares"
 		"rest": return "Warm your hands · heal 3"
-		"exit": return "Carry the light home" if Run.floor_number == 3 else "Descend to the next floor"
+		"exit": return "Carry the light home" if Run.floor_number == 3 else "Climb to the next floor"
 		"chest":
 			var chest = GameActions.find_record(Run.rooms[Run.current_room].get("chests", []), target.id.trim_prefix("chest:"))
 			if not chest.get("locked", false): return "Open the chest"
@@ -862,7 +868,7 @@ func use_pedestal(target: Dictionary) -> Dictionary:
 			else:
 				Run.next_floor()
 				enter_room(Vector3(0, 0, 2.0))
-				ui.notify("A little deeper", "A new floor. A fresh breath of warmth.")
+				ui.notify("A little higher", "More light reaches this floor.")
 	return GameActions.result(true)
 
 ## Inspecting discovers the work for good. The viewer pauses solo play.

@@ -4,7 +4,7 @@ Verified with Godot 4.6.3 Standard on Linux: headless suites, Mesa llvmpipe Open
 
 ## Headless suites
 
-`./tools/test.sh` imports the project, runs every suite with disposable user storage, and fails on any script error even if Godot exits successfully. Last full run: **134,189 checks, zero failures**, plus the painting importer's offline test.
+`./tools/test.sh` imports the project, runs every suite with disposable user storage, and fails on any script error even if Godot exits successfully. Last full run: **134,217 checks, zero failures**, plus the painting importer's offline test.
 
 | Suite | Checks | What it covers |
 | --- | ---: | --- |
@@ -16,17 +16,17 @@ Verified with Godot 4.6.3 Standard on Linux: headless suites, Mesa llvmpipe Open
 | `effects` | 67 | Recipes and validation; per-level transient, ambient and mark budgets including embers; important feedback displaces atmosphere; ring, beam and mark recycling; rate limiting and view culling; no node growth across room changes; charge telegraphs independent of the pool; a scripted fight is identical at Low/30 FPS, High/120 FPS and unlimited FPS; cosmetic randomness never touches the gameplay RNG. |
 | `collection` | 3,187 | Provenance for each of the twelve works and rejection of missing records, unverified works and mismatched files; a guaranteed painting on every floor, never behind a secret; stored assignments that reload without rerolling; floors identical whatever the collection progress; the twelve completed within four runs in repeated trials; daily schedules independent of profiles; every weapon gate while locked; the ALLRELICS code stays passive; the viewer, journal and true canvas proportions; the 11→12 boundary, exactly one unlock, reconciliation after a simulated crash, and new artwork never relocking; known saves keep their weapon; Paint Sprayer's deterministic pigment cycle and statuses. |
 | `smoke` | 1,337 | Original gameplay regression: reachability with and without secrets, roles, repeatability, catalogue effects, saves, combat, rewards, progression, drops, multitouch, 270 simulated frames with an extreme build; looping audio stays inside its sample data and wraps without a click. |
-| `lighting` | 367 | Lantern light and shadow budget, quality transitions, halo isolation. |
+| `lighting` | 405 | Lantern light and shadow budget, quality transitions, halo isolation; the tower brightening floor by floor (ambient, key, lanterns, glow, void and vignette), the cellar darker than the old baseline and every floor within the shadow contrast, repeatable dead lanterns with at least one burning, fills and the shadow lamp only on burning lanterns, foes glowing only where it is dark, the title keeping its own light, and no gameplay randomness spent. |
 | `secret_codes` | 284 | ALLRELICS behaviour and its hidden entry. |
-| `presentation` | 202 | Camera zoom and follow, wall cutaways and shadow occluders, contrast. |
-| `ui_presentation` | ~684 | Native controls in bounds, readable and non-overlapping on every screen; room-light propagation; scaled touch and mouse routing. The count varies with whether a resumable save exists. |
+| `presentation` | 198 | Camera zoom and follow, wall cutaways and shadow occluders, contrast. |
+| `ui_presentation` | ~678 | Native controls in bounds, readable and non-overlapping on every screen; room-light propagation; scaled touch and mouse routing. The count varies with whether a resumable save exists. |
 | `tools/test_import_paintings.py` | — | The importer against a local mock source: refused licences and wrong proportions, recorded provenance and hashes, bounded sizes, unverified records refused, offline `--check` catching a replaced file, regenerated credits. Needs Python with Pillow; skipped otherwise. |
 
 ## OpenGL captures (opt-in)
 
 Run with a display or under Xvfb. All passed on llvmpipe:
 
-- `./tools/render_lighting.sh`: lantern shadows on/off with no glow outside the floor; an L room in both shadow modes where a glow and a paint mark placed at the notch's corner leave the notch at background luminance; 50 % versus 100 % render scale with a HUD mean luminance difference of 0.002 and zero framing offset; a wide (Last Supper) and a tall (Arnolfini) painting keeping their proportions on the wall.
+- `./tools/render_lighting.sh`: lantern shadows on/off with no glow outside the floor; an L room in both shadow modes where a glow and a paint mark placed at the notch's corner leave the notch at background luminance; 50 % versus 100 % render scale with a HUD mean luminance difference of 0.002 and zero framing offset; a wide (Last Supper) and a tall (Arnolfini) painting keeping their proportions on the wall. The same room on floors 1, 2 and 3 measures a mean luminance of about 0.05, 0.14 and 0.25, and a foe in the cellar renders about seven times brighter than the floor beside it.
 - `./tools/render_ui.sh`: 20 renderer checks across title, desktop and touch HUD (now with keys, bombs, wards, the held item and Item/Bomb buttons), pause, secret entry, settings, journal and rewards; a real lantern lights the stone HUD while text brightness stays stable.
 - `./tools/render_stress.sh`: the largest room with every relic, Paint Sprayer, two moths, a buff, furniture and fourteen foes. On llvmpipe at 1280×720: about 1,140 draw calls at Low effects detail and 1,800 at High (projectile trails follow the detail level), 24 MB texture memory, room transition 12–18 ms. These numbers describe the workload only; software rendering says nothing about phone frame rates.
 

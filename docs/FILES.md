@@ -48,6 +48,8 @@ scripts/dungeon/detail_batch.gd
 scripts/dungeon/detail_batch.gd.uid
 scripts/dungeon/floor_generator.gd
 scripts/dungeon/floor_generator.gd.uid
+scripts/dungeon/floor_light.gd
+scripts/dungeon/floor_light.gd.uid
 scripts/dungeon/furnisher.gd
 scripts/dungeon/furnisher.gd.uid
 scripts/dungeon/prop_visuals.gd
