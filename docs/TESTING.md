@@ -32,7 +32,9 @@ Run with a display or under Xvfb. All passed on llvmpipe:
 
 ## Packaged builds
 
-`./tools/verify_pack.sh` exports the Android, Linux and iOS presets as resource packs, then runs each pack with `--verify-catalog`: every content family, 60 relics and 11 weapons loaded without errors, and every imported painting must be inside the pack. Each pack then starts a run with `--quickstart` and plays 240 frames without script errors. All three presets pass. No APK or IPA was built here: Android SDK/templates are not installed, and iOS needs the macOS workflow, which runs `tools/test.sh` before building.
+`./tools/verify_pack.sh` exports the Android, Linux and iOS presets as resource packs, then runs each pack with `--verify-catalog`: every content family, 60 relics and 11 weapons loaded without script errors, and every imported painting must be inside the pack. Each pack then starts a run with `--quickstart` and plays 240 frames without script errors. All three presets pass.
+
+A debug APK was exported with the official 4.6.3 Android template and Godot’s template (non-Gradle) path, as `tools/export_android.sh` does. Google’s SDK host was unreachable, so Ubuntu’s `apksigner` 31.0.2, `zipalign` and `adb` stood in for the SDK; the helper itself also wants SDK Platform 35, which a template export does not use. The result: about 57 MB, signed with APK Signature Scheme v2 and v3 by a local debug key, package `org.emberkeep.game` 0.1.0 (code 1), min SDK 24, target SDK 36, `arm64-v8a` and `x86_64` libraries, landscape, no permissions. The game files packed inside the APK passed `--verify-catalog` and played 240 `--quickstart` frames without script errors under desktop Godot. It has not been installed on a phone or emulator. No IPA was built here: iOS needs the macOS workflow, which runs `tools/test.sh` before building.
 
 ## Not yet verified
 

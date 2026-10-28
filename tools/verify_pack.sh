@@ -15,7 +15,9 @@ expected_families=$(python3 -c "import re,sys;print(len(re.search(r'const FAMILI
 for preset in Android Linux iOS; do
     pack="$work/$preset.pck"
     "$godot_bin" --headless --path "$project_dir" --export-pack "$preset" "$pack" > "$work/export-$preset.log" 2>&1 || { cat "$work/export-$preset.log"; exit 1; }
-    report="$("$godot_bin" --headless --main-pack "$pack" -- --verify-catalog 2>&1 | grep 'EMBERKEEP CATALOG REPORT' | sed 's/.*REPORT //')"
+    "$godot_bin" --headless --main-pack "$pack" -- --verify-catalog > "$work/catalog-$preset.log" 2>&1 || true
+    if grep -Eq 'SCRIPT ERROR|^ERROR:' "$work/catalog-$preset.log"; then cat "$work/catalog-$preset.log"; exit 1; fi
+    report="$(grep 'EMBERKEEP CATALOG REPORT' "$work/catalog-$preset.log" | sed 's/.*REPORT //')"
     python3 - "$preset" "$report" "$expected_families" <<'PY'
 import json, sys
 preset, raw, expected = sys.argv[1], sys.argv[2], int(sys.argv[3])

@@ -50,6 +50,10 @@ func _ready() -> void:
 	# Packaged-build diagnostic: report what the catalog actually loaded.
 	if "--verify-catalog" in OS.get_cmdline_user_args():
 		print("EMBERKEEP CATALOG REPORT " + JSON.stringify(Content.report()))
+		# Quit lands after this frame; nothing below was built, so stay idle.
+		set_process(false)
+		set_physics_process(false)
+		set_process_unhandled_input(false)
 		get_tree().quit(0 if Content.errors.is_empty() else 1)
 		return
 	setup_inputs()
