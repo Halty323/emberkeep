@@ -989,8 +989,8 @@ func draw_scribbled(rect: Rect2, area: Rect2, cell: Vector2i, color: Color, cell
 	var points = scribble_path(inner, cell, Run.floor_number)
 	for i in points.size(): points[i] = points[i].clamp(area.position, area.end)
 	var drawn = partial_path(points, progress)
-	# Narrower than their spacing, so the zig-zag trail stays visible.
-	if drawn.size() >= 2: draw_polyline(drawn, Color(color, .85), scribble_spacing(inner) * .6, true)
+	# About a third of their spacing, so each line of the zig-zag stands apart.
+	if drawn.size() >= 2: draw_polyline(drawn, Color(color, .85), scribble_spacing(inner) * .37, true)
 
 static func ghost_edge(rect: Rect2, direction: Vector2i) -> Array:
 	match direction:
@@ -1002,13 +1002,12 @@ static func ghost_edge(rect: Rect2, direction: Vector2i) -> Array:
 ## Strokes sit a fixed few pixels apart, so the minimap and the full map
 ## scribble with the same density.
 static func scribble_spacing(rect: Rect2) -> float:
-	return rect.size.x / clampi(roundi(rect.size.x / 2.6), 4, 16)
+	return rect.size.x / clampi(roundi(rect.size.x / 3.2), 3, 14)
 
-## A crayon's zig-zag fill: strokes across the cell and back again, half a
-## stroke over, a little loose at the turns, the whole scribble leaning about
-## 22° the way a hand's does, its turns rising to the right. A turn that would
-## fall outside the cell slides in along its stroke to the edge. Always the
-## same per cell.
+## A crayon's zig-zag fill: one run of strokes across the cell, a little loose
+## at the turns, the whole scribble leaning about 22° the way a hand's does,
+## its turns rising to the right. A turn that would fall outside the cell
+## slides in along its stroke to the edge. Always the same per cell.
 static func scribble_path(rect: Rect2, cell: Vector2i, floor_number: int) -> PackedVector2Array:
 	var rng = RandomNumberGenerator.new()
 	rng.seed = hash([cell.x, cell.y, floor_number])
@@ -1022,17 +1021,14 @@ static func scribble_path(rect: Rect2, cell: Vector2i, floor_number: int) -> Pac
 	var strokes = maxi(roundi(reach * 2.0 / scribble_spacing(rect)), 2)
 	var step = reach * 2.0 / strokes
 	var points = PackedVector2Array()
-	for back in [0, 1]:
-		for k in strokes + 1:
-			var i = k if back == 0 else strokes - k
-			var u = -reach + (i + .5 * back) * step + rng.randf_range(-.15, .15) * step
-			var side = -1.0 if (i + back) % 2 == 0 else 1.0
-			var v = side * (half.y - rng.randf_range(0.0, .06) * rect.size.y)
-			# Swing round in a short hook rather than a sharp point.
-			var lean = (1.0 if back == 0 else -1.0) * step * .3
-			var dip = -side * rect.size.y * .07
-			for hook in [Vector2(u - lean, v + dip), Vector2(u, v), Vector2(u + lean, v + dip)]:
-				points.append(scribble_point(rect, along, down, clampf(hook.x, -reach, reach), hook.y))
+	for i in strokes + 1:
+		var u = -reach + i * step + rng.randf_range(-.15, .15) * step
+		var side = -1.0 if i % 2 == 0 else 1.0
+		var v = side * (half.y - rng.randf_range(0.0, .06) * rect.size.y)
+		# Swing round in a short hook rather than a sharp point.
+		var dip = -side * rect.size.y * .07
+		for hook in [Vector2(u - step * .3, v + dip), Vector2(u, v), Vector2(u + step * .3, v + dip)]:
+			points.append(scribble_point(rect, along, down, clampf(hook.x, -reach, reach), hook.y))
 	return points
 
 ## A point of the leaning scribble, `u` along its turns and `v` down its
