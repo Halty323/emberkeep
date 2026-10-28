@@ -46,6 +46,7 @@ func test_dungeon() -> void:
 	await test_transition()
 	test_stair_spots()
 	await test_stairs()
+	await test_map_memory()
 	await test_room_validation()
 	await test_legacy_migration()
 	print("EMBERKEEP DUNGEON TEST RESULT: %d checks, %d failures" % [checks, failures])
@@ -622,6 +623,104 @@ func test_stairs() -> void:
 	game.interact()
 	step(roundi((game.CLIMB_APPROACH + game.CLIMB_STEPS) * 60) + 2)
 	check(game.ui.mode == "won" and not run.active and not game.in_transition() and is_zero_approx(game.light_veil.color.a), "climbing the last stair wins the run")
+	game.queue_free()
+	await process_frame
+
+## The map remembers each floor cell walked into and scribbles it in.
+func test_map_memory() -> void:
+	game = load("res://scenes/main.tscn").instantiate()
+	root.add_child(game)
+	current_scene = game
+	await process_frame
+	game.set_physics_process(false)
+	game.set_process(false)
+	game.start_run("candle", 61616, false)
+	var ui = game.ui
+	var floor_data = build_test_floor()
+	use_floor(floor_data, "1,0")
+	game.enter_room(Vector3(5, 0, 3))
+	game.track_exploration()
+	var room: Dictionary = run.rooms["1,0"]
+	check(room.seen == [[1, 0]] and ui.scribbles.has(Vector2i(1, 0)), "standing in a cell uncovers only that cell and scribbles it in")
+	var started = ui.scribbles[Vector2i(1, 0)]
+	ui.elapsed_ui += .1
+	game.track_exploration()
+	check(room.seen.size() == 1 and ui.scribbles[Vector2i(1, 0)] == started, "a cell is uncovered once")
+	game.player.place(Vector3(20, 0, 2))
+	game.track_exploration()
+	check(run.is_seen(room, Vector2i(2, 0)) and not run.is_seen(room, Vector2i(1, 1)) and ui.scribbles.has(Vector2i(2, 0)), "walking on uncovers the next cell, not the rest of the room")
+	check(not run.is_seen(run.rooms["0,0"], Vector2i(0, 0)), "a neighbour seen only through its doorway stays a sketch")
+	# Remembered across a save; older saves count visited rooms as explored.
+	run.save_run()
+	run.load_run()
+	check(run.is_seen(run.rooms["1,0"], Vector2i(1, 0)) and run.is_seen(run.rooms["1,0"], Vector2i(2, 0)) and not run.is_seen(run.rooms["1,0"], Vector2i(1, 1)),
+		"uncovered cells survive a reload")
+	var legacy = {"a": {"anchor": [0, 0], "cells": [[0, 0], [1, 0]], "visited": true}, "b": {"anchor": [3, 0], "visited": false}}
+	run.normalize_seen(legacy)
+	check(legacy.a.seen == [[0, 0], [1, 0]] and not legacy.b.has("seen"), "an older save's visited rooms count as explored")
+	# A safe room keeps what was walked at once.
+	run.rooms["1,0"].cleared = true
+	game.enter_room(Vector3(5, 0, 3))
+	game.player.place(Vector3(5, 0, 18))
+	game.track_exploration()
+	run.load_run()
+	check(run.is_seen(run.rooms["1,0"], Vector2i(1, 1)), "walking a cleared room saves the map at once")
+	# The scribble: a zig-zag inside the cell, the same every time.
+	var rect = Rect2(10, 20, 30, 30)
+	var path: PackedVector2Array = ui.scribble_path(rect, Vector2i(3, 4), 2)
+	var inside = Array(path).all(func(p): return rect.grow(.01).has_point(p))
+	var xs = Array(path).map(func(p): return p.x)
+	var spacing = ui.scribble_spacing(rect)
+	check(inside and xs.min() < rect.position.x + spacing and xs.max() > rect.end.x - spacing, "the scribble fills its cell edge to edge without leaving it")
+	check(path == ui.scribble_path(rect, Vector2i(3, 4), 2) and path != ui.scribble_path(rect, Vector2i(4, 4), 2), "every cell has its own scribble, the same each time")
+	var turns = 0
+	for i in range(2, path.size()):
+		if signf(path[i].y - path[i - 1].y) != signf(path[i - 1].y - path[i - 2].y): turns += 1
+	check(turns >= 8, "it zig-zags (%d turns)" % turns)
+	# It leans like a hand's scribble: strokes tipped off upright, and the
+	# turns clear of the cell's edge (taken over a row of cells) rising to the
+	# right.
+	var lean = []
+	for i in range(1, path.size()):
+		var stroke = path[i] - path[i - 1]
+		if stroke.length() > rect.size.y * .5: lean.append(rad_to_deg(atan2(stroke.x * signf(stroke.y), absf(stroke.y))))
+	var mean_lean = lean.reduce(func(a, b): return a + b, 0.0) / maxf(lean.size(), 1)
+	var rising = true
+	for top in [true, false]:
+		var ends = []
+		for column in 8:
+			var row: PackedVector2Array = ui.scribble_path(rect, Vector2i(column, 4), 2)
+			for i in range(1, row.size() - 1):
+				var turn = row[i].y < row[i - 1].y and row[i].y < row[i + 1].y if top else row[i].y > row[i - 1].y and row[i].y > row[i + 1].y
+				if turn and rect.grow(-.5).has_point(row[i]): ends.append(row[i])
+		var mid = ends.reduce(func(a, b): return a + b, Vector2.ZERO) / maxf(ends.size(), 1)
+		var slope = ends.reduce(func(a, p): return a + (p.x - mid.x) * (p.y - mid.y), 0.0)
+		rising = rising and ends.size() >= 8 and slope < 0.0
+	check(mean_lean > 16.0 and mean_lean < 28.0 and rising, "the zig-zag leans like a hand's scribble (%.0f°), its turns rising to the right" % mean_lean)
+	check([Rect2(0, 0, 14, 14), Rect2(0, 0, 30, 30)].all(func(r): var gap = ui.scribble_spacing(r); return gap > 2.8 and gap < 3.8),
+		"the minimap and the full map scribble with the same density")
+	var total = 0.0
+	for i in range(1, path.size()): total += path[i - 1].distance_to(path[i])
+	var half: PackedVector2Array = ui.partial_path(path, .5)
+	var drawn = 0.0
+	for i in range(1, half.size()): drawn += half[i - 1].distance_to(half[i])
+	check(absf(drawn - total * .5) < .01, "a new cell's trail grows with its progress")
+	# The animation runs its course and is tidied away.
+	ui.scribble(Vector2i(9, 9))
+	check(ui.scribble_progress(Vector2i(9, 9)) < .05, "a fresh scribble starts empty")
+	ui._process(ui.SCRIBBLE_TIME * .5)
+	var middle = ui.scribble_progress(Vector2i(9, 9))
+	ui._process(ui.SCRIBBLE_TIME * .6)
+	check(middle > .3 and middle < 1.0 and ui.scribble_progress(Vector2i(9, 9)) == 1.0 and not ui.scribbles.has(Vector2i(9, 9)), "the scribble finishes in %.2f s" % ui.SCRIBBLE_TIME)
+	# The quill: a short scratch, audible but never clipped.
+	var audio = root.get_node("Audio")
+	var scratch: AudioStreamWAV = audio.sounds.get("scribble")
+	var loudest = 0
+	if scratch:
+		for i in range(0, scratch.data.size(), 2): loudest = maxi(loudest, absi(scratch.data.decode_s16(i)))
+	check(scratch != null and scratch.loop_mode == AudioStreamWAV.LOOP_DISABLED and absf(scratch.get_length() - .72) < .02 and loudest > 1500 and loudest < 32000,
+		"a quill's scratch plays as a cell is scribbled in")
+	game.return_to_title()
 	game.queue_free()
 	await process_frame
 

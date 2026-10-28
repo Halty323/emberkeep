@@ -26,6 +26,7 @@ func _ready() -> void:
 	sounds["item"] = tone(420, 1050, .45, .2)
 	sounds["hurt"] = tone(190, 70, .3, .3)
 	sounds["door"] = tone(260, 520, .25, .12)
+	sounds["scribble"] = scratch(.72, 6)
 	music_player = AudioStreamPlayer.new()
 	add_child(music_player)
 	music_player.stream = make_ambient()
@@ -52,7 +53,7 @@ func play_sound(id: String, pitch := 1.0) -> void:
 	voice += 1
 	player.stream = sounds[id]
 	player.pitch_scale = pitch
-	player.volume_db = -9 if id == "shoot" else -4
+	player.volume_db = {"shoot": -9.0, "scribble": -10.0}.get(id, -4.0)
 	player.play()
 
 func tone(start: float, end: float, duration: float, amplitude: float) -> AudioStreamWAV:
@@ -65,6 +66,32 @@ func tone(start: float, end: float, duration: float, amplitude: float) -> AudioS
 		phase += TAU * lerpf(start, end, t) / 22050.0
 		var sample = sin(phase) * pow(1.0 - t, 2.0) * minf(t * 25, 1.0) * amplitude
 		bytes.encode_s16(i * 2, int(sample * 32767))
+	var stream = AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = 22050
+	stream.data = bytes
+	return stream
+
+## A quill scratching paper: short strokes of filtered noise, back and forth,
+## each a little brighter or duller than the last as the nib changes way.
+func scratch(duration: float, strokes: int) -> AudioStreamWAV:
+	var noise = RandomNumberGenerator.new()
+	noise.seed = 1307
+	var bytes = PackedByteArray()
+	var count = int(22050 * duration)
+	bytes.resize(count * 2)
+	var soft = 0.0
+	var previous = 0.0
+	for i in count:
+		var t = float(i) / count
+		var stroke = t * strokes
+		var within = stroke - floorf(stroke)
+		var bright = .5 if int(stroke) % 2 == 0 else .3
+		soft += (noise.randf_range(-1.0, 1.0) - soft) * bright
+		var edge = soft - previous
+		previous = soft
+		var envelope = pow(sin(within * PI), .7) * (1.0 - t * .45) * minf(t * 60.0, 1.0)
+		bytes.encode_s16(i * 2, int(clampf((edge * .9 + soft * .25) * envelope * .55, -1.0, 1.0) * 32767))
 	var stream = AudioStreamWAV.new()
 	stream.format = AudioStreamWAV.FORMAT_16_BITS
 	stream.mix_rate = 22050

@@ -261,6 +261,29 @@ func other_room(portal_id: String, room_id: String) -> String:
 func room_anchor(room: Dictionary) -> Vector2i:
 	return FloorGenerator.vec(room.get("anchor", [0, 0]))
 
+## The map remembers the floor cells walked into, per room as global cells
+## ("seen"). Returns true the first time a cell is uncovered.
+func uncover(cell: Vector2i) -> bool:
+	var data: Dictionary = rooms[current_room]
+	if not data.has("seen"): data["seen"] = []
+	if is_seen(data, cell): return false
+	data.seen.append([cell.x, cell.y])
+	return true
+
+static func is_seen(room: Dictionary, cell: Vector2i) -> bool:
+	for value in room.get("seen", []):
+		if int(value[0]) == cell.x and int(value[1]) == cell.y: return true
+	return false
+
+## Saves from before cells were remembered knew whole visited rooms only:
+## those count as fully explored.
+static func normalize_seen(saved_rooms: Dictionary) -> void:
+	for room in saved_rooms.values():
+		if room.has("seen"):
+			room.seen = room.seen.map(func(value): return [int(value[0]), int(value[1])])
+		elif room.get("visited", false):
+			room["seen"] = FloorGenerator.room_cells(room).map(func(cell): return [cell.x, cell.y])
+
 func local_cells(room: Dictionary) -> Array:
 	var anchor = room_anchor(room)
 	return room.get("cells", [[anchor.x, anchor.y]]).map(func(value): return FloorGenerator.vec(value) - anchor)
@@ -424,6 +447,7 @@ func load_run() -> bool:
 	seed_value = int(d.seed)
 	floor_number = int(d.floor)
 	normalize_drops(d.rooms)
+	normalize_seen(d.rooms)
 	if not d.get("active", {}).is_empty() and Content.record("actives", d.active.get("def", "")).is_empty():
 		push_warning("The saved active item is no longer known; it was set aside.")
 		d.active = {}
