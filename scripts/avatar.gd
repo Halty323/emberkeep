@@ -19,6 +19,11 @@ var recoil = 0.0
 var orbit_meshes: Array[MeshInstance3D] = []
 var shelter: MeshInstance3D
 const ROOM_MARGIN := .3
+const RUN_SPEED := 5.2
+# A dash covers about 2.9 units, then leaves at running speed: no long glide.
+const DASH_SPEED := 18.0
+const DASH_TIME := .16
+var leaving_dash := false
 var last_valid = Vector3.ZERO
 var fade_copies: Dictionary = {}
 
@@ -155,7 +160,8 @@ func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting:
 		last_move = direction.normalized()
 	if dash_time > 0:
 		dash_time -= delta
-		velocity = dash_direction * 21.0
+		velocity = dash_direction * DASH_SPEED
+		leaving_dash = dash_time <= 0
 		# Dashing slips past foes but never through walls or furniture.
 		collision_mask = 1 | PropVisuals.FURNITURE_LAYER
 		if Run.stats.dash_damage > 0:
@@ -164,7 +170,11 @@ func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting:
 					enemy.take_hit(float(Run.stats.dash_damage) * delta * 8, Vector3.ZERO, false)
 	else:
 		collision_mask = 5 | PropVisuals.FURNITURE_LAYER
-		var target = direction * 5.2 * float(Run.stats.speed)
+		var top_speed = RUN_SPEED * float(Run.stats.speed)
+		if leaving_dash:
+			velocity = velocity.limit_length(top_speed)
+			leaving_dash = false
+		var target = direction * top_speed
 		velocity = velocity.move_toward(target, delta * 47.0)
 	var geometry: RoomGeometry = game.room.geometry
 	if geometry.contains(Vector2(position.x, position.z), ROOM_MARGIN):
@@ -227,7 +237,7 @@ func dash() -> void:
 	if dash_cooldown > 0 or dash_time > 0:
 		return
 	dash_direction = last_move
-	dash_time = .18
+	dash_time = DASH_TIME
 	dash_cooldown = 1.35 * (1.0 - clampf(Run.stats.dash_cd, 0, .75))
 	invulnerability = .32
 	Audio.play_sound("dash")

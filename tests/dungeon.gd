@@ -326,6 +326,30 @@ func test_transition() -> void:
 	use_floor(floor_data, "0,0")
 	run.rooms["0,0"].cleared = true
 	game.enter_room(Vector3.ZERO)
+	# A dash is a short hop that leaves at running speed, not a long glide.
+	var east = stick_for(Vector3.RIGHT)
+	for input in [Vector2.ZERO, east]:
+		game.player.place(Vector3(-7, 0, -3))
+		game.player.velocity = Vector3.ZERO
+		game.player.last_move = Vector3.RIGHT
+		for i in 20:
+			await physics_frame
+			game.player.update_sim(1.0 / 60.0, input, Vector3.ZERO, false)
+		var start = game.player.position.x
+		game.player.dash_cooldown = 0
+		game.player.dash()
+		var exit_speed = -1.0
+		for i in 60:
+			await physics_frame
+			var dashing = game.player.dash_time > 0
+			game.player.update_sim(1.0 / 60.0, input, Vector3.ZERO, false)
+			if dashing and game.player.dash_time <= 0: exit_speed = -2.0
+			elif exit_speed == -2.0: exit_speed = game.player.velocity.length()
+		# Standing, the hop is about three units; running, it adds about two.
+		var gained = game.player.position.x - start - (0.0 if input == Vector2.ZERO else 5.2)
+		var expected = Vector2(2.8, 3.6) if input == Vector2.ZERO else Vector2(1.6, 2.6)
+		check(gained > expected.x and gained < expected.y, "a dash is a short hop (%.2f units gained)" % gained)
+		check(exit_speed >= 0 and exit_speed <= 5.2 * float(run.stats.speed) + .01, "a dash ends at running speed, without a glide (%.2f)" % exit_speed)
 	var old_cells: Array = game.room.geometry.cells.duplicate()
 	var portal_id: String = run.rooms["0,0"].portals.filter(func(id): return run.other_room(id, "0,0") == "1,0")[0]
 	var side = run.portal_side(portal_id, "0,0")

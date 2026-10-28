@@ -38,7 +38,7 @@ iPhone/iPad: [unsigned iOS builds and sideloading](docs/IOS.md) are available th
 | Pause | Top-right pause button / Android Back | Escape / P | Start |
 | Journal (relics and paintings) | Journal button | Tab | Menu button via focus navigation |
 
-The sticks float to the initial touch position, and the Item, Bomb and Dash buttons are hit-tested before a stick can capture the finger, so both sticks stay held while you tap actions. Items and bombs need a fresh press; holding a key never repeats them. Dash grants a short invulnerability window. Doors open after all enemies in a combat room are defeated; walk into a doorway to take that exit. Your little light steps through and fades, the view slides over to the next room and it walks back in; a room with foes seals the door behind it. The whole passage takes 1.5 s, and nothing else moves meanwhile.
+The sticks float to the initial touch position, and the Item, Bomb and Dash buttons are hit-tested before a stick can capture the finger, so both sticks stay held while you tap actions. Items and bombs need a fresh press; holding a key never repeats them. Dash is a short hop (about three units) with a brief invulnerability window. Doors open after all enemies in a combat room are defeated; walk into a doorway to take that exit. Your little light steps through and fades, the view slides over to the next room and it walks back in; a room with foes seals the door behind it. The whole passage takes 1.5 s, and nothing else moves meanwhile.
 
 ## What is in the game
 
