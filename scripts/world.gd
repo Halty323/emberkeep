@@ -22,9 +22,15 @@ var navigation: RoomNavigation
 var sockets: Array = []
 var lantern_points: Array[Vector3] = []
 var lamp_targets: Array[int] = []
+## Saved furniture by prop id: {node, collider, obstacle, record}.
+var props: Dictionary = {}
+## Walls and hint debris standing in a concealed doorway, by portal id.
+var concealed: Dictionary = {}
+var _room: Dictionary = {}
 
 func build(owner_game: Node3D, room: Dictionary, preview := false, layout := {}) -> void:
 	game = owner_game
+	_room = room
 	decor_rng.seed = int(room.get("seed", 53))
 	geometry = RoomGeometry.new(layout.get("cells", [Vector2i.ZERO]))
 	# Every glow built for this room (and its actors) clips to its footprint.
@@ -65,14 +71,9 @@ func build(owner_game: Node3D, room: Dictionary, preview := false, layout := {})
 	# The near sides cut away when an actor is behind them.
 	for side in geometry.exposed_sides():
 		build_side(side)
-	for cell in geometry.cells:
-		var center := geometry.cell_center(cell)
-		for sx in [-1, 1]:
-			for sz in [-1, 1]:
-				# Lanterns stand against walls; skip corners that open onto the room.
-				if geometry.has_cell(cell + Vector2i(sx, 0)) and geometry.has_cell(cell + Vector2i(0, sz)):
-					continue
-				lantern_points.append(Vector3(center.x + sx * 7.65, 0, center.y + sz * 5.65))
+	# Lanterns stand against walls; corners that open onto the room have none.
+	for p in Furnishing.lantern_points(geometry):
+		lantern_points.append(Vector3(p.x, 0, p.y))
 	for p in lantern_points:
 		make_lantern(p)
 	for i in mini(LIGHT_POOL, lantern_points.size()):
@@ -86,7 +87,11 @@ func build(owner_game: Node3D, room: Dictionary, preview := false, layout := {})
 		Geo.box(self, Vector3(0, -.003, 0), Vector3(6.2, .03, 4.6), Color("514450") if room_type == "shop" else Color("5d4c3e"))
 		Geo.ring(self, Vector3(0, .035, 0), 1.65, Color("9e875c"), .025)
 		Geo.ring(self, Vector3(0, .035, 0), 1.45, Color("7c7359"), .018)
-	if room_type in ["combat", "boss"] and not preview:
+	if room.has("props") and not preview:
+		for record in room.props:
+			if not record.get("destroyed", false):
+				build_prop(record)
+	elif room_type in ["combat", "boss"] and not preview:
 		for index in geometry.cells.size():
 			var cell: Vector2i = geometry.cells[index]
 			var center := geometry.cell_center(cell)
@@ -111,12 +116,70 @@ func build(owner_game: Node3D, room: Dictionary, preview := false, layout := {})
 				p.x += 3.0
 			if geometry.has_cell(cell + Vector2i(0, side)):
 				continue
+			if blocked_at(Vector2(p.x + center.x, p.z + center.y), .3, true):
+				continue
 			make_candle(p + Vector3(center.x, 0, center.y), decor_rng.randf_range(.45, .85))
 	make_embers()
-	if geometry.cells.size() > 1:
+	if geometry.cells.size() > 1 or not props.is_empty():
 		navigation = RoomNavigation.new(geometry, obstacles)
 	set_open(true)
 	apply_lighting_quality()
+
+func build_prop(record: Dictionary) -> void:
+	var def: Dictionary = Content.get_def("furniture", record.def)
+	if def.is_empty():
+		return
+	var node := PropBuilder.build(self, def, record, Settings.detail_level())
+	var entry := {"node": node, "record": record}
+	var rect := Furnishing.record_rect(record)
+	if record.def == "pillar":
+		make_candle(Vector3(rect.get_center().x, 1.32, rect.get_center().y), .6)
+	if def.blocks:
+		var height := maxf(.4, float(def.height))
+		var body := Geo.collider(self, Vector3(rect.get_center().x, height / 2.0, rect.get_center().y), Vector3(rect.size.x, height, rect.size.y))
+		body.set_meta("prop_id", record.id)
+		entry.collider = body
+		entry.obstacle = {"position": Vector3(rect.get_center().x, 0, rect.get_center().y), "radius": minf(rect.size.x, rect.size.y) / 2.0, "rect": rect}
+		obstacles.append(entry.obstacle)
+	props[record.id] = entry
+
+## True when p (XZ) is within `margin` of a blocking prop (or any prop).
+func blocked_at(p: Vector2, margin := .5, include_decor := false) -> bool:
+	for id in props:
+		var entry: Dictionary = props[id]
+		if not entry.has("obstacle") and not include_decor: continue
+		if Furnishing.record_rect(entry.record).grow(margin).has_point(p):
+			return true
+	return false
+
+## Remove a broken prop's visuals, collision and navigation block once.
+func remove_prop(id: String) -> void:
+	if not props.has(id):
+		return
+	var entry: Dictionary = props[id]
+	props.erase(id)
+	if is_instance_valid(entry.node): entry.node.queue_free()
+	if entry.has("collider") and is_instance_valid(entry.collider):
+		entry.collider.queue_free()
+	if entry.has("obstacle"):
+		obstacles.erase(entry.obstacle)
+		navigation = RoomNavigation.new(geometry, obstacles)
+
+## Open a concealed doorway in place: drop the wall and debris, build a gate.
+func reveal_socket(portal: String) -> void:
+	for socket in sockets:
+		if socket.portal == portal:
+			socket.state = "open"
+			if concealed.has(portal):
+				for node in concealed[portal]:
+					if is_instance_valid(node): node.queue_free()
+				front_walls = front_walls.filter(func(w): return is_instance_valid(w.body) and not w.body in concealed[portal])
+				concealed.erase(portal)
+			var center := geometry.cell_center(socket.cell)
+			var direction: Vector2i = socket.dir
+			var sign_value := float(direction.x + direction.y)
+			make_gate(socket, Vector3(center.x + direction.x * 9.15, 0, center.y + direction.y * 7.15), direction, sign_value)
+			set_open(open)
 
 func socket_for(cell: Vector2i, direction: Vector2i) -> Dictionary:
 	for socket in sockets:
@@ -146,28 +209,55 @@ func build_side(side: Dictionary) -> void:
 	var socket := socket_for(cell, direction)
 	var at = Vector3(center.x + direction.x * 9.15, 0, center.y + direction.y * 7.15)
 	if not socket.is_empty() and socket.get("state", "open") != "concealed":
-		var gate = Node3D.new()
-		add_child(gate)
-		gate.position = at
-		gate.set_meta("portal", socket.portal)
-		var rotated = direction.x != 0
-		var post_height = WALL_BACK_HEIGHT - .25 if sign_value < 0 else 1.5
-		Geo.box(gate, Vector3(0, -.015, 0), Vector3(.8, .08, 2.25) if rotated else Vector3(2.25, .08, .8), Color("b69c6a"))
-		for s in [-1, 1]:
-			Geo.box(gate, Vector3(0, post_height / 2, s * 1.1) if rotated else Vector3(s * 1.1, post_height / 2, 0), Vector3(.25, post_height, .25), Color("797263"))
-		if post_height > 1.5:
-			Geo.box(gate, Vector3(0, post_height, 0), Vector3(.3, .18, 2.5) if rotated else Vector3(2.5, .18, .3), Color("797263"))
-		var barrier = Geo.box(gate, Vector3(0, .75, 0), Vector3(.16, 1.45, 2.0) if rotated else Vector3(2.0, 1.45, .16), Color("b85e4c"), .7)
-		barrier.name = "Barrier"
-		Geo.halo(gate, Vector3(0, .035, 0), 3.5, Color(.92, .62, .25, .28))
-		gates.append(gate)
+		make_gate(socket, at, direction, sign_value)
 	else:
-		make_wall(at + Vector3(0, height / 2, 0), Vector3(.45, height, 2.5) if direction.x != 0 else Vector3(2.5, height, .45), front_side)
+		var nodes := make_wall(at + Vector3(0, height / 2, 0), Vector3(.45, height, 2.5) if direction.x != 0 else Vector3(2.5, height, .45), front_side)
+		if not socket.is_empty():
+			# A concealed seam: cracked mortar, a draft of dust and loose rubble.
+			nodes.append_array(make_seam_hint(at, direction, height))
+			concealed[socket.portal] = nodes
 
-func make_wall(at: Vector3, dimensions: Vector3, front_side := Vector2i.ZERO) -> void:
+func make_seam_hint(at: Vector3, direction: Vector2i, height: float) -> Array:
+	var nodes: Array = []
+	var inward := -Vector3(direction.x, 0, direction.y)
+	var along := Vector3(absf(direction.y), 0, absf(direction.x))
+	var face := at + inward * .24
+	for i in 4:
+		var crack := Geo.box(self, face + along * (sin(i * 2.1) * .5) + Vector3(0, .35 + i * height * .18, 0),
+			Vector3(.04, .32, .04), Color("23292d"))
+		crack.rotation = Vector3(0, 0, .5 * sin(i * 1.3)) if direction.y != 0 else Vector3(.5 * sin(i * 1.3), 0, 0)
+		crack.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		nodes.append(crack)
+	for i in 5:
+		var rubble := Geo.box(self, face + inward * (.25 + .18 * (i % 3)) + along * ((i - 2) * .32) + Vector3(0, .06, 0),
+			Vector3.ONE * (.1 + .04 * (i % 2)), Color("4c4a44"))
+		rubble.rotation.y = i * .9
+		rubble.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		nodes.append(rubble)
+	return nodes
+
+func make_gate(socket: Dictionary, at: Vector3, direction: Vector2i, sign_value: float) -> void:
+	var gate = Node3D.new()
+	add_child(gate)
+	gate.position = at
+	gate.set_meta("portal", socket.portal)
+	var rotated = direction.x != 0
+	var post_height = WALL_BACK_HEIGHT - .25 if sign_value < 0 else 1.5
+	Geo.box(gate, Vector3(0, -.015, 0), Vector3(.8, .08, 2.25) if rotated else Vector3(2.25, .08, .8), Color("b69c6a"))
+	for s in [-1, 1]:
+		Geo.box(gate, Vector3(0, post_height / 2, s * 1.1) if rotated else Vector3(s * 1.1, post_height / 2, 0), Vector3(.25, post_height, .25), Color("797263"))
+	if post_height > 1.5:
+		Geo.box(gate, Vector3(0, post_height, 0), Vector3(.3, .18, 2.5) if rotated else Vector3(2.5, .18, .3), Color("797263"))
+	var barrier = Geo.box(gate, Vector3(0, .75, 0), Vector3(.16, 1.45, 2.0) if rotated else Vector3(2.0, 1.45, .16), Color("b85e4c"), .7)
+	barrier.name = "Barrier"
+	Geo.halo(gate, Vector3(0, .035, 0), 3.5, Color(.92, .62, .25, .28))
+	gates.append(gate)
+
+func make_wall(at: Vector3, dimensions: Vector3, front_side := Vector2i.ZERO) -> Array:
 	var body = Geo.box(self, at, dimensions, Color("394148"))
 	var cap = Geo.box(self, at + Vector3(0, dimensions.y / 2 + .035, 0), Vector3(dimensions.x + .06, .09, dimensions.z + .06), Color("656358"))
 	var collider = Geo.collider(self, at, dimensions + Vector3(0, 2, 0))
+	var nodes: Array = [body, cap, collider]
 	if front_side != Vector2i.ZERO:
 		# Keep a static full-height occluder while the visible wall cuts away.
 		# This avoids transparent wall passes and moving shadow-map casters.
@@ -180,6 +270,8 @@ func make_wall(at: Vector3, dimensions: Vector3, front_side := Vector2i.ZERO) ->
 		front_walls.append({"body": body, "cap": cap, "shadow_caster": caster,
 			"collider": collider, "side": front_side, "height": dimensions.y,
 			"plane": at.z if along_x else at.x, "span": span})
+		nodes.append(caster)
+	return nodes
 
 ## Lower a foreground wall when the player or an enemy stands just inside it,
 ## using the wall's own boundary normal and extent rather than room-wide axes.

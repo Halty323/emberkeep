@@ -11,7 +11,7 @@ var families: Dictionary = {}
 var by_family: Dictionary = {}
 var errors: Array[String] = []
 const RARITY_COLORS = {"common": Color("c6d3bf"), "uncommon": Color("96d9ba"), "rare": Color("b9b2e9"), "mythic": Color("f1c579")}
-const FAMILIES = ["rooms", "furniture", "pickups", "actives", "effects", "drop_tables", "paintings", "collections"]
+const FAMILIES = ["rooms", "furniture", "layouts", "pickups", "actives", "effects", "drop_tables", "paintings", "collections"]
 const ID_PATTERN = "^[a-z0-9_]+$"
 
 func _ready() -> void:
@@ -133,6 +133,42 @@ func _validate_actives(problems: Array[String], active: Dictionary) -> void:
 		problems.append("active %s needs a positive cooldown" % active.get("id"))
 	if not active.get("params") is Dictionary or not active.get("name") is String:
 		problems.append("active %s needs a name and params" % active.get("id"))
+
+const PROP_PLACEMENTS = ["wall", "corner", "center", "scatter", "flank"]
+
+func _validate_furniture(problems: Array[String], prop: Dictionary) -> void:
+	var size = prop.get("size")
+	if not size is Array or size.size() != 2 or not _number(size[0]) or not _number(size[1]) or float(size[0]) <= 0 or float(size[1]) <= 0:
+		problems.append("furniture %s needs a positive size" % prop.get("id"))
+	if not _number(prop.get("height")) or float(prop.height) <= 0:
+		problems.append("furniture %s needs a positive height" % prop.get("id"))
+	if not prop.get("blocks") is bool or not prop.get("recipe") is String:
+		problems.append("furniture %s needs blocks and a recipe" % prop.get("id"))
+	if prop.get("placement") not in PROP_PLACEMENTS:
+		problems.append("furniture %s has unknown placement" % prop.get("id"))
+	if prop.has("breakable"):
+		var breakable = prop.breakable
+		if not breakable is Dictionary or not _number(breakable.get("hp")) or float(breakable.hp) <= 0:
+			problems.append("furniture %s needs positive break health" % prop.get("id"))
+		elif not by_family.get("drop_tables", {}).has(breakable.get("table", "")):
+			problems.append("furniture %s references missing drop table" % prop.get("id"))
+		if not prop.get("blocks", false):
+			problems.append("furniture %s is breakable but has no collision" % prop.get("id"))
+
+func _validate_layouts(problems: Array[String], layout: Dictionary) -> void:
+	var roles = layout.get("roles")
+	if not roles is Array or roles.is_empty() or roles.any(func(r): return r not in ROOM_ROLES):
+		problems.append("layout %s has unknown roles" % layout.get("id"))
+	if not _number(layout.get("weight")) or float(layout.weight) <= 0:
+		problems.append("layout %s needs a positive weight" % layout.get("id"))
+	for kind in PROP_PLACEMENTS:
+		var names = layout.get(kind, [])
+		if not names is Array:
+			problems.append("layout %s %s must be a list" % [layout.get("id"), kind])
+			continue
+		for name in names:
+			if not by_family.get("furniture", {}).has(name) and not Furnishing.GROUPS.has(name):
+				problems.append("layout %s references missing furniture %s" % [layout.get("id"), str(name)])
 
 const ROOM_ROLES = ["start", "combat", "treasure", "shop", "rest", "boss", "secret"]
 

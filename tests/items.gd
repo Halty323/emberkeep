@@ -298,9 +298,11 @@ func test_generation() -> void:
 				if not geometry.contains(at, 1.0): geometry_ok = false
 				for socket in layout.sockets:
 					if geometry.entry_point(socket.cell, socket.dir).distance_to(at) < 2.5: geometry_ok = false
-				if run.rooms[key].type not in ["combat", "treasure"] or not chest.locked: geometry_ok = false
+				var secret: bool = run.rooms[key].type == "secret"
+				if not secret and (run.rooms[key].type not in ["combat", "treasure"] or not chest.locked): geometry_ok = false
+				if secret and (chest.locked or chest.table != "secret_cache"): geometry_ok = false
 	check(with_chests > 150, "generated floors contain locked chests (%d)" % with_chests)
-	check(geometry_ok, "chests sit inside their room, clear of doorways, only in combat and treasure rooms")
+	check(geometry_ok, "chests sit inside their room, clear of doorways; locked only in combat and treasure rooms, open caches in secrets")
 	run.seed_value = 4242
 	run.floor_number = 1
 	run.generate_floor()

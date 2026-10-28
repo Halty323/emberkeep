@@ -81,15 +81,25 @@ func floor_ok(label: String) -> void:
 		check(owners.get(a) == portal.a and owners.get(b) == portal.b and portal.a != portal.b, label + ": portal joins the rooms that own its cells")
 		check(absi(a.x - b.x) + absi(a.y - b.y) == 1, label + ": portal sockets face each other")
 		check(pid in run.room_portal_ids[portal.a] and pid in run.room_portal_ids[portal.b], label + ": portal is reciprocal")
-	var visited = {"0,0": true}
-	var queue: Array = ["0,0"]
-	while not queue.is_empty():
-		var key: String = queue.pop_front()
-		for next in run.neighbors(key):
-			if not visited.has(next):
-				visited[next] = true
-				queue.append(next)
-	check(visited.size() == run.rooms.size(), label + ": every room is reachable")
+	var secrets: Array = run.rooms.keys().filter(func(k): return run.rooms[k].type == "secret")
+	check(secrets.size() == 1, label + ": exactly one optional secret room")
+	for hidden in [false, true]:
+		var visited = {"0,0": true}
+		var queue: Array = ["0,0"]
+		while not queue.is_empty():
+			var key: String = queue.pop_front()
+			for next in run.neighbors(key, hidden):
+				if not visited.has(next):
+					visited[next] = true
+					queue.append(next)
+		if hidden:
+			check(visited.size() == run.rooms.size(), label + ": the secret is reachable through its seam")
+		else:
+			check(visited.size() == run.rooms.size() - secrets.size() and secrets.all(func(k): return not visited.has(k)), label + ": every required room is reachable without secrets")
+	for key in secrets:
+		var ids: Array = run.room_portal_ids[key]
+		check(ids.size() == 1 and run.portals[ids[0]].state == "concealed", label + ": a secret is a leaf behind one concealed seam")
+		check(run.rooms[run.neighbors(key, true)[0]].type != "boss", label + ": secrets never hang off the boss room")
 	var large = 0
 	for kind in ["start", "boss", "treasure", "shop", "rest"]:
 		check(run.rooms.values().filter(func(r): return r.type == kind).size() == 1, label + ": exactly one " + kind)
@@ -217,7 +227,7 @@ func test_large_room(template: String) -> void:
 			break
 	# Walls only on exposed edges: no collider on an open seam.
 	for node in game.room.get_children():
-		if not node is StaticBody3D: continue
+		if not node is StaticBody3D or node.has_meta("prop_id"): continue
 		var p = Vector2(node.position.x, node.position.z)
 		var size: Vector3 = node.get_child(0).shape.size
 		if size.x > 2 or size.z > 2:
@@ -314,7 +324,7 @@ func test_large_room(template: String) -> void:
 		for obstacle in game.room.obstacles:
 			check(entry.distance_to(obstacle.position) > 1.6, label + ": entry anchor is clear of pillars")
 	var tested = 0
-	for socket in game.room.sockets.duplicate():
+	for socket in game.room.sockets.filter(func(x): return x.state != "concealed"):
 		if tested >= 3: break
 		tested += 1
 		run.current_room = key
@@ -372,6 +382,7 @@ func test_rooms() -> void:
 	game.set_process(false)
 	await test_large_room("hall_long")
 	await test_large_room("hall_corner")
+	await test_large_room("hall_grand")
 	await test_map_privacy()
 	game.end_run(false)
 	game.queue_free()

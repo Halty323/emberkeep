@@ -37,6 +37,29 @@ func bounds() -> Rect2:
 		result = result.merge(cell_rect(cell))
 	return result
 
+## Every axis-aligned block of occupied cells (1×1, 2×1, 2×2, ...). A square
+## smaller than a cell lies in the footprint exactly when it lies in one of
+## these, which lets navigation fill whole regions instead of testing points.
+func rectangles() -> Array[Rect2]:
+	var result: Array[Rect2] = []
+	var low := cells[0]
+	var high := cells[0]
+	for cell in cells:
+		low = Vector2i(mini(low.x, cell.x), mini(low.y, cell.y))
+		high = Vector2i(maxi(high.x, cell.x), maxi(high.y, cell.y))
+	for x0 in range(low.x, high.x + 1):
+		for y0 in range(low.y, high.y + 1):
+			for x1 in range(x0, high.x + 1):
+				for y1 in range(y0, high.y + 1):
+					var full := true
+					for x in range(x0, x1 + 1):
+						for y in range(y0, y1 + 1):
+							if not _cell_set.has(Vector2i(x, y)):
+								full = false
+					if full:
+						result.append(cell_rect(Vector2i(x0, y0)).merge(cell_rect(Vector2i(x1, y1))))
+	return result
+
 static func flat(p) -> Vector2:
 	return Vector2(p.x, p.z) if p is Vector3 else Vector2(p)
 

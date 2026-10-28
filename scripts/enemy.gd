@@ -140,10 +140,16 @@ func update_sim(delta: float) -> void:
 	elif path.is_empty():
 		# Grid paths already route around pillars; repulsion is for direct pursuit.
 		for obstacle in game.room.obstacles:
-			var away: Vector3 = global_position - obstacle.position
+			var anchor: Vector3 = obstacle.position
+			if obstacle.has("rect"):
+				# Push away from the nearest point of a furniture footprint.
+				var rect: Rect2 = obstacle.rect
+				anchor = Vector3(clampf(global_position.x, rect.position.x, rect.end.x), 0, clampf(global_position.z, rect.position.y, rect.end.y))
+			var away: Vector3 = global_position - anchor
 			var d = away.length()
-			if d < 1.8 + radius and d > .01:
-				move_direction += away.normalized() * (1.8 + radius - d) * 2.0
+			var reach: float = (1.8 if not obstacle.has("rect") else .75) + radius
+			if d < reach and d > .01:
+				move_direction += away.normalized() * (reach - d) * 2.0
 	var slow = maxf(.28, 1.0 - chill_power * .2) if chill_time > 0 else 1.0
 	velocity = move_direction * speed * slow + knock_velocity
 	knock_velocity = knock_velocity.move_toward(Vector3.ZERO, delta * 20)
@@ -173,7 +179,8 @@ func steer_toward(target: Vector3, delta: float) -> Vector3:
 	var direct: Vector3 = target - position
 	direct.y = 0
 	var room = game.room
-	if room.navigation == null or room.geometry.segment_clear(position, target, minf(.45, radius)):
+	if room.navigation == null or (room.geometry.segment_clear(position, target, minf(.45, radius))
+			and room.navigation.line_clear(Vector2(position.x, position.z), Vector2(target.x, target.z))):
 		path = PackedVector2Array()
 		return direct.normalized()
 	path_timer -= delta

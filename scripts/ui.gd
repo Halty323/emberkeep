@@ -721,7 +721,7 @@ func draw_hud() -> void:
 	diamond(Vector2(454, 64), 15, Color("292f29"))
 	centered(str(Run.floor_number), 454, 70, 18, GOLD, heading)
 	centered(floor_names[mini(2, Run.floor_number - 1)], 652, 60, 24, INK, heading)
-	var room_label: String = {"combat": "A room full of trouble", "start": "A safe little beginning", "treasure": "Something worth keeping", "shop": "The candle merchant", "rest": "A moment of warmth", "boss": "The hearth is stirring"}.get(Run.rooms[Run.current_room].type, "")
+	var room_label: String = {"combat": "A room full of trouble", "start": "A safe little beginning", "treasure": "Something worth keeping", "shop": "The candle merchant", "rest": "A moment of warmth", "boss": "The hearth is stirring", "secret": "A forgotten hollow"}.get(Run.rooms[Run.current_room].type, "")
 	var boss_enemy = game.get_boss()
 	if boss_enemy:
 		room_label = ["THE HEARTH WARDEN", "THE MOSSKEEPER", "THE LAST LIGHT"][mini(2, Run.floor_number - 1)]
@@ -777,6 +777,7 @@ func map_room_color(key: String) -> Color:
 	if r.type == "treasure": c = GOLD
 	if r.type == "shop": c = Color("afcfaa")
 	if r.type == "boss": c = Color("da9b80")
+	if r.type == "secret": c = Color("b6a2c9")
 	if key == Run.current_room: c = INK
 	return c
 

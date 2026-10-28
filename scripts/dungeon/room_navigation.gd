@@ -8,6 +8,9 @@ var geometry: RoomGeometry
 var grid := AStarGrid2D.new()
 var origin := Vector2.ZERO
 var clearance := .6
+## Grid points covered by furniture or pillars themselves (no clearance), for
+## cheap line-of-travel checks.
+var blocked: Dictionary = {}
 
 func _init(room_geometry: RoomGeometry, obstacles: Array = [], actor_clearance := .6) -> void:
 	geometry = room_geometry
@@ -20,12 +23,22 @@ func _init(room_geometry: RoomGeometry, obstacles: Array = [], actor_clearance :
 	grid.default_compute_heuristic = AStarGrid2D.HEURISTIC_OCTILE
 	grid.default_estimate_heuristic = AStarGrid2D.HEURISTIC_OCTILE
 	grid.update()
-	for x in grid.region.size.x:
-		for y in grid.region.size.y:
-			var id := Vector2i(x, y)
-			grid.set_point_solid(id, not geometry.contains(to_world(id), clearance))
+	# Same result as testing geometry.contains(point, clearance) per point,
+	# filled a block of cells at a time.
+	grid.fill_solid_region(grid.region, true)
+	for rect in geometry.rectangles():
+		var inner := rect.grow(-clearance + .0001)
+		var low := Vector2i(ceili((inner.position.x - origin.x) / STEP - .5), ceili((inner.position.y - origin.y) / STEP - .5))
+		var high := Vector2i(floori((inner.end.x - origin.x) / STEP - .5), floori((inner.end.y - origin.y) / STEP - .5))
+		low = low.clamp(Vector2i.ZERO, grid.region.size - Vector2i.ONE)
+		high = high.clamp(Vector2i.ZERO, grid.region.size - Vector2i.ONE)
+		if high.x >= low.x and high.y >= low.y:
+			grid.fill_solid_region(Rect2i(low, high - low + Vector2i.ONE), false)
 	for obstacle in obstacles:
-		block_circle(RoomGeometry.flat(obstacle.position), float(obstacle.radius))
+		if obstacle.has("rect"):
+			block_rect(obstacle.rect)
+		else:
+			block_circle(RoomGeometry.flat(obstacle.position), float(obstacle.radius))
 
 func to_world(id: Vector2i) -> Vector2:
 	return origin + (Vector2(id) + Vector2(.5, .5)) * STEP
@@ -43,6 +56,53 @@ func block_circle(center: Vector2, radius: float, solid := true) -> void:
 			var id := Vector2i(x, y)
 			if to_world(id).distance_to(center) <= r:
 				grid.set_point_solid(id, solid or not geometry.contains(to_world(id), clearance))
+				if to_world(id).distance_to(center) <= radius + .3:
+					if solid: blocked[id] = true
+					else: blocked.erase(id)
+
+## Block a furniture footprint. Returns the points that became solid so a
+## planner can undo a trial placement cheaply.
+func block_rect(rect: Rect2) -> Array[Vector2i]:
+	var changed: Array[Vector2i] = []
+	var grown := rect.grow(clearance)
+	var low := to_grid(grown.position)
+	var high := to_grid(grown.end)
+	for x in range(low.x, high.x + 1):
+		for y in range(low.y, high.y + 1):
+			var id := Vector2i(x, y)
+			var p := to_world(id)
+			if grown.has_point(p):
+				if not grid.is_point_solid(id):
+					changed.append(id)
+					grid.set_point_solid(id, true)
+				if rect.grow(.3).has_point(p): blocked[id] = true
+	return changed
+
+func unblock(ids: Array[Vector2i]) -> void:
+	for id in ids:
+		grid.set_point_solid(id, false)
+		blocked.erase(id)
+
+## True when every point can reach the first one.
+func connected(points: Array[Vector2]) -> bool:
+	if points.size() < 2:
+		return true
+	var start := nearest_open(to_grid(points[0]))
+	for i in range(1, points.size()):
+		var goal := nearest_open(to_grid(points[i]))
+		if goal != start and grid.get_id_path(start, goal).is_empty():
+			return false
+	return true
+
+## True when the straight line a→b crosses no furniture or pillar.
+func line_clear(a: Vector2, b: Vector2) -> bool:
+	if blocked.is_empty():
+		return true
+	var count := maxi(1, ceili(a.distance_to(b) / (STEP * .5)))
+	for i in count + 1:
+		if blocked.has(to_grid(a.lerp(b, float(i) / count))):
+			return false
+	return true
 
 func nearest_open(id: Vector2i) -> Vector2i:
 	if not grid.is_point_solid(id):

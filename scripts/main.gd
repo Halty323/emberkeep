@@ -34,6 +34,9 @@ var items: ItemSystem
 var bomb_nodes: Dictionary = {}
 var request_active = false
 var request_bomb = false
+## Damage taken by breakable props in the current room (not persisted: only
+## the destroyed state is durable).
+var prop_damage: Dictionary = {}
 var transition_cooldown = 0.0
 var entity_counter = 10
 var chosen_reward_shop = false
@@ -104,6 +107,7 @@ func _ready() -> void:
 	actions.register("EnterPortal", _action_enter_portal)
 	actions.register("UseActive", func(_action): return items.use_active() if is_playing() else GameActions.fail("not_playing"))
 	actions.register("PlaceBomb", _action_place_bomb)
+	actions.register("BreakProp", _action_break_prop)
 	# Commands from the transport boundary use the same validated handlers.
 	Session.command_received.connect(func(_peer_id, command): perform_action(command))
 	get_tree().auto_accept_quit = false
@@ -283,6 +287,7 @@ func camera_target(at: Vector3) -> Vector3:
 	return result
 
 func clean_room() -> void:
+	prop_damage.clear()
 	for shot in shots:
 		if is_instance_valid(shot): shot.queue_free()
 	for enemy in enemies:
@@ -386,6 +391,10 @@ func enter_room(spawn: Vector3, via_portal := "") -> void:
 				if cells.size() > 1 and p.distance_to(spawn) < 3.0:
 					p = center
 				var inside := room.geometry.nearest_inside(p, .6)
+				# Never spawn inside furniture: walk toward the cell centre.
+				for attempt in 6:
+					if not room.blocked_at(inside, .7): break
+					inside = room.geometry.nearest_inside(inside.lerp(Vector2(center.x, center.z), .4) + Vector2(attempt * .7, 0), .6)
 				p = Vector3(inside.x, 0, inside.y)
 				var kind: String = choices[gen.randi_range(0, mini(choices.size() - 1, 2 + Run.floor_number))]
 				# Deterministic source IDs: a restarted encounter cannot pay twice.
@@ -871,15 +880,104 @@ func detonate_bomb(bomb: Dictionary) -> void:
 		# Bomb self-damage is defined separately from friendly weapon blasts.
 		if is_instance_valid(player) and player.global_position.distance_to(at) < ItemSystem.BOMB_RADIUS * .8:
 			player.hurt(1, at)
-	breach(bomb.room, at, ItemSystem.BOMB_RADIUS)
+	if bomb.get("floor", Run.floor_number) == Run.floor_number:
+		breach(bomb.room, at, ItemSystem.BOMB_RADIUS)
 	Run.pending_bombs = Run.pending_bombs.filter(func(b): return int(b.id) != int(bomb.id))
 	if Run.active:
 		Run.save_run()
 
 ## Breach effects resolve from saved room state, so a bomb in an unloaded
 ## room still opens what it should without creating offscreen visuals.
-func breach(_room_id: String, _at: Vector3, _radius: float) -> void:
-	pass
+func breach(room_id: String, at: Vector3, radius: float) -> void:
+	if not Run.rooms.has(room_id): return
+	var here: bool = room_id == Run.current_room
+	var p := Vector2(at.x, at.z)
+	for record in Run.rooms[room_id].get("props", []):
+		if record.get("destroyed", false): continue
+		var def: Dictionary = Content.get_def("furniture", record.def)
+		if not def.has("breakable"): continue
+		var rect := Furnishing.record_rect(record)
+		var closest := Vector2(clampf(p.x, rect.position.x, rect.end.x), clampf(p.y, rect.position.y, rect.end.y))
+		if closest.distance_to(p) <= radius:
+			break_prop(room_id, record)
+	# A bomb against a concealed seam opens it; bullets never do.
+	var layout := Run.room_layout(room_id)
+	var geometry := RoomGeometry.new(layout.cells)
+	for socket in layout.sockets:
+		if socket.state != "concealed": continue
+		if geometry.socket_point(socket.cell, socket.dir).distance_to(p) <= radius + 1.0:
+			reveal_portal(socket.portal, here)
+
+## Reveal persists before anything inside can be claimed.
+func reveal_portal(pid: String, here: bool) -> void:
+	var portal: Dictionary = Run.portals[pid]
+	if portal.get("state", "open") != "concealed": return
+	portal.state = "open"
+	if here and is_instance_valid(room):
+		room.reveal_socket(pid)
+		Audio.play_sound("door", .6)
+		Effects.burst(scene_root, room.socket_position(room.socket_for(_socket_cell(pid), _socket_dir(pid))) + Vector3.UP * .8, Color("b8a98a"), 12, 1.2)
+		ui.notify("A hidden way", "The old wall gives way.", Color("d8c79a"))
+	Run.save_run()
+
+func _socket_cell(pid: String) -> Vector2i:
+	for socket in room.sockets:
+		if socket.portal == pid: return socket.cell
+	return Vector2i.ZERO
+
+func _socket_dir(pid: String) -> Vector2i:
+	for socket in room.sockets:
+		if socket.portal == pid: return socket.dir
+	return Vector2i.DOWN
+
+## Friendly shots chip at breakable furniture; solid pieces just stop them.
+func damage_prop(id: String, amount: float) -> void:
+	if not room.props.has(id): return
+	var record: Dictionary = room.props[id].record
+	var def: Dictionary = Content.get_def("furniture", record.def)
+	if not def.has("breakable"): return
+	prop_damage[id] = float(prop_damage.get(id, 0.0)) + amount
+	var node: Node3D = room.props[id].node
+	if is_instance_valid(node):
+		node.scale = Vector3(1.06, .94, 1.06)
+		create_tween().tween_property(node, "scale", Vector3.ONE, .12)
+	if prop_damage[id] >= float(def.breakable.hp):
+		perform_action({"type": "BreakProp", "prop": id})
+
+func _action_break_prop(action: Dictionary) -> Dictionary:
+	var id := str(action.get("prop", ""))
+	for record in Run.rooms[Run.current_room].get("props", []):
+		if record.id == id:
+			if record.get("destroyed", false):
+				return GameActions.fail("already_broken")
+			if not Content.get_def("furniture", record.def).has("breakable"):
+				return GameActions.fail("unbreakable")
+			return GameActions.ok({"drops": break_prop(Run.current_room, record)})
+	return GameActions.fail("unknown_prop")
+
+## Mark destroyed, grant persistent drops once, then update navigation once.
+## Loot uses its own stream keyed by the prop, never the cosmetic one.
+func break_prop(room_id: String, record: Dictionary) -> Array:
+	record.destroyed = true
+	var def: Dictionary = Content.get_def("furniture", record.def)
+	var loot := RandomNumberGenerator.new()
+	loot.seed = hash("%d:%s" % [Run.seed_value, record.id])
+	var drops := ItemSystem.roll_table(def.breakable.get("table", "prop_small"), loot, Run.stats.luck)
+	var at := Vector2(record.position[0], record.position[1])
+	if room_id == Run.current_room and is_instance_valid(room):
+		room.remove_prop(record.id)
+		prop_damage.erase(record.id)
+		for drop in drops:
+			spawn_pickup(Vector3(at.x, 0, at.y), drop, int(ItemSystem.pickup_def(drop).amount))
+		Effects.burst(scene_root, Vector3(at.x, .5, at.y), Color(def.get("color", "#7a5c3c")).lightened(.15), 8, 1.0)
+		Audio.play_sound("kill", 1.3)
+	else:
+		var data: Dictionary = Run.rooms[room_id]
+		if not data.has("pickups"): data.pickups = []
+		for drop in drops:
+			data.pickups.append({"id": Run.new_entity_id(), "kind": drop, "value": int(ItemSystem.pickup_def(drop).amount), "position": [at.x, at.y]})
+	Run.save_run()
+	return drops
 
 func close_reward() -> void:
 	paused = false

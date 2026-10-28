@@ -6,6 +6,8 @@
     {"id": "hall_long", "revision": 1, "cells": [[0, 0], [1, 0]], "rotations": [0, 1, 2, 3], "weight": 2,
       "roles": ["combat", "boss", "treasure", "rest"]},
     {"id": "hall_corner", "revision": 1, "cells": [[0, 0], [1, 0], [0, 1]], "rotations": [0, 1, 2, 3], "weight": 2,
-      "roles": ["combat"]}
+      "roles": ["combat"]},
+    {"id": "hall_grand", "revision": 1, "cells": [[0, 0], [1, 0], [0, 1], [1, 1]], "rotations": [0], "weight": 1,
+      "roles": ["combat", "rest"]}
   ]
 }

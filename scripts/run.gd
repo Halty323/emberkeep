@@ -417,13 +417,57 @@ func _generate_v2(attempt: int, singles_only: bool) -> bool:
 		rooms[key]["depth"] = distances[key]
 		rooms[key]["seed"] = seed_value + floor_number * 10007 + coord(key).x * 719 + coord(key).y * 1117
 		if rooms[key].cells.size() > 1: large += 1
+	if not singles_only and large < 1:
+		return false
+	# Optional content after the mandatory graph validates: the secret, then
+	# chests, then furniture around everything that must stay reachable.
+	_place_secret(gen)
+	for key in rooms:
 		_place_chests(key)
-	return singles_only or large >= 1
+	for key in rooms:
+		rooms[key]["props"] = Furnishing.plan(key, rooms[key], room_layout(key))
+	return true
+
+## One optional secret room per floor: a single cell behind a concealed seam
+## of a non-boss room. It is a leaf, so it is never on the required route.
+func _place_secret(gen: RandomNumberGenerator) -> void:
+	var candidates: Array = []
+	var cells: Array = cell_owner.keys()
+	cells.sort()
+	for cell in cells:
+		var parent: String = cell_owner[cell]
+		if rooms[parent].type == "boss":
+			continue
+		for direction in RoomGeometry.DIRECTIONS:
+			var target: Vector2i = cell + direction
+			if cell_owner.has(target) or absi(target.x) > 4 or absi(target.y) > 4:
+				continue
+			candidates.append([cell, target, parent])
+	if candidates.is_empty():
+		return
+	var pick: Array = candidates[gen.randi_range(0, candidates.size() - 1)]
+	var cell: Vector2i = pick[1]
+	var key := room_key(cell)
+	var single: Dictionary = Content.get_def("rooms", "hall_single")
+	rooms[key] = {"type": "secret", "variant": "cache" if gen.randf() < .5 else "gallery",
+		"cleared": true, "visited": false, "claimed": false, "template": single.id,
+		"revision": int(single.revision), "rotation": 0, "cells": [[cell.x, cell.y]],
+		"depth": int(rooms[pick[2]].get("depth", 0)) + 1,
+		"seed": seed_value + floor_number * 10007 + cell.x * 719 + cell.y * 1117}
+	portals[portal_id(pick[0], cell)] = {"a": pick[2], "b": key, "cell_a": [pick[0].x, pick[0].y],
+		"cell_b": [cell.x, cell.y], "state": "concealed"}
+	rebuild_floor_index()
 
 ## Locked chests, rolled from each room's own seed so they never disturb the
 ## layout stream. They sit beside the north wall, clear of the door lane.
 func _place_chests(key: String) -> void:
 	var room: Dictionary = rooms[key]
+	if room.type == "secret":
+		# The cache sits across from the seam it was found through.
+		var socket: Dictionary = room_layout(key).sockets[0]
+		var away := -Vector2(socket.dir) * Vector2(4.5, 3.0)
+		room["chests"] = [{"id": "%s:0" % key, "position": [away.x, away.y], "locked": false, "opened": false, "table": "secret_cache"}]
+		return
 	var chance: float = {"combat": .2, "treasure": .5}.get(room.type, 0.0)
 	var gen := RandomNumberGenerator.new()
 	gen.seed = int(room.seed) + 31337

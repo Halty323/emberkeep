@@ -73,6 +73,8 @@ func update_sim(delta: float) -> void:
 	var hit = get_world_3d().direct_space_state.intersect_ray(query)
 	var geometry: RoomGeometry = game.room.geometry
 	var boundary = not geometry.contains(target_position, .1)
+	if friendly and not hit.is_empty() and is_instance_valid(hit.collider) and hit.collider.has_meta("prop_id"):
+		game.damage_prop(hit.collider.get_meta("prop_id"), damage)
 	if not hit.is_empty() or boundary:
 		if bounces > 0:
 			bounces -= 1
