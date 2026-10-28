@@ -38,7 +38,8 @@ func setup(owner_game: Node3D, at: Vector3, travel: Vector3, power: float, veloc
 	if not friendly:
 		Geo.ring(self, Vector3.ZERO, radius * 1.4, Color("f39b88"), .025)
 	else:
-		for i in 3:
+		# Trails are cosmetic, so they follow the Effects detail budget.
+		for i in [0, 2, 3][Settings.DETAIL_LEVELS.find(Settings.values.effects_detail)]:
 			var mesh = Geo.sphere(self, -direction * (i + 1) * .14, radius * (.65 - i * .15), color, 1.0)
 			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			trail.append(mesh)
@@ -71,19 +72,28 @@ func update_sim(delta: float) -> void:
 	var target_position = global_position + movement
 	var query = PhysicsRayQueryParameters3D.create(global_position, target_position, 1)
 	var hit = get_world_3d().direct_space_state.intersect_ray(query)
-	var boundary = absf(target_position.x) > 8.9 or absf(target_position.z) > 6.9
+	var geometry: RoomGeometry = game.room.geometry
+	var flat_from = Vector2(global_position.x, global_position.z)
+	var flat_to = Vector2(target_position.x, target_position.z)
+	var boundary = not geometry.contains(flat_to, .1)
+	if friendly and not hit.is_empty() and is_instance_valid(hit.collider) and hit.collider.has_meta("prop_id"):
+		game.hit_prop(hit.collider.get_meta("prop_id"), damage)
 	if not hit.is_empty() or boundary:
 		if bounces > 0:
 			bounces -= 1
-			var normal: Vector3 = hit.normal if not hit.is_empty() else (Vector3(-signf(direction.x), 0, 0) if absf(target_position.x) > 8.9 else Vector3(0, 0, -signf(direction.z)))
-			direction = direction.bounce(normal).normalized()
+			# Ricochet off the wall actually struck: the physics hit, or the
+			# exposed footprint edge crossed (an open doorway, an L bend).
+			var normal: Vector3 = hit.normal if not hit.is_empty() else Vector3.ZERO
+			if hit.is_empty():
+				var edge = geometry.exit_normal(flat_from, flat_to, .1)
+				normal = Vector3(edge.x, 0, edge.y) if edge != Vector2.ZERO else -direction
+			normal.y = 0
+			direction = direction.bounce(normal.normalized()).normalized()
 			if not hit.is_empty():
 				global_position = hit.position + normal * .12
-			else:
-				global_position.x = clampf(global_position.x, -8.8, 8.8)
-				global_position.z = clampf(global_position.z, -6.8, 6.8)
 		else:
-			Effects.burst(game, global_position, tint, 2, .35)
+			Effects.play("impact", global_position, tint)
+			splash()
 			remove()
 			return
 	else:
@@ -107,8 +117,14 @@ func update_sim(delta: float) -> void:
 			game.player.hurt(damage, global_position)
 			remove()
 
+## Paint lands as a short-lived, budgeted floor mark; it deals no damage.
+func splash() -> void:
+	if friendly and float(stats.get("paint", 0)) > 0:
+		Effects.play("paint_splash", Vector3(global_position.x, .02, global_position.z), tint)
+
 func hit_enemy(enemy: DungeonEnemy) -> void:
 	hit_ids[enemy.entity_id] = true
+	splash()
 	var critical = Run.rng.randf() < float(stats.get("crit", .05))
 	var power = damage * (float(stats.get("crit_damage", 2.0)) if critical else 1.0)
 	if enemy.hp < enemy.max_hp * .35:

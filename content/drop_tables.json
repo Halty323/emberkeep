@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "drop_tables": [
+    {"id": "enemy_common", "rolls": [
+      {"coins": 1.35},
+      {"pickup": "half_heart", "chance": 0.10, "luck": 0.025},
+      {"pickup": "bomb", "chance": 0.025},
+      {"pickup": "key", "chance": 0.02},
+      {"pickup": "small_battery", "chance": 0.02}
+    ]},
+    {"id": "boss", "rolls": [
+      {"coins": 12.0, "minimum": 4},
+      {"pickup": "full_heart", "chance": 1.0},
+      {"pickup": "key", "chance": 0.5}
+    ]},
+    {"id": "room_clear", "rolls": [
+      {"pickup": "half_heart", "chance": 0.4}
+    ]},
+    {"id": "breakable_small", "rolls": [
+      {"coins": 0.45},
+      {"pickup": "half_heart", "chance": 0.06},
+      {"pickup": "bomb", "chance": 0.04},
+      {"pickup": "key", "chance": 0.03}
+    ]},
+    {"id": "locked_chest", "rolls": [
+      {"coins": 7.0, "minimum": 4},
+      {"one_of": [
+        {"pickup": "bomb", "weight": 3, "count": 2},
+        {"pickup": "full_heart", "weight": 2},
+        {"pickup": "ward", "weight": 2},
+        {"pickup": "full_battery", "weight": 1},
+        {"pickup": "key", "weight": 1}
+      ]},
+      {"active": 0.3}
+    ]},
+    {"id": "secret_cache", "rolls": [
+      {"coins": 9.0, "minimum": 6},
+      {"pickup": "bomb", "chance": 1.0, "count": 2},
+      {"pickup": "ward", "chance": 1.0},
+      {"pickup": "key", "chance": 0.6},
+      {"active": 0.5}
+    ]}
+  ]
+}

@@ -18,4 +18,6 @@ The source fonts came from the environment’s Debian `fonts-open-sans` and `fon
 
 Godot is distributed separately under its MIT license and incorporates additional third-party components. Preserve the engine’s license and notices when distributing exported builds. See <https://godotengine.org/license/> and the matching Godot distribution’s copyright information.
 
-Game geometry, the icon, shaders and procedural audio are authored in this project. No external sprite, texture or sound pack is bundled.
+Game geometry, furniture, the icon, shaders and procedural audio are authored in this project. No external sprite, texture or sound pack is bundled.
+
+The painting collection uses reproductions of public-domain works. They are fetched only at authoring time by `tools/import_paintings.py`, never at runtime; each file's source record, exact URL, rights evidence, retrieval date, dimensions and SHA-256 are recorded in `content/paintings.json` and listed in [docs/PAINTING_CREDITS.md](docs/PAINTING_CREDITS.md). Observed rights labels are source evidence, not a blanket legal guarantee; review them before a commercial release. Captions are original. No reproductions are bundled until the importer has been run.

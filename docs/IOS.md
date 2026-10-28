@@ -33,4 +33,4 @@ bash tools/build_ios_unsigned.sh
 
 The output is `../builds/ios/Emberkeep-unsigned.ipa`. The same local sideload-signing step is required.
 
-The project keeps the Compatibility renderer, landscape layout, and twin-stick controls. iOS uses the same safe-area and default-touch paths as Android. Building and archive validation do not replace real-device checks of lighting, frame rate, touch comfort, audio, keyboard entry, and suspend/resume.
+Painting reproductions are bundled only after `python3 tools/import_paintings.py` has been run and committed; otherwise the build shows covered canvases. The project keeps the Compatibility renderer, landscape layout, and twin-stick controls; VSync is system controlled on iOS. iOS uses the same safe-area and default-touch paths as Android. Building and archive validation do not replace real-device checks of lighting, frame rate, touch comfort, audio, keyboard entry, and suspend/resume.

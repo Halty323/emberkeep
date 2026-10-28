@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "effects": [
+    {"id": "burst", "channel": "important", "count": 6, "speed": [2.4, 3.6], "lifetime": [0.24, 0.34], "size": [0.09, 0.13], "gravity": -2.0, "spread": "sphere", "color": "inherit"},
+    {"id": "muzzle", "channel": "important", "count": 2, "speed": [3.0, 5.0], "lifetime": [0.08, 0.14], "size": [0.04, 0.07], "gravity": 0.0, "spread": "forward", "color": "inherit", "min_interval": 0.06},
+    {"id": "impact", "channel": "important", "count": 3, "speed": [1.4, 2.8], "lifetime": [0.16, 0.26], "size": [0.04, 0.08], "gravity": -7.0, "spread": "sphere", "color": "inherit", "min_interval": 0.02},
+    {"id": "hit_spark", "channel": "important", "count": 3, "speed": [2.2, 3.4], "lifetime": [0.14, 0.24], "size": [0.05, 0.09], "gravity": -3.0, "spread": "sphere", "color": "inherit", "min_interval": 0.015},
+    {"id": "death_puff", "channel": "important", "count": 8, "speed": [1.2, 2.6], "lifetime": [0.3, 0.5], "size": [0.1, 0.16], "gravity": 1.2, "spread": "sphere", "color": "inherit"},
+    {"id": "dash_dust", "channel": "atmosphere", "count": 5, "speed": [0.6, 1.4], "lifetime": [0.3, 0.5], "size": [0.08, 0.14], "gravity": 0.6, "spread": "ring", "color": "#9a8f7a"},
+    {"id": "footstep", "channel": "atmosphere", "count": 1, "speed": [0.2, 0.5], "lifetime": [0.4, 0.6], "size": [0.04, 0.06], "gravity": 0.5, "spread": "up", "color": "#d8c49a", "min_interval": 0.12},
+    {"id": "pickup", "channel": "important", "count": 5, "speed": [0.8, 1.6], "lifetime": [0.3, 0.45], "size": [0.05, 0.08], "gravity": 2.0, "spread": "up", "color": "inherit"},
+    {"id": "ward", "channel": "important", "count": 8, "speed": [1.6, 2.4], "lifetime": [0.25, 0.4], "size": [0.05, 0.08], "gravity": 0.0, "spread": "ring", "color": "#a3dacf", "ring": 1.8},
+    {"id": "prop_dust", "channel": "important", "count": 8, "speed": [0.8, 2.0], "lifetime": [0.4, 0.7], "size": [0.1, 0.18], "gravity": -2.5, "spread": "sphere", "color": "#a08462"},
+    {"id": "chest_open", "channel": "important", "count": 10, "speed": [1.0, 2.2], "lifetime": [0.4, 0.7], "size": [0.05, 0.09], "gravity": 1.5, "spread": "up", "color": "#f1cc8a"},
+    {"id": "paint_splash", "channel": "important", "count": 4, "speed": [1.2, 2.4], "lifetime": [0.18, 0.3], "size": [0.05, 0.09], "gravity": -6.0, "spread": "sphere", "color": "inherit",
+     "mark": {"size": 0.9, "lifetime": 2.6, "alpha": 0.5}, "min_interval": 0.03},
+    {"id": "discovery_glint", "channel": "important", "count": 12, "speed": [0.4, 1.0], "lifetime": [0.6, 1.0], "size": [0.04, 0.07], "gravity": 0.6, "spread": "sphere", "color": "#fff0c6"},
+    {"id": "candle_wisp", "channel": "ambient", "count": 1, "speed": [0.15, 0.3], "lifetime": [1.2, 1.8], "size": [0.025, 0.04], "gravity": 0.35, "spread": "up", "color": "#ffd8a0", "rate": 0.35},
+    {"id": "firefly", "channel": "ambient", "count": 1, "speed": [0.2, 0.4], "lifetime": [2.5, 3.5], "size": [0.035, 0.05], "gravity": 0.05, "spread": "sphere", "color": "#e8f2a0", "rate": 0.05},
+    {"id": "shelf_dust", "channel": "ambient", "count": 1, "speed": [0.05, 0.15], "lifetime": [2.5, 4.0], "size": [0.03, 0.045], "gravity": -0.08, "spread": "sphere", "color": "#b8ab90", "rate": 0.08},
+    {"id": "brazier_spark", "channel": "ambient", "count": 1, "speed": [0.4, 0.9], "lifetime": [0.6, 1.1], "size": [0.03, 0.05], "gravity": 0.9, "spread": "up", "color": "#ffb36b", "rate": 0.9}
+  ]
+}

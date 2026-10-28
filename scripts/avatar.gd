@@ -17,11 +17,14 @@ var haste_time = 0.0
 var walk_time = 0.0
 var recoil = 0.0
 var orbit_meshes: Array[MeshInstance3D] = []
+var shelter: MeshInstance3D
+const ROOM_MARGIN := .3
+var last_valid = Vector3.ZERO
 
 func setup(owner_game: Node3D) -> void:
 	game = owner_game
 	collision_layer = 2
-	collision_mask = 5
+	collision_mask = 5 | PropVisuals.FURNITURE_LAYER
 	var collider = CollisionShape3D.new()
 	var shape = SphereShape3D.new()
 	shape.radius = .36
@@ -44,8 +47,28 @@ func setup(owner_game: Node3D) -> void:
 	add_child(gun)
 	Geo.box(gun, Vector3(0, .7, -.43), Vector3(.17, .18, .5), Color("b6a080"))
 	Geo.sphere(gun, Vector3(0, .7, -.72), .09, Color("ffe5b4"), 1.6)
+	shelter = Geo.sphere(self, Vector3(0, .65, 0), .95, Color(.78, .9, .96), .35)
+	shelter.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	shelter.material_override = shelter_material()
 	refresh_orbitals()
+	refresh_shelter()
 	reset_room()
+
+static func shelter_material() -> StandardMaterial3D:
+	var glass = StandardMaterial3D.new()
+	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glass.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	glass.albedo_color = Color(.78, .92, 1.0, .16)
+	glass.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return glass
+
+## The Bell Jar's glass is shown for exactly as long as its saved modifier.
+func refresh_shelter() -> void:
+	if shelter: shelter.visible = Run.has_flag("invulnerable")
+
+func place(at: Vector3) -> void:
+	position = at
+	last_valid = at
 
 func reset_room() -> void:
 	shield = int(Run.stats.shield)
@@ -63,6 +86,7 @@ func refresh_orbitals() -> void:
 
 func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting: bool) -> void:
 	invulnerability = maxf(0, invulnerability - delta)
+	refresh_shelter()
 	dash_cooldown = maxf(0, dash_cooldown - delta)
 	fire_cooldown -= delta
 	haste_time = maxf(0, haste_time - delta)
@@ -75,20 +99,26 @@ func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting:
 	if dash_time > 0:
 		dash_time -= delta
 		velocity = dash_direction * 21.0
-		collision_mask = 1
+		# Dashing slips past foes but never through walls or furniture.
+		collision_mask = 1 | PropVisuals.FURNITURE_LAYER
 		if Run.stats.dash_damage > 0:
 			for enemy in game.enemies:
 				if is_instance_valid(enemy) and enemy.alive and global_position.distance_to(enemy.global_position) < 1.1:
 					enemy.take_hit(float(Run.stats.dash_damage) * delta * 8, Vector3.ZERO, false)
 	else:
-		collision_mask = 5
+		collision_mask = 5 | PropVisuals.FURNITURE_LAYER
 		var target = direction * 5.2 * float(Run.stats.speed)
 		velocity = velocity.move_toward(target, delta * 47.0)
+	var geometry: RoomGeometry = game.room.geometry
+	if geometry.contains(Vector2(position.x, position.z), ROOM_MARGIN):
+		last_valid = position
 	move_and_slide()
-	position.x = clampf(position.x, -8.7, 8.7)
-	position.z = clampf(position.z, -6.7, 6.7)
-	position.y = 0
+	var kept = geometry.recover(Vector2(last_valid.x, last_valid.z), Vector2(position.x, position.z), ROOM_MARGIN)
+	position = Vector3(kept.x, 0, kept.y)
+	var stride = floori(walk_time / PI)
 	walk_time += delta * velocity.length() * 2.7
+	if floori(walk_time / PI) != stride and dash_time <= 0:
+		Effects.play("footstep", global_position + Vector3(0, .05, 0))
 	visual.position.y = absf(sin(walk_time)) * .055
 	visual.rotation.y = lerp_angle(visual.rotation.y, atan2(-aim_direction.x, -aim_direction.z), delta * 18)
 	visual.rotation.z = -direction.x * .07
@@ -108,6 +138,14 @@ func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting:
 func fire() -> void:
 	var weapon: Dictionary = Content.weapon_by_id[Run.weapon_id]
 	var stats = Run.projectile_stats()
+	var tint = Color(weapon.color)
+	# Pigment is gameplay state: each burst takes the next colour in turn.
+	if weapon.has("cycle"):
+		var pigment: Dictionary = weapon.cycle[posmod(Run.pigment, weapon.cycle.size())]
+		Run.pigment += 1
+		for key in pigment.effects:
+			stats[key] = float(stats.get(key, 0)) + float(pigment.effects[key])
+		tint = Color(pigment.color)
 	var damage: float = weapon.damage * stats.damage
 	if Run.hp <= Run.stats.max_hp / 2.0:
 		damage *= 1.0 + float(stats.low_hp)
@@ -118,12 +156,13 @@ func fire() -> void:
 	for i in count:
 		var angle = TAU * float(i) / count if stats.radial > 0 else (float(i) / maxf(1, count - 1) - .5) * spread
 		var direction = aim_direction.rotated(Vector3.UP, angle)
-		game.spawn_shot(global_position + Vector3(0, .65, 0) + direction * .5, direction, damage, float(weapon.speed) * stats.shot_speed, stats, Color(weapon.color), true)
+		game.spawn_shot(global_position + Vector3(0, .65, 0) + direction * .5, direction, damage, float(weapon.speed) * stats.shot_speed, stats, tint, true)
 	if stats.backshot > 0:
-		game.spawn_shot(global_position + Vector3(0, .65, 0), -aim_direction, damage, weapon.speed * stats.shot_speed, stats, Color(weapon.color), true)
+		game.spawn_shot(global_position + Vector3(0, .65, 0), -aim_direction, damage, weapon.speed * stats.shot_speed, stats, tint, true)
 	if stats.side_shot > 0:
 		for side in [-1, 1]:
-			game.spawn_shot(global_position + Vector3(0, .65, 0), aim_direction.rotated(Vector3.UP, side * PI / 2), damage * .75, weapon.speed * stats.shot_speed, stats, Color(weapon.color), true)
+			game.spawn_shot(global_position + Vector3(0, .65, 0), aim_direction.rotated(Vector3.UP, side * PI / 2), damage * .75, weapon.speed * stats.shot_speed, stats, tint, true)
+	Effects.play("muzzle", global_position + Vector3(0, .7, 0) + aim_direction * .75, tint, -1, 1.0, aim_direction)
 	fire_cooldown = maxf(.07, weapon.cooldown / (stats.rate + (stats.kill_haste if haste_time > 0 else 0)))
 	recoil = .17
 	Audio.play_sound("shoot", 1.0 + float(count) * .015)
@@ -137,6 +176,7 @@ func dash() -> void:
 	invulnerability = .32
 	Audio.play_sound("dash")
 	Effects.ring_burst(game, global_position, Color("efd1a0"), 1.1)
+	Effects.play("dash_dust", global_position + Vector3(0, .1, 0))
 	if Run.stats.dash_nova > 0:
 		var effects = Run.projectile_stats()
 		effects.chill += 1
@@ -145,12 +185,17 @@ func dash() -> void:
 			game.spawn_shot(global_position + Vector3(0, .5, 0), direction, 5.0 * Run.stats.dash_nova, 10.0, effects, Color("b6e2e5"), true)
 
 func hurt(amount: float, source: Vector3) -> void:
-	if invulnerability > 0 or not Run.active:
+	if invulnerability > 0 or not Run.active or Run.has_flag("invulnerable"):
 		return
-	if shield > 0:
-		shield -= 1
+	# Relic guard refreshes each room and is spent first; wards persist.
+	if shield > 0 or Run.wards > 0:
+		if shield > 0:
+			shield -= 1
+		else:
+			Run.wards -= 1
+			Run.changed.emit()
 		invulnerability = .55
-		Effects.ring_burst(game, global_position, Color("a3dacf"), 1.8)
+		Effects.play("ward", global_position + Vector3(0, .6, 0))
 		Audio.play_sound("coin", .7)
 		return
 	Run.hp = maxf(0, Run.hp - amount)
@@ -158,7 +203,7 @@ func hurt(amount: float, source: Vector3) -> void:
 	game.shake = .22
 	game.hurt_flash = .75
 	Audio.play_sound("hurt")
-	Effects.burst(game, global_position + Vector3.UP * .6, Color("ef9f7e"), 8)
+	Effects.play("hit_spark", global_position + Vector3.UP * .6, Color("ef9f7e"), 8)
 	if Run.stats.thorns > 0:
 		game.blast(global_position, 2.5, Run.stats.thorns * 3, true, null)
 	velocity += (global_position - source).normalized() * 5

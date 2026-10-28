@@ -1,6 +1,8 @@
 # Painting collection: proposed content and scalable implementation
 
-This is a planning draft. No artwork files have been downloaded or bundled. The list is a curated collection of recognizable classics, not an objective ranking of the world's twelve greatest paintings and not a claim that each work has UNESCO World Heritage designation. The user has now confirmed familiar European classics and a plan-only deliverable; the twelve below match that direction, with exact image import/clearance work deferred to implementation.
+**Status:** implemented as `content/paintings.json` (the acquisition manifest), `content/collections.json` and `tools/import_paintings.py`. Water Lilies (1906) could not be verified, so its documented fallback, Woman with a Parasol, is the ninth founding work. No artwork files are bundled yet because the image hosts were unreachable from the implementation environment; run the importer to fetch, hash and credit them (see [PAINTING_CREDITS.md](PAINTING_CREDITS.md)). The original planning text follows.
+
+This was a planning draft. No artwork files have been downloaded or bundled. The list is a curated collection of recognizable classics, not an objective ranking of the world's twelve greatest paintings and not a claim that each work has UNESCO World Heritage designation. The user has now confirmed familiar European classics and a plan-only deliverable; the twelve below match that direction, with exact image import/clearance work deferred to implementation.
 
 ## Recommended familiar-classics collection (provisional twelve)
 

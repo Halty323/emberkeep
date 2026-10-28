@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "furniture": [
+    {"id": "pillar", "recipe": "pillar", "size": [1.3, 1.3], "height": 1.3, "placement": "floor", "solid": true, "blocks_shots": true, "shadow": true, "detail": "essential"},
+    {"id": "table", "recipe": "table", "size": [2.0, 1.2], "height": 0.85, "placement": "center", "solid": true, "blocks_shots": true, "shadow": true, "detail": "essential"},
+    {"id": "chair", "recipe": "chair", "size": [0.6, 0.6], "height": 1.05, "placement": "companion", "solid": true, "blocks_shots": false, "shadow": true, "detail": "essential"},
+    {"id": "bookcase", "recipe": "bookcase", "size": [2.2, 0.6], "height": 2.3, "placement": "wall", "solid": true, "blocks_shots": true, "shadow": true, "tall": true, "detail": "essential"},
+    {"id": "bench", "recipe": "bench", "size": [2.0, 0.6], "height": 0.5, "placement": "center", "solid": true, "blocks_shots": false, "shadow": true, "detail": "essential"},
+    {"id": "cupboard", "recipe": "cupboard", "size": [1.4, 0.7], "height": 2.0, "placement": "wall", "solid": true, "blocks_shots": true, "shadow": true, "tall": true, "detail": "essential"},
+    {"id": "crate", "recipe": "crate", "size": [0.9, 0.9], "height": 0.9, "placement": "cluster", "solid": true, "blocks_shots": true, "shadow": true, "detail": "essential",
+     "breakable": {"health": 12, "drops": "breakable_small"}},
+    {"id": "barrel", "recipe": "barrel", "size": [0.8, 0.8], "height": 1.0, "placement": "cluster", "solid": true, "blocks_shots": true, "shadow": true, "detail": "essential",
+     "breakable": {"health": 14, "drops": "breakable_small"}},
+    {"id": "jar", "recipe": "jar", "size": [0.5, 0.5], "height": 0.7, "placement": "cluster", "solid": true, "blocks_shots": true, "shadow": false, "detail": "essential",
+     "breakable": {"health": 4, "drops": "breakable_small"}},
+    {"id": "brazier", "recipe": "brazier", "size": [0.8, 0.8], "height": 1.1, "placement": "center", "solid": true, "blocks_shots": false, "shadow": false, "detail": "essential"},
+    {"id": "wall_shelf", "recipe": "wall_shelf", "size": [1.6, 0.35], "height": 1.7, "placement": "wall", "tall": true, "solid": false, "blocks_shots": false, "shadow": false, "detail": "decor"},
+    {"id": "book_pile", "recipe": "book_pile", "size": [0.5, 0.4], "height": 0.3, "placement": "scatter", "solid": false, "blocks_shots": false, "shadow": false, "detail": "decor"},
+    {"id": "rug", "recipe": "rug", "size": [3.6, 2.4], "height": 0.02, "placement": "center", "solid": false, "blocks_shots": false, "shadow": false, "detail": "essential"},
+    {"id": "partition", "recipe": "partition", "size": [2.4, 0.3], "height": 1.15, "placement": "center", "solid": true, "blocks_shots": true, "shadow": true, "detail": "essential"},
+    {"id": "workbench", "recipe": "workbench", "size": [2.2, 0.9], "height": 0.9, "placement": "wall", "solid": true, "blocks_shots": true, "shadow": true, "detail": "essential"},
+    {"id": "cot", "recipe": "cot", "size": [2.0, 0.9], "height": 0.5, "placement": "wall", "solid": true, "blocks_shots": false, "shadow": true, "detail": "essential"},
+    {"id": "painting_frame", "recipe": "painting_frame", "size": [1.6, 0.12], "height": 1.6, "placement": "mount", "solid": false, "blocks_shots": false, "shadow": false, "detail": "essential"}
+  ],
+  "layouts": [
+    {"id": "reading_room", "roles": ["combat", "rest", "treasure"], "pieces": [
+      {"prop": "bookcase", "count": [2, 3]}, {"prop": "wall_shelf", "count": [0, 1]}, {"prop": "rug", "count": [1, 1]},
+      {"prop": "table", "count": [0, 1], "with": ["chair", "chair"]}, {"prop": "book_pile", "count": [1, 3]}, {"prop": "jar", "count": [0, 2]}]},
+    {"id": "storage", "roles": ["combat", "shop", "treasure", "secret"], "pieces": [
+      {"prop": "cupboard", "count": [1, 2]}, {"prop": "wall_shelf", "count": [1, 2]},
+      {"prop": "crate", "count": [2, 4]}, {"prop": "barrel", "count": [1, 3]}, {"prop": "jar", "count": [1, 3]}]},
+    {"id": "workshop", "roles": ["combat", "shop"], "pieces": [
+      {"prop": "workbench", "count": [1, 2]}, {"prop": "wall_shelf", "count": [1, 2]}, {"prop": "brazier", "count": [1, 1]},
+      {"prop": "partition", "count": [0, 1]}, {"prop": "crate", "count": [1, 2]}, {"prop": "barrel", "count": [0, 2]}]},
+    {"id": "living_quarters", "roles": ["combat", "rest"], "pieces": [
+      {"prop": "cot", "count": [1, 2]}, {"prop": "cupboard", "count": [0, 1]}, {"prop": "rug", "count": [1, 1]},
+      {"prop": "table", "count": [0, 1], "with": ["chair", "chair"]}, {"prop": "jar", "count": [1, 2]}, {"prop": "book_pile", "count": [0, 2]}]},
+    {"id": "shrine", "roles": ["combat", "boss", "rest"], "pieces": [
+      {"prop": "rug", "count": [1, 1]}, {"prop": "brazier", "count": [2, 2]}, {"prop": "bench", "count": [1, 2]}, {"prop": "jar", "count": [0, 2]}]},
+    {"id": "gallery", "roles": ["secret", "rest", "treasure"], "pieces": [
+      {"prop": "bench", "count": [1, 1]}, {"prop": "brazier", "count": [1, 2]}, {"prop": "rug", "count": [0, 1]}]}
+  ]
+}

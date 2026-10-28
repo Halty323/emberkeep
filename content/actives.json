@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "actives": [
+    {"id": "pocket_hearth", "name": "Pocket Hearth", "description": "Spend 3 coins to heal 2.", "handler": "heal",
+     "cooldown": 60, "cost": {"coins": 3}, "params": {"amount": 2}, "color": "#f2b26b"},
+    {"id": "gale_bell", "name": "Gale Bell", "description": "Clear nearby hostile embers and push foes away.", "handler": "gale",
+     "cooldown": 35, "cost": {}, "params": {"radius": 6.5, "push": 9.0}, "color": "#c8e0e4"},
+    {"id": "ember_flask", "name": "Ember Flask", "description": "Release a ring of burning embers.", "handler": "ember_burst",
+     "cooldown": 25, "cost": {}, "params": {"count": 14, "damage": 7.0, "speed": 11.0, "burn": 1.0}, "color": "#f28b5c"},
+    {"id": "winter_globe", "name": "Winter Globe", "description": "Slow every foe in the room for 4 seconds.", "handler": "slow_field",
+     "cooldown": 45, "cost": {}, "params": {"duration": 4.0, "slow": 0.55, "boss_slow": 0.25}, "color": "#a2e2e3"},
+    {"id": "copper_kettle", "name": "Copper Kettle", "description": "For 8 seconds, hit 35% harder and fire 30% faster.", "handler": "modifier",
+     "cooldown": 60, "cost": {}, "params": {"duration": 8.0, "effects": {"damage": 0.35, "rate": 0.3}}, "color": "#d58d5a"},
+    {"id": "moth_jar", "name": "Moth Jar", "description": "Two moths flutter out and nip at foes for 12 seconds.", "handler": "companions",
+     "cooldown": 45, "cost": {}, "params": {"count": 2, "duration": 12.0, "damage": 6.0}, "color": "#e7d9a6"},
+    {"id": "miners_lantern", "name": "Miner's Lantern", "description": "Shows a hidden seam in this room, if there is one.", "handler": "secret_hint",
+     "cooldown": 40, "cost": {}, "params": {"duration": 10.0}, "color": "#f6d48a"},
+    {"id": "bell_jar", "name": "Bell Jar", "description": "Shelter under glass: untouchable for 3 seconds.", "handler": "invulnerable",
+     "cooldown": 50, "cost": {}, "params": {"duration": 3.0}, "color": "#d6e9f0"}
+  ]
+}

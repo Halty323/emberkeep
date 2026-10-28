@@ -1,6 +1,9 @@
 class_name Geo
 extends RefCounted
 static var materials: Dictionary = {}
+# Identical primitives share one mesh resource; nothing mutates a mesh after
+# creation (cutaways scale nodes), so sharing is safe and saves uploads.
+static var meshes: Dictionary = {}
 
 static func material(color: Color, emission := 0.0) -> StandardMaterial3D:
 	var key = str(color) + str(emission)
@@ -16,26 +19,38 @@ static func material(color: Color, emission := 0.0) -> StandardMaterial3D:
 	materials[key] = mat
 	return mat
 
+static func shared_box(size: Vector3) -> BoxMesh:
+	var key = "box" + str(size)
+	if not meshes.has(key):
+		var mesh = BoxMesh.new()
+		mesh.size = size
+		meshes[key] = mesh
+	return meshes[key]
+
 static func box(parent: Node3D, position: Vector3, size: Vector3, color: Color, emission := 0.0) -> MeshInstance3D:
-	var mesh = BoxMesh.new()
-	mesh.size = size
-	return add_mesh(parent, mesh, position, color, emission)
+	return add_mesh(parent, shared_box(size), position, color, emission)
 
 static func sphere(parent: Node3D, position: Vector3, radius: float, color: Color, emission := 0.0) -> MeshInstance3D:
-	var mesh = SphereMesh.new()
-	mesh.radius = radius
-	mesh.height = radius * 2
-	mesh.radial_segments = 12
-	mesh.rings = 6
-	return add_mesh(parent, mesh, position, color, emission)
+	var key = "sphere%.4f" % radius
+	if not meshes.has(key):
+		var mesh = SphereMesh.new()
+		mesh.radius = radius
+		mesh.height = radius * 2
+		mesh.radial_segments = 12
+		mesh.rings = 6
+		meshes[key] = mesh
+	return add_mesh(parent, meshes[key], position, color, emission)
 
-static func cylinder(parent: Node3D, position: Vector3, radius: float, height: float, color: Color, emission := 0.0) -> MeshInstance3D:
-	var mesh = CylinderMesh.new()
-	mesh.top_radius = radius
-	mesh.bottom_radius = radius
-	mesh.height = height
-	mesh.radial_segments = 12
-	return add_mesh(parent, mesh, position, color, emission)
+static func cylinder(parent: Node3D, position: Vector3, radius: float, height: float, color: Color, emission := 0.0, top := -1.0) -> MeshInstance3D:
+	var key = "cylinder%.4f/%.4f/%.4f" % [radius, height, top]
+	if not meshes.has(key):
+		var mesh = CylinderMesh.new()
+		mesh.top_radius = radius if top < 0 else top
+		mesh.bottom_radius = radius
+		mesh.height = height
+		mesh.radial_segments = 12
+		meshes[key] = mesh
+	return add_mesh(parent, meshes[key], position, color, emission)
 
 static func ring(parent: Node3D, position: Vector3, radius: float, color: Color, thickness := .035) -> MeshInstance3D:
 	var mesh = TorusMesh.new()

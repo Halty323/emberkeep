@@ -19,10 +19,16 @@ if "${search_command[@]}" 'SCRIPT ERROR|Parse Error|Compile Error' "$test_root/i
     cat "$test_root/import.log"
     exit 1
 fi
-for suite in smoke lighting secret_codes presentation ui_presentation; do
+for suite in catalog settings dungeon items furniture effects collection smoke lighting secret_codes presentation ui_presentation; do
     "$godot_bin" --headless --path "$project_dir" --script "res://tests/$suite.gd" > "$test_root/test.log" 2>&1 || { cat "$test_root/test.log"; exit 1; }
     cat "$test_root/test.log"
     if "${search_command[@]}" 'SCRIPT ERROR|^ERROR:|FAIL:' "$test_root/test.log"; then
         exit 1
     fi
 done
+# The painting importer is authoring-only; its offline test needs Pillow.
+if command -v python3 >/dev/null 2>&1 && python3 -c "import PIL" >/dev/null 2>&1; then
+    python3 "$project_dir/tools/test_import_paintings.py"
+else
+    echo "Skipped tools/test_import_paintings.py (needs python3 with Pillow)."
+fi

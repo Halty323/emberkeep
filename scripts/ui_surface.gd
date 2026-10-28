@@ -7,6 +7,8 @@ var face: ColorRect
 var slab_color = Color("42433a")
 var trim_color = Color("a18c62")
 var compact_surface = false
+# Added to the local position when the slab lives inside a moving row.
+var logical_origin = Vector2.ZERO
 var _shadow: StyleBoxFlat
 var _lighting_initialized = false
 var _last_colors := PackedColorArray()
@@ -46,8 +48,12 @@ func configure(rect: Rect2, base_color: Color, accent_color: Color, compact := f
 func _update_geometry() -> void:
 	face.size = size
 	stone_material.set_shader_parameter("panel_size", size)
-	stone_material.set_shader_parameter("panel_origin", position)
+	stone_material.set_shader_parameter("panel_origin", logical_origin + position)
 	queue_redraw()
+
+func set_logical_origin(origin: Vector2) -> void:
+	logical_origin = origin
+	_update_geometry()
 
 func set_lighting(lamps: PackedVector4Array, colors: PackedColorArray, key_direction: Vector3, key_color: Color, ambient: float) -> void:
 	# The UI shares already-padded packed arrays. Reuse their storage instead

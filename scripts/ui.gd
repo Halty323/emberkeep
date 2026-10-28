@@ -8,10 +8,22 @@ const EDGE := Color("9d8861")
 const INTERACTION_RECT := Rect2(410, 564, 460, 78)
 const DASH_CENTER := Vector2(973, 610)
 const DASH_RADIUS := 48.0
+# One hit-region table drives drawing, touch and mouse handling alike.
+const ACTION_BUTTONS := {"dash": {"center": Vector2(973, 610), "radius": 48.0},
+	"active": {"center": Vector2(904, 510), "radius": 44.0},
+	"bomb": {"center": Vector2(1032, 486), "radius": 38.0}}
+const HUD_RECT := Rect2(24, 24, 370, 176)
 const JOURNAL_PAGE_SIZE := 6
 const TOAST_RECT := Rect2(400, 136, 480, 92)
+const MINIMAP_RECT := Rect2(1012, 100, 244, 192)
+const MINIMAP_AREA := Rect2(1030, 150, 208, 134)
+const FULL_MAP_AREA := Rect2(180, 150, 920, 420)
 const REWARD_WIDTH := 340.0
 const REWARD_GAP := 26.0
+const SETTINGS_PAGES := [["display", "Display"], ["graphics", "Graphics"], ["controls", "Sound & Controls"]]
+const SETTINGS_NOTES := {"display": "Resolution scales only the dungeon; text and controls stay sharp. Your display or device can still cap the frame rate.",
+	"graphics": "Detail changes decoration and cosmetic effects only. Walls, furniture collision, loot and combat stay identical.",
+	"controls": "Touch controls show the on-screen sticks and action buttons on any device."}
 var game: Node3D
 var body: Font = preload("res://assets/fonts/body.ttf")
 var heading: Font = preload("res://assets/fonts/display.ttf")
@@ -46,12 +58,24 @@ var right_origin = Vector2(1112, 574)
 var left_vector = Vector2.ZERO
 var right_vector = Vector2.ZERO
 var touch_used = false
+# True while a mouse press that began on an action button is held, so the
+# click can never turn into weapon fire.
+var mouse_on_action = false
 var journal_page = 0
 var elapsed_ui = 0.0
 var secret_taps = 0
 var secret_key_buffer = ""
 var secret_field: LineEdit
 var secret_feedback = ""
+var settings_page = "display"
+var journal_tab = "relics"
+var painting_id = ""
+var painting_back = "play"
+var painting_texture: Texture2D
+var painting_unlock = ""
+var fps_frames = 0
+var fps_time = 0.0
+var fps_value = 0.0
 
 func setup(owner_game: Node3D) -> void:
 	game = owner_game
@@ -129,10 +153,22 @@ func show_screen(screen: String) -> void:
 		"menu": build_menu()
 		"play":
 			button("II", Rect2(1180, 24, 76, 58), func(): game.pause_game(), false)
-			button("RELICS", Rect2(1012, 24, 154, 58), func(): open_journal("pause"), false)
+			button("JOURNAL", Rect2(1012, 24, 154, 58), func(): open_journal("pause"), false)
+			# The minimap itself opens the full floor map.
+			var map_button = Button.new()
+			map_button.name = "MapButton"
+			map_button.position = MINIMAP_RECT.position
+			map_button.size = MINIMAP_RECT.size
+			map_button.focus_mode = Control.FOCUS_NONE
+			for state in ["normal", "hover", "pressed", "focus"]:
+				map_button.add_theme_stylebox_override(state, StyleBoxEmpty.new())
+			map_button.pressed.connect(func(): open_map("play"))
+			content.add_child(map_button)
+		"map":
+			button("← Back", Rect2(396, 590, 488, 58), func(): close_subscreen())
 		"pause":
 			button("Continue the journey", Rect2(430, 280, 420, 62), func(): game.resume_game(), true)
-			button("Relic journal", Rect2(430, 358, 420, 58), func(): open_journal("pause"))
+			button("Journal", Rect2(430, 358, 420, 58), func(): open_journal("pause"))
 			button("Settings", Rect2(430, 432, 420, 58), func(): open_settings("pause"))
 			button("Return to title", Rect2(430, 506, 420, 58), func(): game.return_to_title())
 			var trigger = Button.new()
@@ -147,9 +183,10 @@ func show_screen(screen: String) -> void:
 		"secret": build_secret_code()
 		"reward": build_rewards()
 		"journal": build_journal()
+		"painting": button("← Back", Rect2(812, 598, 360, 58), func(): close_painting())
 		"settings": build_settings()
 		"dead", "won":
-			button("One more little light", Rect2(430, 457, 420, 62), func(): game.start_run(Content.weapons[starter_index].id, 0, false), true)
+			button("One more little light", Rect2(430, 457, 420, 62), func(): game.start_run(starter_weapon().id, 0, false), true)
 			button("Return to title", Rect2(430, 535, 420, 58), func(): game.return_to_title())
 	sync_lighting()
 	update_surface_visibility()
@@ -182,21 +219,23 @@ func build_surfaces() -> void:
 			make_surface(Rect2(36, 28, 474, 660))
 			make_surface(Rect2(762, 530, 472, 156))
 		"play":
-			make_surface(Rect2(24, 24, 370, 150))
+			make_surface(HUD_RECT)
 			make_surface(Rect2(424, 24, 420, 88), Color("3d423c"))
-			make_surface(Rect2(1012, 100, 244, 192), Color("363c37"))
+			make_surface(MINIMAP_RECT, Color("363c37"))
 			toast_surface = make_surface(TOAST_RECT, Color("45483b"), GOLD)
 			interaction_surface = make_surface(INTERACTION_RECT, PANEL, GOLD)
 			boss_surface = make_surface(Rect2(430, 119, 420, 12), Color("2e3430"), Color("bb8969"), true)
 		"pause": make_surface(Rect2(376, 108, 528, 520))
 		"secret": make_surface(Rect2(376, 140, 528, 448))
-		"settings": make_surface(Rect2(350, 72, 580, 588))
+		"settings": make_surface(Rect2(300, 40, 680, 640))
 		"reward":
 			for i in offers.size():
-				var offer: Dictionary = offers[i]
-				var is_weapon: bool = offer.get("kind", "item") == "weapon"
-				var item: Dictionary = Content.weapon_by_id[offer.id] if is_weapon else Content.item_by_id[offer.id]
-				make_surface(reward_rect(i), PANEL, Color(item.color) if is_weapon else Content.RARITY_COLORS[item.rarity])
+				make_surface(reward_rect(i), PANEL, offer_info(offers[i]).color)
+		"painting": make_surface(Rect2(80, 40, 1120, 640))
+		"journal" when journal_tab == "paintings":
+			var required = gallery_ids()
+			for i in required.size():
+				make_surface(gallery_rect(i), PANEL, GOLD if Collection.seen(required[i]) else EDGE)
 		"journal":
 			for slot in JOURNAL_PAGE_SIZE:
 				var index = journal_page * JOURNAL_PAGE_SIZE + slot
@@ -204,6 +243,7 @@ func build_surfaces() -> void:
 				var item: Dictionary = Content.items[index]
 				make_surface(journal_rect(slot), PANEL, Content.RARITY_COLORS[item.rarity] if item.id in Run.inventory else EDGE)
 		"dead", "won": make_surface(Rect2(350, 96, 580, 540))
+		"map": make_surface(Rect2(140, 60, 1000, 610))
 
 func update_surface_visibility() -> void:
 	if is_instance_valid(toast_surface): toast_surface.visible = mode == "play" and toast_time > 0
@@ -301,30 +341,44 @@ func build_menu() -> void:
 	content.add_child(seed_field)
 	button("‹", Rect2(64, 278, 56, 56), func(): cycle_weapon(-1))
 	button("›", Rect2(426, 278, 56, 56), func(): cycle_weapon(1))
-	button("Begin a run   →", Rect2(64, 458, 418, 60), func(): game.start_run(Content.weapons[starter_index].id, seed_field.text.to_int(), false), true)
+	button("Begin a run   →", Rect2(64, 458, 418, 60), func(): game.start_run(starter_weapon().id, seed_field.text.to_int(), false), true)
 	if Run.has_save():
 		button("Continue saved run", Rect2(64, 530, 418, 56), func(): game.continue_run())
-		button("Today’s seed", Rect2(64, 598, 201, 54), func(): game.start_run(Content.weapons[starter_index].id, Run.daily_seed(), true))
-		button("Relic journal", Rect2(281, 598, 201, 54), func(): open_journal("menu"))
+		button("Today’s seed", Rect2(64, 598, 201, 54), func(): game.start_run(starter_weapon().id, Run.daily_seed(), true))
+		button("Journal", Rect2(281, 598, 201, 54), func(): open_journal("menu"))
 	else:
-		button("Today’s seed", Rect2(64, 536, 201, 56), func(): game.start_run(Content.weapons[starter_index].id, Run.daily_seed(), true))
-		button("Relic journal", Rect2(281, 536, 201, 56), func(): open_journal("menu"))
+		button("Today’s seed", Rect2(64, 536, 201, 56), func(): game.start_run(starter_weapon().id, Run.daily_seed(), true))
+		button("Journal", Rect2(281, 536, 201, 56), func(): open_journal("menu"))
 	button("Settings", Rect2(1080, 32, 154, 56), func(): open_settings("menu"))
 
 func cycle_weapon(step: int) -> void:
-	starter_index = posmod(starter_index + step, Content.weapons.size())
+	starter_index = posmod(starter_index + step, Collection.available_weapons().size())
 	Audio.play_sound("coin", .75)
 	queue_redraw()
+
+## Display details for a relic, weapon or active item offer.
+func offer_info(offer: Dictionary) -> Dictionary:
+	match offer.get("kind", "item"):
+		"weapon":
+			var weapon: Dictionary = Content.weapon_by_id[offer.id]
+			return {"name": weapon.name, "description": weapon.description, "color": Color(weapon.color),
+				"label": "WEAPON", "tag": "NEW FIGHTING STYLE", "take": "Equip weapon", "buy": "%d coins · equip"}
+		"active":
+			var active: Dictionary = Content.record("actives", offer.id)
+			return {"name": active.name, "description": active.description, "color": Color(active.color),
+				"label": "ACTIVE ITEM", "tag": "RECHARGES IN %d SECONDS" % int(active.cooldown), "take": "Take this item", "buy": "%d coins · take"}
+	var item: Dictionary = Content.item_by_id[offer.id]
+	return {"name": item.name, "description": item.description, "color": Content.RARITY_COLORS[item.rarity],
+		"label": item.rarity.to_upper() + " RELIC", "tag": item.tag, "take": "Take this relic", "buy": "%d coins"}
 
 func build_rewards() -> void:
 	for i in offers.size():
 		var offer: Dictionary = offers[i]
+		var info = offer_info(offer)
 		var rect = reward_rect(i)
 		var price = int(offer.get("price", 0))
 		var affordable = not shop or Run.coins >= price
-		var label = "Take this relic" if not shop else "%d coins" % price
-		if offer.get("kind", "item") == "weapon":
-			label = "Equip weapon" if not shop else "%d coins · equip" % price
+		var label: String = info.take if not shop else info.buy % price
 		var control = button(label, Rect2(rect.position.x + 24, 478, REWARD_WIDTH - 48, 60), func(): game.choose_offer(i), affordable)
 		control.disabled = not affordable
 		if not affordable: control.get_meta("surface").modulate = Color(.7, .7, .65)
@@ -338,27 +392,132 @@ func open_journal(back: String) -> void:
 
 func build_journal() -> void:
 	button("← Back", Rect2(64, 36, 144, 56), func(): close_subscreen())
-	button("←", Rect2(1044, 626, 76, 58), func(): change_journal_page(-1))
-	button("→", Rect2(1136, 626, 76, 58), func(): change_journal_page(1))
+	button("Relics", Rect2(232, 36, 150, 56), func(): set_journal_tab("relics"), journal_tab == "relics")
+	button("Paintings", Rect2(394, 36, 190, 56), func(): set_journal_tab("paintings"), journal_tab == "paintings")
+	if journal_tab == "relics":
+		button("←", Rect2(1044, 626, 76, 58), func(): change_journal_page(-1))
+		button("→", Rect2(1136, 626, 76, 58), func(): change_journal_page(1))
+		return
+	# Discovered works open in the viewer straight from the journal.
+	var required = gallery_ids()
+	for i in required.size():
+		if not Collection.seen(required[i]): continue
+		var id: String = required[i]
+		var slot = Button.new()
+		slot.name = "Gallery_" + id
+		slot.position = gallery_rect(i).position
+		slot.size = gallery_rect(i).size
+		slot.focus_mode = Control.FOCUS_NONE
+		for state in ["normal", "hover", "pressed", "focus"]:
+			slot.add_theme_stylebox_override(state, StyleBoxEmpty.new())
+		slot.pressed.connect(func(): open_painting(id, "journal"))
+		content.add_child(slot)
+
+func set_journal_tab(tab: String) -> void:
+	journal_tab = tab
+	show_screen("journal")
+
+func gallery_ids() -> Array:
+	return Content.record("collections", Collection.FOUNDING).get("paintings", [])
+
+func gallery_rect(index: int) -> Rect2:
+	return Rect2(64 + (index % 6) * 196, 214 + (index / 6) * 206, 180, 192)
+
+func starter_weapon() -> Dictionary:
+	var arsenal = Collection.available_weapons()
+	return arsenal[posmod(starter_index, arsenal.size())]
+
+## The full-composition viewer: image, title, artist and date, medium, the
+## holding collection, an original caption, and the source credit. The large
+## image loads now and is released on close.
+func open_painting(id: String, back: String) -> void:
+	painting_id = id
+	painting_back = back
+	painting_texture = PaintingLibrary.inspection_texture(id)
+	game.paused = true
+	show_screen("painting")
+
+func close_painting() -> void:
+	painting_texture = null
+	painting_unlock = ""
+	if painting_back == "journal":
+		show_screen("journal")
+	else:
+		game.resume_game()
 
 func open_settings(back: String) -> void:
 	previous_mode = back
+	settings_page = "display"
 	show_screen("settings")
 
 func build_settings() -> void:
+	for i in SETTINGS_PAGES.size():
+		var page: Array = SETTINGS_PAGES[i]
+		button(page[1], Rect2(330 + i * 210, 154, 200, 56), func(): open_settings_page(page[0]), page[0] == settings_page)
+	var rows = settings_rows(settings_page)
+	for i in rows.size():
+		setting_row(Rect2(330, 228 + i * 68, 620, 56), rows[i])
 	button("← Back", Rect2(396, 572, 488, 58), func(): close_subscreen())
-	var options = [["sound", "Sound effects"], ["music", "Ambient music"], ["shake", "Camera shake"], ["touch", "Touch controls"], ["quality", "Lantern shadows"]]
-	for i in options.size():
-		var option: Array = options[i]
-		button("%s     %s" % [option[1], "ON" if Run.profile[option[0]] else "OFF"], Rect2(396, 206 + i * 70, 488, 56), func():
-			Run.profile[option[0]] = not Run.profile[option[0]]
-			Run.save_profile()
-			Audio.refresh()
-			show_screen("settings"))
+
+func open_settings_page(page: String) -> void:
+	settings_page = page
+	show_screen("settings")
+
+func on_off(key: String) -> String:
+	return "On" if Settings.values[key] else "Off"
+
+## [setting key, label, value text, interactive]
+func settings_rows(page: String) -> Array:
+	match page:
+		"display":
+			var pixels = Settings.render_pixels()
+			var vsync = ["vsync", "VSync", on_off("vsync"), true]
+			if not Settings.vsync_supported():
+				vsync = ["vsync", "VSync", "System controlled", false]
+			elif Settings.effective_vsync() != on_off("vsync").to_lower():
+				vsync[2] += " · driver " + Settings.effective_vsync().capitalize()
+			return [["render_scale", "Render resolution", "%d%%  ·  %d×%d" % [roundi(Settings.values.render_scale * 100), pixels.x, pixels.y], true],
+				["fps_limit", "FPS limit", "Unlimited" if Settings.values.fps_limit == 0 else str(Settings.values.fps_limit), true],
+				vsync, ["show_fps", "Show FPS", on_off("show_fps"), true]]
+		"graphics":
+			return [["effects_detail", "Effects detail", Settings.values.effects_detail.capitalize(), true],
+				["small_details", "Small details", Settings.values.small_details.capitalize(), true],
+				["shadows", "Lantern shadows", on_off("shadows"), true]]
+	return [["sound", "Sound effects", on_off("sound"), true], ["music", "Ambient music", on_off("music"), true],
+		["shake", "Camera shake", on_off("shake"), true], ["touch", "Touch controls", on_off("touch"), true]]
+
+func setting_row(rect: Rect2, row: Array) -> SettingRow:
+	var control = SettingRow.new()
+	control.name = "Setting_" + row[0]
+	control.setting_key = row[0]
+	style_button(control, false)
+	var padded = StyleBoxEmpty.new()
+	padded.content_margin_left = SettingRow.PADDING
+	for state in ["normal", "hover", "pressed", "disabled"]:
+		control.add_theme_stylebox_override(state, padded)
+	control.value_font = bold
+	control.configure(rect, row[1], row[2], Color("41473f"), EDGE)
+	control.disabled = not row[3]
+	surfaces.append(control.surface)
+	var slab = control.surface
+	control.mouse_entered.connect(func(): slab.modulate = Color(.7, .7, .65) if control.disabled else Color(1.17, 1.12, 1.02))
+	control.mouse_exited.connect(func(): slab.modulate = Color(.7, .7, .65) if control.disabled else Color.WHITE)
+	if control.disabled: slab.modulate = Color(.7, .7, .65)
+	var key: String = row[0]
+	control.pressed.connect(func(): Audio.play_sound("coin", .7); Settings.cycle(key); show_screen("settings"))
+	content.add_child(control)
+	return control
+
+func open_map(back: String) -> void:
+	previous_mode = back
+	game.paused = true
+	show_screen("map")
 
 func close_subscreen() -> void:
 	if previous_mode == "menu":
 		show_screen("menu")
+	elif previous_mode == "play":
+		game.resume_game()
 	else:
 		show_screen("pause")
 
@@ -374,11 +533,7 @@ func style(background: Color, border: Color, radius := 7) -> StyleBoxFlat:
 	box.content_margin_bottom = 8
 	return box
 
-func button(label: String, rect: Rect2, callback: Callable, primary := false) -> Button:
-	var control = Button.new()
-	control.text = label
-	control.position = rect.position
-	control.size = rect.size
+func style_button(control: Button, primary: bool) -> void:
 	control.add_theme_font_override("font", bold)
 	control.add_theme_font_size_override("font_size", 20)
 	control.add_theme_color_override("font_color", GOLD if primary else INK)
@@ -390,6 +545,13 @@ func button(label: String, rect: Rect2, callback: Callable, primary := false) ->
 	for state in ["normal", "hover", "pressed", "disabled"]:
 		control.add_theme_stylebox_override(state, StyleBoxEmpty.new())
 	control.add_theme_stylebox_override("focus", style(Color(0, 0, 0, 0), GOLD, 8))
+
+func button(label: String, rect: Rect2, callback: Callable, primary := false) -> Button:
+	var control = Button.new()
+	control.text = label
+	control.position = rect.position
+	control.size = rect.size
+	style_button(control, primary)
 	var surface = make_surface(rect, Color("62533c") if primary else Color("41473f"), GOLD if primary else EDGE, true)
 	control.set_meta("surface", surface)
 	control.mouse_entered.connect(func(): surface.modulate = Color(.7, .7, .65) if control.disabled else Color(1.17, 1.12, 1.02))
@@ -413,6 +575,12 @@ func damage_number(at: Vector2, amount: float, critical: bool) -> void:
 
 func _process(delta: float) -> void:
 	elapsed_ui += delta
+	fps_frames += 1
+	fps_time += delta
+	if fps_time >= .5:
+		fps_value = fps_frames / fps_time
+		fps_frames = 0
+		fps_time = 0.0
 	toast_time = maxf(0, toast_time - delta)
 	for number in floating_numbers:
 		number.age += delta
@@ -433,14 +601,26 @@ func _input(event: InputEvent) -> void:
 				submit_secret_code(secret_key_buffer)
 				get_viewport().set_input_as_handled()
 		return
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+		mouse_on_action = false
 	if mode != "play":
+		return
+	# Emulated mouse events from touches were already handled as touches.
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and event.device != InputEvent.DEVICE_ID_EMULATION:
+		var action = action_at(local_point(event.position))
+		if action != "" and touch_hud_visible():
+			mouse_on_action = true
+			trigger_action(action)
+			get_viewport().set_input_as_handled()
 		return
 	if event is InputEventScreenTouch:
 		touch_used = true
 		var p = local_point(event.position)
 		if event.pressed:
-			if p.distance_to(DASH_CENTER) < DASH_RADIUS:
-				game.request_dash = true
+			# Buttons are hit-tested before a floating stick can capture the finger.
+			var action = action_at(p)
+			if action != "":
+				trigger_action(action)
 				get_viewport().set_input_as_handled()
 			elif INTERACTION_RECT.has_point(p) and game.interaction_text != "":
 				game.interact()
@@ -472,6 +652,21 @@ func _input(event: InputEvent) -> void:
 		if event.index == right_touch:
 			right_vector = (p - right_origin).limit_length(58) / 58.0
 			get_viewport().set_input_as_handled()
+
+func touch_hud_visible() -> bool:
+	return touch_used or Settings.values.touch or is_touch_platform()
+
+func action_at(point: Vector2) -> String:
+	for action in ACTION_BUTTONS:
+		if point.distance_to(ACTION_BUTTONS[action].center) < ACTION_BUTTONS[action].radius:
+			return action
+	return ""
+
+func trigger_action(action: String) -> void:
+	match action:
+		"dash": game.request_dash = true
+		"active": game.submit({"type": "use_active"})
+		"bomb": game.submit({"type": "place_bomb"})
 
 func text(value: String, at: Vector2, size_value := 18, color := INK, font: Font = null) -> void:
 	var f = font if font else body
@@ -509,9 +704,12 @@ func _draw() -> void:
 			centered(secret_feedback, 640, 401, 17, Color("efbd9f"))
 		"reward": draw_rewards()
 		"settings":
-			hearth_emblem(Vector2(640, 109), 11)
-			centered("Make yourself at home", 640, 169, 32, INK, heading)
-		"journal": draw_journal()
+			hearth_emblem(Vector2(640, 76), 11)
+			centered("Make yourself at home", 640, 134, 32, INK, heading)
+			draw_multiline_string(body, Vector2(340, 516), SETTINGS_NOTES[settings_page], HORIZONTAL_ALIGNMENT_CENTER, 600, 17, 2, MUTED)
+		"journal": draw_journal() if journal_tab == "relics" else draw_gallery()
+		"painting": draw_painting()
+		"map": draw_full_map()
 		"dead", "won": draw_end()
 	if mode == "play":
 		for number in floating_numbers:
@@ -521,6 +719,8 @@ func _draw() -> void:
 		if toast_time > 0:
 			centered(toast_text, 640, 168, 22, toast_color, heading)
 			draw_multiline_string(body, Vector2(424, 195), toast_detail, HORIZONTAL_ALIGNMENT_CENTER, 432, 17, 2, MUTED)
+	if Settings.values.show_fps:
+		text("%d FPS" % roundi(fps_value), Vector2(1072, 697), 15, GOLD, bold)
 	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
 
 func hearth_emblem(at: Vector2, radius: float) -> void:
@@ -540,16 +740,16 @@ func draw_menu() -> void:
 	text("Every little light fights back.", Vector2(65, 209), 23, GOLD, heading)
 	text("Find strange relics. Make beautiful trouble.", Vector2(65, 244), 17, MUTED)
 	divider(Vector2(64, 262), Vector2(482, 262))
-	var weapon: Dictionary = Content.weapons[starter_index]
+	var weapon: Dictionary = starter_weapon()
 	centered(weapon.name, 273, 314, 23, Color(weapon.color), heading)
 	draw_multiline_string(body, Vector2(65, 357), weapon.description, HORIZONTAL_ALIGNMENT_LEFT, 418, 17, 2, MUTED)
 	text("Optional seed", Vector2(274, 423), 18, MUTED)
 	if not Run.has_save():
 		text("%d runs  ·  %d victories" % [Run.profile.runs, Run.profile.wins], Vector2(66, 632), 17, MUTED)
-	text("60 RELICS TO DISCOVER", Vector2(66, 671), 14, GOLD, bold)
+	text("%d RELICS · %d PAINTINGS TO DISCOVER" % [Content.items.size(), gallery_ids().size()], Vector2(66, 671), 14, GOLD, bold)
 	hearth_emblem(Vector2(798, 566), 10)
 	text("A warm place. A wild little dungeon.", Vector2(826, 574), 21, GOLD, heading)
-	text("60 stackable relics  ·  10 weapons  ·  3 floors", Vector2(789, 617), 18, INK)
+	text("%d stackable relics  ·  %d weapons  ·  3 floors" % [Content.items.size(), Collection.available_weapons().size()], Vector2(789, 617), 18, INK)
 	text("Strange combinations. One more little light.", Vector2(789, 650), 17, MUTED)
 
 func draw_hud() -> void:
@@ -570,15 +770,22 @@ func draw_hud() -> void:
 	draw_circle(Vector2(55, 121), 8, Color("302f23"))
 	draw_circle(Vector2(54, 119), 7, Color("ceab68"))
 	draw_line(Vector2(54, 115), Vector2(54, 123), Color("f7dfa5"), 1.5)
-	text("%02d coins" % Run.coins, Vector2(72, 126), 21, GOLD, bold)
+	text("%02d" % Run.coins, Vector2(70, 127), 21, GOLD, bold)
+	resource_icon("key", Vector2(130, 119))
+	text("%d" % Run.keys, Vector2(146, 127), 21, INK if Run.keys > 0 else MUTED, bold)
+	resource_icon("bomb", Vector2(190, 119))
+	text("%d" % Run.bombs, Vector2(206, 127), 21, INK if Run.bombs > 0 else MUTED, bold)
+	resource_icon("ward", Vector2(250, 119))
+	text("%d" % Run.wards, Vector2(266, 127), 21, Color("b7ddc0") if Run.wards > 0 else MUTED, bold)
 	text(Content.weapon_by_id[Run.weapon_id].name, Vector2(48, 154), 19, INK)
+	draw_active_line()
 	if Run.inventory.size() > 0:
-		text("RELICS", Vector2(40, 203), 14, MUTED, bold)
+		text("RELICS", Vector2(40, 231), 14, MUTED, bold)
 		for i in mini(Run.inventory.size(), 10):
 			var item: Dictionary = Content.item_by_id[Run.inventory[i]]
-			diamond(Vector2(114 + i * 22, 197), 8, Content.RARITY_COLORS[item.rarity])
+			diamond(Vector2(114 + i * 22, 225), 8, Content.RARITY_COLORS[item.rarity])
 		if Run.inventory.size() > 10:
-			text("+%d" % (Run.inventory.size() - 10), Vector2(342, 203), 16, GOLD)
+			text("+%d" % (Run.inventory.size() - 10), Vector2(342, 231), 16, GOLD)
 	var floor_names = ["The Waking Cellar", "The Mosslit Halls", "The Last Hearth"]
 	diamond(Vector2(454, 64), 15, Color("292f29"))
 	centered(str(Run.floor_number), 454, 70, 18, GOLD, heading)
@@ -601,18 +808,77 @@ func draw_hud() -> void:
 	if game.interaction_text != "":
 		centered(game.interaction_text, 640, 596, 21, GOLD, bold)
 		centered("Tap to interact  ·  E / A", 640, 624, 16, MUTED)
-	if touch_used or Run.profile.touch or is_touch_platform():
+	if touch_hud_visible():
 		draw_stick(left_origin, left_vector, "MOVE", left_touch >= 0)
 		draw_stick(right_origin, right_vector, "AIM + FIRE", right_touch >= 0)
 		var ready: bool = game.player and game.player.dash_cooldown <= 0
-		draw_circle(DASH_CENTER + Vector2(0, 4), DASH_RADIUS, Color(.02, .03, .03, .7))
-		draw_circle(DASH_CENTER, DASH_RADIUS, Color(.18, .21, .18, .88))
-		draw_arc(DASH_CENTER, DASH_RADIUS - 2, -PI / 2, TAU - PI / 2, 48, GOLD if ready else MUTED, 2, true)
+		draw_action_ring("dash", 1.0 if ready else 0.0, GOLD if ready else MUTED)
 		centered("DASH" if ready else "%.1f" % game.player.dash_cooldown, DASH_CENTER.x, DASH_CENTER.y + 7, 18, GOLD if ready else MUTED, bold)
+		draw_active_button()
+		var bomb: Dictionary = ACTION_BUTTONS.bomb
+		draw_action_ring("bomb", 1.0 if Run.bombs > 0 else 0.0, GOLD if Run.bombs > 0 else MUTED)
+		resource_icon("bomb", bomb.center + Vector2(0, -8))
+		centered("×%d" % Run.bombs, bomb.center.x, bomb.center.y + 22, 15, INK if Run.bombs > 0 else MUTED, bold)
 	else:
-		text("WASD move · Mouse fire · Space dash", Vector2(28, 660), 16, MUTED)
+		text("WASD move · Mouse fire · Space dash · F item · B bomb", Vector2(28, 660), 16, MUTED)
 	text("SEED %d" % Run.seed_value, Vector2(28, 697), 14, MUTED)
 	text("%d:%02d" % [int(Run.elapsed) / 60, int(Run.elapsed) % 60], Vector2(1182, 697), 16, MUTED)
+
+func resource_icon(kind: String, at: Vector2) -> void:
+	match kind:
+		"key":
+			draw_arc(at + Vector2(-4, 0), 4.5, 0, TAU, 16, Color("e3c27a"), 2.2, true)
+			draw_line(at + Vector2(0, 0), at + Vector2(9, 0), Color("e3c27a"), 2.4)
+			draw_line(at + Vector2(7, 0), at + Vector2(7, 4), Color("e3c27a"), 2.2)
+		"bomb":
+			draw_circle(at + Vector2(0, 2), 7, Color("252c27"))
+			draw_circle(at + Vector2(0, 1), 6.5, Color("8f9497"))
+			draw_line(at + Vector2(3, -5), at + Vector2(6, -9), Color("c9b183"), 1.6)
+			draw_circle(at + Vector2(6.5, -9.5), 1.8, Color("ffd38a"))
+		"ward":
+			var shield = PackedVector2Array([at + Vector2(-7, -7), at + Vector2(7, -7), at + Vector2(6, 2), at + Vector2(0, 8), at + Vector2(-6, 2)])
+			draw_colored_polygon(shield, Color("a3dacf"))
+			draw_line(at + Vector2(0, -5), at + Vector2(0, 5), Color("e9f5ef"), 1.2)
+
+func active_state() -> Dictionary:
+	if Run.active_item.is_empty():
+		return {}
+	var definition: Dictionary = Content.record("actives", Run.active_item.def)
+	var remaining = Run.cooldown_remaining(definition.id)
+	return {"definition": definition, "remaining": remaining, "fraction": 1.0 - clampf(remaining / float(definition.cooldown), 0, 1)}
+
+func draw_active_line() -> void:
+	var state = active_state()
+	if state.is_empty():
+		text("No item in hand", Vector2(48, 184), 17, MUTED)
+		return
+	diamond(Vector2(56, 178), 8, Color(state.definition.color))
+	text(state.definition.name, Vector2(72, 184), 18, INK)
+	var status = "ready · F" if state.remaining <= 0 else "%ds" % ceili(state.remaining)
+	text(status, Vector2(372 - body.get_string_size(status, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x, 184), 16, GOLD if state.remaining <= 0 else MUTED, bold)
+
+func draw_action_ring(action: String, fraction: float, color: Color) -> void:
+	var button_region: Dictionary = ACTION_BUTTONS[action]
+	var center: Vector2 = button_region.center
+	var radius: float = button_region.radius
+	draw_circle(center + Vector2(0, 4), radius, Color(.02, .03, .03, .7))
+	draw_circle(center, radius, Color(.18, .21, .18, .88))
+	draw_arc(center, radius - 2, 0, TAU, 48, Color(MUTED, .45), 2, true)
+	if fraction > 0:
+		draw_arc(center, radius - 2, -PI / 2, -PI / 2 + TAU * fraction, 48, color, 2.5, true)
+
+## Item icon, cooldown ring and a seconds readout while recharging.
+func draw_active_button() -> void:
+	var center: Vector2 = ACTION_BUTTONS.active.center
+	var state = active_state()
+	if state.is_empty():
+		draw_action_ring("active", 0.0, MUTED)
+		centered("ITEM", center.x, center.y + 6, 15, MUTED, bold)
+		return
+	var ready = state.remaining <= 0
+	draw_action_ring("active", state.fraction, GOLD if ready else Color(state.definition.color))
+	diamond(center + Vector2(0, -6), 13, Color(state.definition.color), ready)
+	centered("USE" if ready else "%d" % ceili(state.remaining), center.x, center.y + 25, 15, GOLD if ready else INK, bold)
 
 func draw_stick(at: Vector2, value: Vector2, label: String, active_touch: bool) -> void:
 	draw_circle(at + Vector2(0, 4), 66, Color(.02, .03, .025, .35))
@@ -626,45 +892,95 @@ func draw_stick(at: Vector2, value: Vector2, label: String, active_touch: bool) 
 
 func draw_minimap() -> void:
 	text("THE WAY HOME", Vector2(1034, 132), 14, GOLD, bold)
-	text("N", Vector2(1220, 132), 13, MUTED)
+	text("M", Vector2(1218, 132), 13, MUTED)
 	divider(Vector2(1034, 145), Vector2(1234, 145))
-	var center = Vector2(1134, 213)
-	var scale_map = 24.0
-	var here = Run.coord(Run.current_room)
-	for key in Run.rooms:
-		var r: Dictionary = Run.rooms[key]
-		if not r.visited and key not in Run.neighbors(Run.current_room): continue
-		var p = center + Vector2(Run.coord(key) - here) * scale_map
-		if absf(p.x - center.x) > 86 or absf(p.y - center.y) > 50: continue
-		for neighbor in Run.neighbors(key):
-			var n: Dictionary = Run.rooms[neighbor]
-			if not n.visited and neighbor not in Run.neighbors(Run.current_room): continue
-			var to = center + Vector2(Run.coord(neighbor) - here) * scale_map
-			if absf(to.x - center.x) <= 86 and absf(to.y - center.y) <= 50:
-				draw_line(p, to, Color("656752"), 2, true)
-		var c = Color("9b9e82") if r.cleared else Color("626957")
-		if r.type == "treasure": c = GOLD
-		if r.type == "shop": c = Color("afcfaa")
-		if r.type == "boss": c = Color("da9b80")
-		if key == Run.current_room: c = INK
-		draw_rect(Rect2(p - Vector2(7, 5), Vector2(14, 10)), Color("262e28"))
-		draw_rect(Rect2(p - Vector2(6, 5), Vector2(12, 9)), c)
-		if key == Run.current_room:
-			draw_rect(Rect2(p - Vector2(10, 8), Vector2(20, 16)), GOLD, false, 1.5)
+	var cells = FloorGenerator.room_cells(Run.rooms[Run.current_room])
+	var focus = Vector2.ZERO
+	for cell in cells: focus += Vector2(cell)
+	draw_floor_map(MINIMAP_AREA, focus / cells.size(), 24.0)
+
+## Rooms the player may know about: visited ones and the current room's open
+## neighbours. A concealed passage reveals nothing until it is opened.
+func map_rooms() -> Array:
+	var near = Run.neighbors(Run.current_room)
+	return Run.rooms.keys().filter(func(id): return Run.rooms[id].visited or id == Run.current_room or id in near)
+
+func map_color(id: String) -> Color:
+	var room: Dictionary = Run.rooms[id]
+	if id == Run.current_room: return INK
+	if room.type == "treasure": return GOLD
+	if room.type == "shop": return Color("afcfaa")
+	if room.type == "boss": return Color("da9b80")
+	if room.get("secret", false): return Color("b9a2c9")
+	return Color("9b9e82") if room.cleared else Color("626957")
+
+## Draws each room's whole footprint as one shape: cells merge across their
+## own seams, and short connectors mark actual doorways, not adjacency.
+func draw_floor_map(area: Rect2, focus: Vector2, cell_size: float) -> void:
+	var known = map_rooms()
+	var origin = area.get_center() - focus * cell_size
+	var inset = maxf(3.0, cell_size * .2)
+	for portal in Run.portals.values():
+		if portal.state == "concealed" or portal.a.room not in known or portal.b.room not in known: continue
+		var a = Vector2(FloorGenerator.vec(portal.a.cell))
+		var direction = Vector2(FloorGenerator.vec(portal.a.dir))
+		var start = origin + (a + direction * (.5 - inset / cell_size)) * cell_size
+		var end = origin + (a + direction * (.5 + inset / cell_size)) * cell_size
+		if area.has_point(start) and area.has_point(end):
+			draw_line(start, end, Color("9d9878"), maxf(2.0, cell_size * .12), true)
+	for id in known:
+		var cells = FloorGenerator.room_cells(Run.rooms[id])
+		var color = map_color(id)
+		for cell in cells:
+			var low = Vector2(inset if not cells.has(cell + Vector2i.LEFT) else 0.0, inset if not cells.has(cell + Vector2i.UP) else 0.0)
+			var high = Vector2(inset if not cells.has(cell + Vector2i.RIGHT) else 0.0, inset if not cells.has(cell + Vector2i.DOWN) else 0.0)
+			var rect = Rect2(origin + (Vector2(cell) - Vector2(.5, .5)) * cell_size + low, Vector2.ONE * cell_size - low - high)
+			var shadow = Rect2(rect.position + Vector2(0, 2), rect.size).intersection(area)
+			if shadow.has_area(): draw_rect(shadow, Color("262e28"))
+			var shown = rect.intersection(area)
+			if shown.has_area(): draw_rect(shown, color)
+		if id == Run.current_room:
+			# One outline around the whole footprint, drawn on exposed edges only.
+			var reach = cell_size * .5 - inset + 2.5
+			for cell in cells:
+				var center = origin + Vector2(cell) * cell_size
+				for direction in RoomGeometry.DIRECTIONS:
+					if cells.has(cell + direction): continue
+					var across = Vector2i(absi(direction.y), absi(direction.x))
+					var mid = center + Vector2(direction) * reach
+					var start = mid - Vector2(across) * (cell_size * .5 if cells.has(cell - across) else reach)
+					var end = mid + Vector2(across) * (cell_size * .5 if cells.has(cell + across) else reach)
+					if area.has_point(start) and area.has_point(end):
+						draw_line(start, end, GOLD, 1.5, true)
+
+func draw_full_map() -> void:
+	hearth_emblem(Vector2(640, 96), 11)
+	centered("The way home", 640, 140, 32, INK, heading)
+	var known = map_rooms()
+	var low = Vector2(INF, INF)
+	var high = -low
+	for id in known:
+		for cell in FloorGenerator.room_cells(Run.rooms[id]):
+			low = Vector2(minf(low.x, cell.x), minf(low.y, cell.y))
+			high = Vector2(maxf(high.x, cell.x), maxf(high.y, cell.y))
+	var span = high - low + Vector2.ONE
+	var cell_size = minf(48.0, minf(FULL_MAP_AREA.size.x / (span.x + 1), FULL_MAP_AREA.size.y / (span.y + 1)))
+	draw_floor_map(FULL_MAP_AREA, (low + high) / 2.0, cell_size)
+	var main_rooms = Run.rooms.values().filter(func(room): return not room.get("secret", false))
+	centered("Floor %d  ·  %d of %d rooms visited  ·  Outlined: you are here" % [Run.floor_number,
+		main_rooms.filter(func(room): return room.visited).size(), main_rooms.size()], 640, 578, 17, MUTED)
 
 func draw_rewards() -> void:
 	hearth_emblem(Vector2(640, 61), 12)
 	centered("The candle merchant" if shop else "A small kindness", 640, 123, 38, INK, heading)
 	centered("A good find is worth a few coins. You have %d." % Run.coins if shop else "Choose one. Let it change the way you play.", 640, 165, 20, MUTED)
 	for i in offers.size():
-		var offer: Dictionary = offers[i]
-		var is_weapon: bool = offer.get("kind", "item") == "weapon"
-		var item: Dictionary = Content.weapon_by_id[offer.id] if is_weapon else Content.item_by_id[offer.id]
-		var color: Color = Color(item.color) if is_weapon else Content.RARITY_COLORS[item.rarity]
+		var item = offer_info(offers[i])
+		var color: Color = item.color
 		var rect = reward_rect(i)
 		var x = rect.position.x
 		var middle = rect.get_center().x
-		centered("WEAPON" if is_weapon else item.rarity.to_upper() + " RELIC", middle, 232, 15, color, bold)
+		centered(item.label, middle, 232, 15, color, bold)
 		draw_circle(Vector2(middle, 291), 37, Color(.08, .10, .08, .5))
 		diamond(Vector2(middle, 293), 27, Color("262f28"))
 		diamond(Vector2(middle, 288), 25, color, false)
@@ -673,7 +989,7 @@ func draw_rewards() -> void:
 		centered(item.name, middle, 361, 24, INK, heading)
 		divider(Vector2(x + 28, 379), Vector2(x + REWARD_WIDTH - 28, 379))
 		draw_multiline_string(body, Vector2(x + 26, 409), item.description, HORIZONTAL_ALIGNMENT_CENTER, REWARD_WIDTH - 52, 18, 3, MUTED)
-		centered("NEW FIGHTING STYLE" if is_weapon else item.tag, middle, 465, 13, color, bold)
+		centered(item.tag, middle, 465, 13, color, bold)
 	centered("Relics stack. Find something beautifully strange.", 640, 692, 17, MUTED)
 
 func draw_journal() -> void:
@@ -696,6 +1012,62 @@ func draw_journal() -> void:
 		draw_multiline_string(body, Vector2(x + 27, y + 73), item.description, HORIZONTAL_ALIGNMENT_LEFT, 510, 18, 2, MUTED)
 	text("%d / 60 found  ·  Filled diamonds are discovered relics" % Run.profile.discovered.size(), Vector2(66, 664), 17, MUTED)
 	centered("%d / %d" % [journal_page + 1, journal_page_count()], 976, 664, 20, GOLD)
+
+func draw_gallery() -> void:
+	text("The gallery we keep", Vector2(64, 146), 40, INK, heading)
+	var progress = Collection.progress()
+	var reward = "Paint Sprayer unlocked" if "paint_sprayer" in Run.profile.unlocks else "Find all twelve to unlock the Paint Sprayer"
+	text("%d / %d classics found  ·  %s" % [progress.x, progress.y, reward], Vector2(66, 184), 19, MUTED)
+	var required = gallery_ids()
+	for i in required.size():
+		var rect = gallery_rect(i)
+		var painting: Dictionary = Content.record("paintings", required[i])
+		var found = Collection.seen(painting.id)
+		var image_box = Rect2(rect.position + Vector2(14, 14), Vector2(152, 112))
+		if found:
+			var texture = PaintingLibrary.wall_texture(painting.id)
+			var size = PaintingLibrary.fit(float(painting.aspect), image_box.size)
+			var placed = Rect2(image_box.get_center() - size / 2, size)
+			draw_rect(placed.grow(3), Color("6d5232"))
+			if texture: draw_texture_rect(texture, placed, false)
+			else: draw_rect(placed, Color("5c5348"))
+			draw_multiline_string(bold, Vector2(rect.position.x + 10, rect.position.y + 148), painting.title, HORIZONTAL_ALIGNMENT_CENTER, 160, 15, 2, INK)
+			draw_string(body, Vector2(rect.position.x + 10, rect.end.y - 10), painting.artist, HORIZONTAL_ALIGNMENT_CENTER, 160, 13, MUTED)
+		else:
+			draw_rect(image_box, Color(.06, .08, .07, .7))
+			diamond(image_box.get_center(), 16, Color(EDGE, .6), false)
+			centered("?", image_box.get_center().x, image_box.get_center().y + 8, 20, MUTED, heading)
+			centered("Undiscovered", rect.get_center().x, rect.position.y + 160, 15, MUTED)
+
+func draw_painting() -> void:
+	var painting: Dictionary = Content.record("paintings", painting_id)
+	if painting.is_empty():
+		return
+	var area = Rect2(116, 76, 660, 560)
+	var size = PaintingLibrary.fit(float(painting.aspect), area.size)
+	var image = Rect2(area.get_center() - size / 2, size)
+	draw_rect(image.grow(10), Color("6d5232"))
+	draw_rect(image.grow(4), Color("2e2a24"))
+	if painting_texture:
+		draw_texture_rect(painting_texture, image, false)
+	else:
+		draw_rect(image, Color("4d463e"))
+		centered("Reproduction awaiting import", image.get_center().x, image.get_center().y - 8, 20, INK, bold)
+		draw_multiline_string(body, Vector2(image.position.x + 16, image.get_center().y + 22), "The approved image is fetched with tools/import_paintings.py and bundled with the game.",
+			HORIZONTAL_ALIGNMENT_CENTER, image.size.x - 32, 15, 3, MUTED)
+	var x = 812.0
+	draw_multiline_string(heading, Vector2(x, 112), painting.title, HORIZONTAL_ALIGNMENT_LEFT, 360, 30, 2, INK)
+	text("%s · %s" % [painting.artist, painting.date], Vector2(x, 186), 18, GOLD, bold)
+	draw_multiline_string(body, Vector2(x, 214), painting.medium, HORIZONTAL_ALIGNMENT_LEFT, 360, 16, 2, MUTED)
+	draw_multiline_string(body, Vector2(x, 256), painting.holding, HORIZONTAL_ALIGNMENT_LEFT, 360, 16, 2, MUTED)
+	divider(Vector2(x, 290), Vector2(x + 360, 290))
+	draw_multiline_string(body, Vector2(x, 318), painting.caption, HORIZONTAL_ALIGNMENT_LEFT, 360, 17, 6, INK)
+	draw_multiline_string(body, Vector2(x, 470), "Source: " + painting.source.page, HORIZONTAL_ALIGNMENT_LEFT, 360, 12, 3, MUTED)
+	draw_multiline_string(body, Vector2(x, 516), painting.rights, HORIZONTAL_ALIGNMENT_LEFT, 360, 12, 3, MUTED)
+	var progress = Collection.progress()
+	text("Twelve Classics  ·  %d / %d" % [progress.x, progress.y], Vector2(x, 584), 15, GOLD, bold)
+	if painting_unlock != "":
+		centered("%s unlocked" % painting_unlock, area.get_center().x, 668, 20, GOLD, heading)
 
 func draw_end() -> void:
 	hearth_emblem(Vector2(640, 156), 22)
