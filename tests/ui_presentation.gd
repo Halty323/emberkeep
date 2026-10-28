@@ -82,9 +82,11 @@ func test_ui() -> void:
 	# The UI must follow existing room illumination rather than using a second
 	# collection of real lights or expensive UI shadow-rendering viewports.
 	game.ui.sync_lighting()
-	check(game.ui.lighting_lamps.size() == game.room.lamps.size(), "all room lanterns reach the UI lighting data")
-	check(game.ui.lighting_colors.size() == game.room.lamps.size(), "lantern colors reach the UI lighting data")
-	for i in game.room.lamps.size():
+	# Four slots: burning lanterns first, the rest dark (the cellar has few).
+	var shown = mini(4, game.room.lamps.size())
+	check(shown > 0 and game.ui.lighting_lamps.size() == 4 and game.ui.lighting_colors.size() == 4, "room lanterns reach the UI lighting data")
+	check(range(shown, 4).all(func(i): return is_zero_approx(game.ui.lighting_lamps[i].w)), "unused UI lighting slots stay dark")
+	for i in shown:
 		var lamp: OmniLight3D = game.room.lamps[i]
 		var expected: Vector2 = game.ui.local_point(game.camera.unproject_position(lamp.global_position))
 		var actual: Vector4 = game.ui.lighting_lamps[i]

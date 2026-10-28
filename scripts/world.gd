@@ -20,6 +20,8 @@ var lamps: Array[OmniLight3D] = []
 var lantern_points: Array[Vector3] = []
 var lamp_assignment: Array[int] = []
 var shadow_lamps: Array[SpotLight3D] = []
+# This floor's light (FloorLight): lantern warmth, glow and how many still burn.
+var light: Dictionary = FloorLight.profile(0)
 var _quality_enabled = null
 var gates: Array[Node3D] = []
 var sockets: Dictionary = {}
@@ -44,6 +46,7 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 	game = owner_game
 	data = room
 	decor_rng.seed = int(room.get("seed", 53))
+	light = FloorLight.profile(0 if preview else Run.floor_number)
 	effects = EffectsPool.new()
 	add_child(effects)
 	geometry = RoomGeometry.new(Run.local_cells(room) if room.has("cells") else [Vector2i.ZERO])
@@ -54,8 +57,9 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 	build_floor()
 	build_walls()
 	var points: Array = room.get("lights", default_lights())
-	for point in points:
-		make_lantern(Vector3(float(point[0]), 0, float(point[1])))
+	var burning = FloorLight.lit_lanterns(points.size(), light, int(room.get("seed", 53)))
+	for i in points.size():
+		make_lantern(Vector3(float(points[i][0]), 0, float(points[i][1])), i in burning)
 	make_fill_lights()
 	var room_type: String = room.get("type", "combat")
 	if room_type in ["start", "treasure", "rest", "shop"] or preview:
@@ -337,26 +341,32 @@ func break_prop(id: String) -> void:
 	for navigator in navigators.values():
 		navigator.remove_blocker(id)
 
-func make_lantern(p: Vector3) -> void:
+## A dead lantern keeps its post and cold glass but gives no light or glow,
+## and never joins the fill-light pool.
+func make_lantern(p: Vector3, burning := true) -> void:
 	Geo.box(self, p + Vector3(0, .28, 0), Vector3(.85, .55, .85), Color("424d4c"))
 	Geo.box(self, p + Vector3(0, .61, 0), Vector3(1.0, .12, 1.0), Color("716f5d"))
 	Geo.cylinder(self, p + Vector3(0, 1.03, 0), .14, .8, Color("ac9061"))
-	Geo.box(self, p + Vector3(0, 1.6, 0), Vector3(.5, .55, .5), Color("f7bb6d"), 1.05)
+	if burning:
+		Geo.box(self, p + Vector3(0, 1.6, 0), Vector3(.5, .55, .5), Color("f7bb6d"), 1.05)
+	else:
+		Geo.box(self, p + Vector3(0, 1.6, 0), Vector3(.5, .55, .5), Color("3d3a35"))
 	Geo.box(self, p + Vector3(0, 1.94, 0), Vector3(.68, .12, .68), Color("826d51"))
 	for x in [-.22, .22]:
 		for z in [-.22, .22]:
 			var bar = Geo.box(self, p + Vector3(x, 1.6, z), Vector3(.035, .65, .035), Color("6e6654"))
 			bar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	if not burning: return
 	lantern_points.append(p)
-	Geo.halo(self, p + Vector3(0, .03, 0), 7.5, Color(1, .57, .17, .2))
-	var glow = Geo.halo(self, p + Vector3(0, 1.65, 0), 2.0, Color(1, .6, .2, .4))
+	Geo.halo(self, p + Vector3(0, .03, 0), 7.5, Color(1, .57, .17, .2 * light.glow))
+	var glow = Geo.halo(self, p + Vector3(0, 1.65, 0), 2.0, Color(1, .6, .2, .4 * light.glow))
 	glow.rotation_degrees.x = 58
 
 func make_fill_lights() -> void:
 	# Unshadowed fills preserve warm lantern pools in both quality modes. A
 	# small pool serves big rooms; it moves only when the selection changes.
 	for i in mini(MAX_ACTIVE_FILLS, lantern_points.size()):
-		lamps.append(Geo.light(self, lantern_points[i] + Vector3(0, 2.2, 0), Color("ffbc71"), .6, 7.0))
+		lamps.append(Geo.light(self, lantern_points[i] + Vector3(0, 2.2, 0), light.lamp_color, light.lamp, 7.0))
 		lamp_assignment.append(i)
 	# Keep one warm key shadow; the other lanterns are inexpensive fills. Four
 	# overlapping shadow lights still cost too much on mobile GLES3 renderers.
@@ -392,9 +402,9 @@ func update_light_selection(focus: Vector3) -> bool:
 func make_shadow_light(p: Vector3) -> void:
 	# A fixed inward-facing spotlight needs one map instead of six cube faces.
 	var shadow_light = SpotLight3D.new()
-	shadow_light.light_color = Color("ffbc71")
+	shadow_light.light_color = light.lamp_color
 	shadow_light.light_cull_mask = 1
-	shadow_light.light_energy = 1.5
+	shadow_light.light_energy = light.shadow
 	shadow_light.spot_range = 13.0
 	shadow_light.spot_angle = 58.0
 	shadow_light.spot_angle_attenuation = 1.5
@@ -487,6 +497,13 @@ func add_ambient_emitters() -> void:
 					dusty += 1
 
 ## Lazily built navigation per actor clearance class.
+## Something solid placed after the room was built (the stair, a stairwell):
+## spawn points and paths respect it from now on.
+func add_obstacle(id: String, at: Vector2, radius: float) -> void:
+	obstacles.append({"id": id, "position": Vector3(at.x, 0, at.y), "radius": radius,
+		"rect": Rect2(at - Vector2.ONE * radius, Vector2.ONE * radius * 2.0)})
+	navigators.clear()
+
 func navigation(clearance := .5) -> RoomNavigation:
 	var key = snappedf(clearance, .05)
 	if not navigators.has(key):
@@ -534,7 +551,7 @@ func _process(delta: float) -> void:
 	time += delta
 	apply_lighting_quality()
 	for i in lamps.size():
-		lamps[i].light_energy = .6 + sin(time * 3.1 + i * 2.4) * .025 + sin(time * 7.2 + i) * .012
+		lamps[i].light_energy = light.lamp * (1.0 + sin(time * 3.1 + i * 2.4) * .042 + sin(time * 7.2 + i) * .02)
 	for i in cloths.size():
 		cloths[i].rotation.x = sin(time * 1.3 + i * 1.7) * .09
 	if ember_mesh:

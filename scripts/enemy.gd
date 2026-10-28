@@ -66,10 +66,14 @@ func setup(owner_game: Node3D, type: String, id: int) -> void:
 	add_child(shape)
 	visual = Node3D.new()
 	add_child(visual)
+	# Foes stay readable on the dark lower floors: a faint glow of their own.
+	var light = FloorLight.profile(Run.floor_number)
+	var body: MeshInstance3D
 	if kind in ["brute", "boss", "charger"]:
-		Geo.box(visual, Vector3(0, radius * 1.2, 0), Vector3(radius * 1.8, radius * 2.2, radius * 1.8), color)
+		body = Geo.box(visual, Vector3(0, radius * 1.2, 0), Vector3(radius * 1.8, radius * 2.2, radius * 1.8), color, light.foe_body)
 	else:
-		Geo.sphere(visual, Vector3(0, radius * 1.1, 0), radius, color)
+		body = Geo.sphere(visual, Vector3(0, radius * 1.1, 0), radius, color, light.foe_body)
+	body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	for x in [-.12, .12]:
 		Geo.box(visual, Vector3(x * radius * 2.2, radius * 1.5, -radius * .95), Vector3(.07, .1, .04) * (1.6 if boss else 1.0), Color("ffb9a3"), 1.5)
 	if boss:
@@ -77,7 +81,7 @@ func setup(owner_game: Node3D, type: String, id: int) -> void:
 		Geo.sphere(visual, Vector3(0, 2.75, 0), .34, Color("ffcb7d"), 1.5)
 		Geo.light(visual, Vector3(0, 2.5, 0), Color("e69955"), 1.2, 5.0)
 		Geo.ring(self, Vector3(0, .035, 0), 1.3, Color("b08361"), .055)
-	Geo.halo(self, Vector3(0, .022, 0), radius * 3.8, Color(color.r, color.g, color.b, .09))
+	Geo.halo(self, Vector3(0, .022, 0), radius * 3.8, Color(color.r, color.g, color.b, light.foe_glow))
 	timer = 1.0 + float(entity_id % 5) * .23
 
 func place(at: Vector3) -> void:

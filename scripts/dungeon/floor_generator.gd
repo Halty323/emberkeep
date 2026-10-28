@@ -110,7 +110,13 @@ static func reserved_zones(floor_data: Dictionary, room: Dictionary) -> Array:
 		var size = Vector2(4.2, 3.2) if direction.x != 0 else Vector2(3.2, 4.2)
 		zones.append({"kind": "door", "rect": Rect2(inward - size / 2, size)})
 		zones.append({"kind": "door", "circle": RoomGeometry.entry_point(cell, direction), "radius": 2.0})
+	for key in ["stairs", "stairwell"]:
+		if room.has(key): zones.append({"kind": "stairs", "circle": vec2(room[key]), "radius": Staircase.CLEARANCE})
 	return zones
+
+static func prop_rect(prop: Dictionary) -> Rect2:
+	var size = vec2(prop.size)
+	return Rect2(vec2(prop.position) - size / 2.0, size)
 
 static func vec2(value) -> Vector2:
 	return Vector2(float(value[0]), float(value[1]))
@@ -194,6 +200,12 @@ static func dress_floor(floor_data: Dictionary, seed_value: int, floor_number: i
 		if room.type in ["combat", "boss"]:
 			for point in pillar_points(cells, int(room.seed), vec2(room.pedestal)):
 				props.append({"id": "%s:p%d" % [id, props.size()], "kind": "pillar", "position": point_array(point), "rotation": 0, "size": [1.3, 1.3]})
+		# The way up: the boss room's stair, and the stairwell a floor opens with.
+		var stair_key = "stairs" if room.type == "boss" else ("stairwell" if room.type == "start" and floor_number > 1 else "")
+		if stair_key != "":
+			var spot = Staircase.find_spot(geometry, zones, vec2(room.pedestal), props.map(prop_rect))
+			room[stair_key] = point_array(spot)
+			zones.append({"kind": "stairs", "circle": spot, "radius": Staircase.CLEARANCE})
 		var mount_limit = MOUNT_ROOMS.get(room.type, 0)
 		if room.type == "secret" and room.get("variant", "") != "gallery":
 			mount_limit = 0

@@ -74,6 +74,44 @@ func capture_render_scale(game, run, output: String) -> int:
 	print("RENDER_SCALE hud_mean_difference=", difference, " player_offset=", player_full.distance_to(player_half))
 	return failures
 
+## The tower brightens as it is climbed: the same room on floors 1-3, and a
+## foe in the dark cellar still standing out from the floor around it.
+func capture_floors(game, run, output: String) -> int:
+	var failures = 0
+	var means: Array = []
+	var room_id: String = run.current_room
+	for floor in [1, 2, 3]:
+		run.floor_number = floor
+		run.current_room = room_id
+		game.enter_room(Vector3(0, 0, 2.0))
+		game.paused = true
+		game.ui.toast_time = 0
+		var foe = game.spawn_enemy(Vector3(-3.5, 0, -1.5), "mote")
+		var image = await save(output.path_join("floor-%d.png" % floor))
+		var total = 0.0
+		var count = 0
+		for y in range(int(image.get_height() * .28), int(image.get_height() * .94), 6):
+			for x in range(0, image.get_width(), 6):
+				total += image.get_pixel(x, y).get_luminance()
+				count += 1
+		means.append(total / count)
+		if floor == 1:
+			var body = screen_pixel(game, image, foe.global_position + Vector3(0, foe.radius * 1.1, 0)).get_luminance()
+			var ground = screen_pixel(game, image, foe.global_position + Vector3(0, 0, 2.6)).get_luminance()
+			print("FLOOR_LIGHT cellar foe=", body, " floor_beside=", ground)
+			if body < ground * 1.6 or body < .08:
+				push_error("FAIL: a foe in the cellar does not stand out from the dark floor.")
+				failures += 1
+	print("FLOOR_LIGHT mean_luminance=", means)
+	if not (means[0] < means[1] * .6 and means[2] > means[1] * 1.25):
+		push_error("FAIL: the tower does not brighten floor by floor (%s)." % str(means))
+		failures += 1
+	run.floor_number = 2
+	run.current_room = room_id
+	game.enter_room(Vector3(0, 0, 2.0))
+	game.paused = true
+	return failures
+
 ## A wide wall painting and a tall panel keep their proportions in place.
 func capture_paintings(game, run, output: String) -> int:
 	var failures = 0
@@ -147,6 +185,7 @@ func capture() -> void:
 			calls += Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
 		print("LIGHTING_RENDER shadows=", setting, " frame_ms=", float(Time.get_ticks_usec() - start) / 30000.0,
 			" draw_calls=", calls / 30.0, " image=", path)
+	failures += await capture_floors(game, run, output)
 	failures += await capture_l_room(game, run, output)
 	failures += await capture_render_scale(game, run, output)
 	failures += await capture_paintings(game, run, output)

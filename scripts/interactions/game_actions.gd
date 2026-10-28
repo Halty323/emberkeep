@@ -25,6 +25,8 @@ func perform(command: Dictionary, peer_id := 1) -> Dictionary:
 		return result(false, "no active run")
 	if peer_id != game.player.owner_peer_id:
 		return result(false, "not your character")
+	if game.in_transition():
+		return result(false, "between rooms")
 	if not Run.remember_event(str(command.get("event", ""))):
 		return {"ok": false, "reason": "duplicate", "duplicate": true}
 	match command.get("type", ""):
