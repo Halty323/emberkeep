@@ -18,6 +18,8 @@ const TOAST_RECT := Rect2(400, 136, 480, 92)
 const MINIMAP_RECT := Rect2(1012, 100, 244, 192)
 const MINIMAP_AREA := Rect2(1030, 150, 208, 134)
 const FULL_MAP_AREA := Rect2(180, 150, 920, 420)
+# A newly walked cell is scribbled onto the map over this long.
+const SCRIBBLE_TIME := .75
 const REWARD_WIDTH := 340.0
 const REWARD_GAP := 26.0
 const SETTINGS_PAGES := [["display", "Display"], ["graphics", "Graphics"], ["controls", "Sound & Controls"]]
@@ -65,6 +67,8 @@ var journal_page = 0
 var elapsed_ui = 0.0
 var secret_taps = 0
 var secret_key_buffer = ""
+# Floor cell -> the moment it was uncovered, while its scribble is still drawing.
+var scribbles: Dictionary = {}
 var secret_field: LineEdit
 var secret_feedback = ""
 var settings_page = "display"
@@ -582,6 +586,8 @@ func _process(delta: float) -> void:
 		fps_frames = 0
 		fps_time = 0.0
 	toast_time = maxf(0, toast_time - delta)
+	for cell in scribbles.keys():
+		if elapsed_ui - scribbles[cell] > SCRIBBLE_TIME: scribbles.erase(cell)
 	for number in floating_numbers:
 		number.age += delta
 	floating_numbers = floating_numbers.filter(func(n): return n.age < .65)
@@ -929,16 +935,26 @@ func draw_floor_map(area: Rect2, focus: Vector2, cell_size: float) -> void:
 		if area.has_point(start) and area.has_point(end):
 			draw_line(start, end, Color("9d9878"), maxf(2.0, cell_size * .12), true)
 	for id in known:
-		var cells = FloorGenerator.room_cells(Run.rooms[id])
+		var data: Dictionary = Run.rooms[id]
+		var cells = FloorGenerator.room_cells(data)
 		var color = map_color(id)
 		for cell in cells:
 			var low = Vector2(inset if not cells.has(cell + Vector2i.LEFT) else 0.0, inset if not cells.has(cell + Vector2i.UP) else 0.0)
 			var high = Vector2(inset if not cells.has(cell + Vector2i.RIGHT) else 0.0, inset if not cells.has(cell + Vector2i.DOWN) else 0.0)
 			var rect = Rect2(origin + (Vector2(cell) - Vector2(.5, .5)) * cell_size + low, Vector2.ONE * cell_size - low - high)
-			var shadow = Rect2(rect.position + Vector2(0, 2), rect.size).intersection(area)
-			if shadow.has_area(): draw_rect(shadow, Color("262e28"))
-			var shown = rect.intersection(area)
-			if shown.has_area(): draw_rect(shown, color)
+			if Run.is_seen(data, cell):
+				var shadow = Rect2(rect.position + Vector2(0, 2), rect.size).intersection(area)
+				if shadow.has_area(): draw_rect(shadow, Color("262e28"))
+				draw_scribbled(rect, area, cell, color, cell_size)
+			else:
+				# Known but not yet walked: a faint pencil outline, merged across
+				# the room's own unexplored seams.
+				for direction in RoomGeometry.DIRECTIONS:
+					var next: Vector2i = cell + direction
+					if cells.has(next) and not Run.is_seen(data, next): continue
+					var edge = ghost_edge(rect, direction)
+					if area.has_point(edge[0]) and area.has_point(edge[1]):
+						draw_dashed_line(edge[0], edge[1], Color(color, .5), maxf(1.0, cell_size * .05), maxf(2.5, cell_size * .12), true, true)
 		if id == Run.current_room:
 			# One outline around the whole footprint, drawn on exposed edges only.
 			var reach = cell_size * .5 - inset + 2.5
@@ -952,6 +968,81 @@ func draw_floor_map(area: Rect2, focus: Vector2, cell_size: float) -> void:
 					var end = mid + Vector2(across) * (cell_size * .5 if cells.has(cell + across) else reach)
 					if area.has_point(start) and area.has_point(end):
 						draw_line(start, end, GOLD, 1.5, true)
+
+func scribble(cell: Vector2i) -> void:
+	scribbles[cell] = elapsed_ui
+
+## How far a cell's scribble has been drawn (eased); old cells are complete.
+func scribble_progress(cell: Vector2i) -> float:
+	if not scribbles.has(cell): return 1.0
+	var t = clampf((elapsed_ui - scribbles[cell]) / SCRIBBLE_TIME, 0.0, 1.0)
+	return 1.0 - pow(1.0 - t, 2.0)
+
+## An explored cell: a soft wash under a crayon's zig-zag, drawn only as far
+## as its scribble has got. The trail is all there is; no crayon is shown.
+func draw_scribbled(rect: Rect2, area: Rect2, cell: Vector2i, color: Color, cell_size: float) -> void:
+	var shown = rect.intersection(area)
+	if not shown.has_area(): return
+	var progress = scribble_progress(cell)
+	draw_rect(shown, Color(color.darkened(.5), .45 * progress))
+	var inner = rect.grow(-cell_size * .08)
+	var points = scribble_path(inner, cell, Run.floor_number)
+	for i in points.size(): points[i] = points[i].clamp(area.position, area.end)
+	var drawn = partial_path(points, progress)
+	# Narrower than their spacing, so the zig-zag trail stays visible.
+	if drawn.size() >= 2: draw_polyline(drawn, Color(color, .85), scribble_spacing(inner) * .6, true)
+
+static func ghost_edge(rect: Rect2, direction: Vector2i) -> Array:
+	match direction:
+		Vector2i.UP: return [rect.position, Vector2(rect.end.x, rect.position.y)]
+		Vector2i.DOWN: return [Vector2(rect.position.x, rect.end.y), rect.end]
+		Vector2i.LEFT: return [rect.position, Vector2(rect.position.x, rect.end.y)]
+	return [Vector2(rect.end.x, rect.position.y), rect.end]
+
+## Strokes sit a fixed few pixels apart, so the minimap and the full map
+## scribble with the same density.
+static func scribble_spacing(rect: Rect2) -> float:
+	return rect.size.x / clampi(roundi(rect.size.x / 2.6), 4, 16)
+
+## A crayon's zig-zag fill: slanted strokes across the cell and back again,
+## half a stroke over, a little loose at the turns. Always the same per cell.
+static func scribble_path(rect: Rect2, cell: Vector2i, floor_number: int) -> PackedVector2Array:
+	var rng = RandomNumberGenerator.new()
+	rng.seed = hash([cell.x, cell.y, floor_number])
+	var spacing = scribble_spacing(rect)
+	var strokes = roundi(rect.size.x / spacing)
+	var points = PackedVector2Array()
+	for back in [0, 1]:
+		for k in strokes + 1:
+			var i = k if back == 0 else strokes - k
+			var x = rect.position.x + (i + .5 * back) * spacing + rng.randf_range(-.15, .15) * spacing
+			var turn = rng.randf_range(0.0, .06) * rect.size.y
+			var top = (i + back) % 2 == 0
+			var y = rect.position.y + turn if top else rect.end.y - turn
+			# Swing round in a short hook rather than a sharp point.
+			var lean = (1.0 if back == 0 else -1.0) * spacing * .3
+			var dip = rect.size.y * .07 * (1.0 if top else -1.0)
+			points.append(Vector2(clampf(x - lean, rect.position.x, rect.end.x), y + dip))
+			points.append(Vector2(clampf(x, rect.position.x, rect.end.x), y))
+			points.append(Vector2(clampf(x + lean, rect.position.x, rect.end.x), y + dip))
+	return points
+
+## The first `progress` of a path's length, ending part-way along a segment.
+static func partial_path(points: PackedVector2Array, progress: float) -> PackedVector2Array:
+	if progress >= 1.0 or points.size() < 2: return points
+	var total = 0.0
+	for i in range(1, points.size()): total += points[i - 1].distance_to(points[i])
+	var left = total * maxf(progress, 0.0)
+	var out = PackedVector2Array([points[0]])
+	for i in range(1, points.size()):
+		var length = points[i - 1].distance_to(points[i])
+		if left >= length:
+			out.append(points[i])
+			left -= length
+		else:
+			if length > 0.0: out.append(points[i - 1].lerp(points[i], left / length))
+			break
+	return out
 
 func draw_full_map() -> void:
 	hearth_emblem(Vector2(640, 96), 11)

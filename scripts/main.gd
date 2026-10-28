@@ -276,6 +276,7 @@ func _physics_process(delta: float) -> void:
 		if is_instance_valid(pickup): pickup.update_sim(delta)
 	pickups = pickups.filter(func(p): return is_instance_valid(p) and not p.collected)
 	if not Run.active: return
+	track_exploration()
 	if enemies.is_empty() and not room.open:
 		clear_room()
 	update_interaction()
@@ -832,6 +833,18 @@ func pickup_node(drop_id: String) -> DungeonPickup:
 
 func pickup_feedback(at: Vector3, definition: Dictionary) -> void:
 	Effects.play("pickup", at + Vector3(0, .35, 0), Color(definition.color))
+
+## The map remembers each floor cell the first time it is walked into and
+## scribbles it in. A safe room keeps it at once; in a fight, the room's own
+## save at the end keeps it.
+func track_exploration() -> void:
+	var local = room.geometry.cell_at(Vector2(player.position.x, player.position.z))
+	if not room.geometry.cell_set.has(local): return
+	var cell: Vector2i = local + Run.room_anchor(Run.rooms[Run.current_room])
+	if not Run.uncover(cell): return
+	ui.scribble(cell)
+	Audio.play_sound("scribble", .92 + float(absi(hash(cell)) % 17) / 100.0)
+	if room.open: Run.save_run()
 
 ## The room's stair (or stairwell) spot. Rooms generated before the stairs
 ## existed find one now, clear of their saved furniture, and keep it.
