@@ -35,11 +35,16 @@ var pedestal := Vector3.ZERO
 var props: Dictionary = {}
 var occluders: Array = []
 var detail_meshes: Array = []
+var effects: EffectsPool
+var cloths: Array = []
+var candle_points: Array[Vector3] = []
 
 func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 	game = owner_game
 	data = room
 	decor_rng.seed = int(room.get("seed", 53))
+	effects = EffectsPool.new()
+	add_child(effects)
 	geometry = RoomGeometry.new(Run.local_cells(room) if room.has("cells") else [Vector2i.ZERO])
 	geometry.apply_shader_mask()
 	if room.has("pedestal"):
@@ -69,6 +74,7 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 		obstacles.append({"position": Vector3(at.x, 0, at.y), "radius": .7, "rect": Rect2(at - Vector2(.5, .33), Vector2(1.0, .66))})
 	make_candles()
 	make_embers()
+	add_ambient_emitters()
 	set_open(true)
 	apply_lighting_quality()
 
@@ -291,6 +297,8 @@ func build_props(records: Array) -> void:
 			"health": float(definition.get("breakable", {}).get("health", 0))}
 		if definition.recipe == "pillar":
 			make_candle(Vector3(at.x, 1.32, at.y), .6)
+		var cloth = built.node.get_node_or_null("Cloth")
+		if cloth: cloths.append(cloth)
 		if definition.get("solid", false):
 			var size = Vector2(float(record.size[0]), float(record.size[1]))
 			obstacles.append({"id": record.id, "position": Vector3(at.x, 0, at.y), "radius": maxf(size.x, size.y) * .5 + .4,
@@ -405,6 +413,10 @@ func place_shadow_light(shadow_light: SpotLight3D, p: Vector3) -> void:
 func make_candle(p: Vector3, height: float) -> void:
 	var wax = Geo.cylinder(self, p + Vector3(0, height / 2, 0), .12, height, Color("c9ad7e"))
 	wax.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# A little pool of melted wax at the base.
+	var pool = Geo.cylinder(self, p + Vector3(0, .01, 0), .2, .02, Color("d9c08f"))
+	pool.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	candle_points.append(p + Vector3(0, height + .2, 0))
 	var flame = Geo.sphere(self, p + Vector3(0, height + .1, 0), .11, Color("ffe0a1"), 2.0)
 	flame.scale = Vector3(.7, 1.5, .7)
 	Geo.halo(self, p + Vector3(0, .025, 0), 2.3, Color(1, .5, .13, .14))
@@ -436,7 +448,10 @@ func make_embers() -> void:
 	mesh.radial_segments = 4
 	mesh.rings = 3
 	mm.mesh = mesh
-	var count = 40
+	# Drifting embers spend part of the room's ambient budget; the rest is
+	# left to the pool's emitters.
+	var count = int(Settings.effect_budget("ambient") * .55)
+	effects.configure(count)
 	mm.instance_count = count
 	for i in count:
 		var floor_point = geometry.random_point(decor_rng, .2)
@@ -445,6 +460,21 @@ func make_embers() -> void:
 	ember_mesh.material_override = Geo.material(Color("efbc78"), 1.2)
 	ember_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(ember_mesh)
+
+## A few deliberate atmosphere sources rather than every object at once.
+func add_ambient_emitters() -> void:
+	for i in range(0, candle_points.size(), 4):
+		effects.add_emitter("candle_wisp", candle_points[i], .05)
+	for i in mini(2, lantern_points.size()):
+		effects.add_emitter("firefly", lantern_points[i * 2 % lantern_points.size()] + Vector3(0, 1.6, 0), .9)
+	var dusty = 0
+	for entry in props.values():
+		match entry.definition.recipe:
+			"brazier": effects.add_emitter("brazier_spark", entry.node.position + Vector3(0, 1.1, 0), .12)
+			"bookcase", "wall_shelf", "cupboard":
+				if dusty < 3:
+					effects.add_emitter("shelf_dust", entry.node.position + Vector3(0, 1.6, 0), .6)
+					dusty += 1
 
 ## Lazily built navigation per actor clearance class.
 func navigation(clearance := .5) -> RoomNavigation:
@@ -495,6 +525,8 @@ func _process(delta: float) -> void:
 	apply_lighting_quality()
 	for i in lamps.size():
 		lamps[i].light_energy = .6 + sin(time * 3.1 + i * 2.4) * .025 + sin(time * 7.2 + i) * .012
+	for i in cloths.size():
+		cloths[i].rotation.x = sin(time * 1.3 + i * 1.7) * .09
 	if ember_mesh:
 		for i in ember_origins.size():
 			var p: Vector3 = ember_origins[i]

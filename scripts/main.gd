@@ -344,7 +344,9 @@ func start_run(weapon: String, seed_input: int, is_daily: bool) -> void:
 	paused = false
 	camera.h_offset = 0
 	camera.size = CAMERA_GAME_SIZE
+	# Scene entity ids restart with each run, so a seed plays out identically.
 	sim_time = 0
+	entity_counter = 10
 	enter_room(Vector3(0, 0, 2.0))
 	ui.show_screen("play")
 	ui.notify("A little light wakes up", "Clear rooms. Find relics. Follow the hearth.")
@@ -543,7 +545,7 @@ func pickup_node(drop_id: String) -> DungeonPickup:
 	return null
 
 func pickup_feedback(at: Vector3, definition: Dictionary) -> void:
-	Effects.burst(scene_root, at + Vector3(0, .35, 0), Color(definition.color), 4, .45)
+	Effects.play("pickup", at + Vector3(0, .35, 0), Color(definition.color))
 
 func clear_room() -> void:
 	room.set_open(true)
@@ -740,7 +742,7 @@ func chest_opened(chest: Dictionary) -> void:
 	interactions.unregister("chest:" + chest.id)
 	if chest_views.has(chest.id): ItemViews.set_open(chest_views[chest.id])
 	var at = Vector3(float(chest.position[0]), .7, float(chest.position[1]))
-	Effects.burst(scene_root, at, Color("f1cc8a"), 9, .9)
+	Effects.play("chest_open", at)
 	Audio.play_sound("item", .9)
 
 func spawn_bomb_view(record: Dictionary) -> void:
@@ -811,7 +813,7 @@ func destroy_prop(room_id: String, record: Dictionary, live: bool) -> void:
 			Run.add_drop(room_id, drops[i].def, Vector2(point.x, point.z))
 	if live:
 		room.break_prop(record.id)
-		Effects.burst(scene_root, at + Vector3(0, .5, 0), Color("a08462"), 8, .9)
+		Effects.play("prop_dust", at + Vector3(0, .5, 0))
 		Audio.play_sound("hit", .7)
 		if drops.any(func(drop): return drop.has("active")): refresh_items()
 

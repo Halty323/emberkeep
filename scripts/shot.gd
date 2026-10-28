@@ -91,7 +91,7 @@ func update_sim(delta: float) -> void:
 			if not hit.is_empty():
 				global_position = hit.position + normal * .12
 		else:
-			Effects.burst(game, global_position, tint, 2, .35)
+			Effects.play("impact", global_position, tint)
 			remove()
 			return
 	else:

@@ -115,7 +115,10 @@ func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting:
 	move_and_slide()
 	var kept = geometry.recover(Vector2(last_valid.x, last_valid.z), Vector2(position.x, position.z), ROOM_MARGIN)
 	position = Vector3(kept.x, 0, kept.y)
+	var stride = floori(walk_time / PI)
 	walk_time += delta * velocity.length() * 2.7
+	if floori(walk_time / PI) != stride and dash_time <= 0:
+		Effects.play("footstep", global_position + Vector3(0, .05, 0))
 	visual.position.y = absf(sin(walk_time)) * .055
 	visual.rotation.y = lerp_angle(visual.rotation.y, atan2(-aim_direction.x, -aim_direction.z), delta * 18)
 	visual.rotation.z = -direction.x * .07
@@ -151,6 +154,7 @@ func fire() -> void:
 	if stats.side_shot > 0:
 		for side in [-1, 1]:
 			game.spawn_shot(global_position + Vector3(0, .65, 0), aim_direction.rotated(Vector3.UP, side * PI / 2), damage * .75, weapon.speed * stats.shot_speed, stats, Color(weapon.color), true)
+	Effects.play("muzzle", global_position + Vector3(0, .7, 0) + aim_direction * .75, Color(weapon.color), -1, 1.0, aim_direction)
 	fire_cooldown = maxf(.07, weapon.cooldown / (stats.rate + (stats.kill_haste if haste_time > 0 else 0)))
 	recoil = .17
 	Audio.play_sound("shoot", 1.0 + float(count) * .015)
@@ -164,6 +168,7 @@ func dash() -> void:
 	invulnerability = .32
 	Audio.play_sound("dash")
 	Effects.ring_burst(game, global_position, Color("efd1a0"), 1.1)
+	Effects.play("dash_dust", global_position + Vector3(0, .1, 0))
 	if Run.stats.dash_nova > 0:
 		var effects = Run.projectile_stats()
 		effects.chill += 1
@@ -182,7 +187,7 @@ func hurt(amount: float, source: Vector3) -> void:
 			Run.wards -= 1
 			Run.changed.emit()
 		invulnerability = .55
-		Effects.ring_burst(game, global_position, Color("a3dacf"), 1.8)
+		Effects.play("ward", global_position + Vector3(0, .6, 0))
 		Audio.play_sound("coin", .7)
 		return
 	Run.hp = maxf(0, Run.hp - amount)
@@ -190,7 +195,7 @@ func hurt(amount: float, source: Vector3) -> void:
 	game.shake = .22
 	game.hurt_flash = .75
 	Audio.play_sound("hurt")
-	Effects.burst(game, global_position + Vector3.UP * .6, Color("ef9f7e"), 8)
+	Effects.play("hit_spark", global_position + Vector3.UP * .6, Color("ef9f7e"), 8)
 	if Run.stats.thorns > 0:
 		game.blast(global_position, 2.5, Run.stats.thorns * 3, true, null)
 	velocity += (global_position - source).normalized() * 5

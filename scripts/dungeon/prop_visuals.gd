@@ -112,6 +112,14 @@ static func build(room: Node3D, record: Dictionary, definition: Dictionary, deta
 			Geo.box(node, Vector3(0, h - .3, 0), Vector3(w, .06, d), LIGHT_WOOD)
 			for x in [-1, 1]:
 				Geo.box(node, Vector3(x * (w / 2 - .15), h - .42, -d / 2 + .06), Vector3(.05, .22, .12), DARK_WOOD)
+			if detail >= 1:
+				# A strip of cloth hangs from the shelf and stirs gently.
+				var cloth = Node3D.new()
+				cloth.name = "Cloth"
+				node.add_child(cloth)
+				cloth.position = Vector3(w / 2 - .35, h - .33, d / 2 - .02)
+				Geo.box(cloth, Vector3(0, -.28, 0), Vector3(.32, .56, .02), Color("7a4a46"))
+				Geo.box(cloth, Vector3(0, -.57, 0), Vector3(.32, .04, .025), Color("c49a5a"))
 			for i in [2, 4, 6][detail]:
 				var bottle = rng.randf() < .5
 				var scale = Vector3(.1, rng.randf_range(.18, .3), .1) if bottle else Vector3(rng.randf_range(.06, .1), rng.randf_range(.2, .3), .2)

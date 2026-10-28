@@ -15,7 +15,9 @@ var errors := PackedStringArray()
 const RARITY_COLORS = {"common": Color("c6d3bf"), "uncommon": Color("96d9ba"), "rare": Color("b9b2e9"), "mythic": Color("f1c579")}
 const CATALOG_PATH := "res://assets/data.json"
 const FAMILY_DIR := "res://content/"
-const FAMILIES := ["rooms", "furniture", "pickups", "actives", "drop_tables"]
+const FAMILIES := ["rooms", "furniture", "pickups", "actives", "drop_tables", "effects"]
+const EFFECT_CHANNELS := ["important", "atmosphere", "ambient"]
+const EFFECT_SPREADS := ["sphere", "up", "ring", "forward"]
 # Extra record lists that live in a family's file.
 const EXTRA_LISTS := {"furniture": ["layouts"]}
 const PROP_RECIPES := ["pillar", "table", "chair", "bookcase", "bench", "cupboard", "crate", "barrel", "jar", "brazier",
@@ -117,6 +119,8 @@ func validate() -> PackedStringArray:
 		problems.append_array(validate_layout(layout))
 	for pickup in families.get("pickups", []):
 		problems.append_array(validate_pickup(pickup))
+	for effect in families.get("effects", []):
+		problems.append_array(validate_effect(effect))
 	for active in families.get("actives", []):
 		problems.append_array(validate_active(active))
 	for table in families.get("drop_tables", []):
@@ -156,6 +160,22 @@ func validate_layout(layout: Dictionary) -> PackedStringArray:
 		if not count is Array or count.size() != 2 or count[0] < 0 or count[0] > count[1]: problems.append("layout %s has an impossible count" % layout.id)
 		for companion in piece.get("with", []):
 			if not by_id.get("furniture", {}).has(companion): problems.append("layout %s names missing companion '%s'" % [layout.id, companion])
+	return problems
+
+static func valid_range(value) -> bool:
+	return value is Array and value.size() == 2 and is_number(value[0]) and is_number(value[1]) and value[0] >= 0 and value[0] <= value[1]
+
+func validate_effect(effect: Dictionary) -> PackedStringArray:
+	var problems := PackedStringArray()
+	if effect.get("channel") not in EFFECT_CHANNELS: problems.append("effect %s has unknown channel '%s'" % [effect.id, effect.get("channel")])
+	if effect.get("spread") not in EFFECT_SPREADS: problems.append("effect %s has unknown spread '%s'" % [effect.id, effect.get("spread")])
+	if not is_number(effect.get("count")) or effect.count < 1 or effect.count > 32: problems.append("effect %s has an impossible particle count" % effect.id)
+	for key in ["speed", "lifetime", "size"]:
+		if not valid_range(effect.get(key)): problems.append("effect %s has an invalid %s range" % [effect.id, key])
+	if effect.has("lifetime") and valid_range(effect.lifetime) and (effect.lifetime[0] <= 0 or effect.lifetime[1] > 6): problems.append("effect %s lives too briefly or too long" % effect.id)
+	if effect.get("color") != "inherit" and not Color.html_is_valid(str(effect.get("color", ""))): problems.append("effect %s has an invalid color" % effect.id)
+	if effect.get("channel") == "ambient" and (not is_number(effect.get("rate")) or effect.rate <= 0): problems.append("ambient effect %s needs an emission rate" % effect.id)
+	if effect.has("mark") and (not is_number(effect.mark.get("size")) or not is_number(effect.mark.get("lifetime")) or effect.mark.lifetime > 10): problems.append("effect %s has an invalid floor mark" % effect.id)
 	return problems
 
 func validate_pickup(pickup: Dictionary) -> PackedStringArray:
