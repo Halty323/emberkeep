@@ -497,6 +497,13 @@ func add_ambient_emitters() -> void:
 					dusty += 1
 
 ## Lazily built navigation per actor clearance class.
+## Something solid placed after the room was built (the stair, a stairwell):
+## spawn points and paths respect it from now on.
+func add_obstacle(id: String, at: Vector2, radius: float) -> void:
+	obstacles.append({"id": id, "position": Vector3(at.x, 0, at.y), "radius": radius,
+		"rect": Rect2(at - Vector2.ONE * radius, Vector2.ONE * radius * 2.0)})
+	navigators.clear()
+
 func navigation(clearance := .5) -> RoomNavigation:
 	var key = snappedf(clearance, .05)
 	if not navigators.has(key):

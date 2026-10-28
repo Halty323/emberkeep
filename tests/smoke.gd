@@ -181,7 +181,8 @@ func test_all() -> void:
 	game.chosen_reward_shop = false
 	game.choose_offer(0)
 	game.enter_room(Vector3(0, 0, 4))
-	check(game.marker.get_meta("kind") == "exit", "claimed boss reward becomes floor exit")
+	check(game.marker == null and is_instance_valid(game.stairs) and game.stairs.built and game.interactions.targets.get("stairs", {}).get("kind", "") == "exit",
+		"a claimed boss reward leaves the standing stair as the floor exit")
 	# Independent multitouch streams do not cancel one another.
 	game.ui.show_screen("play")
 	var finger_left := InputEventScreenTouch.new()

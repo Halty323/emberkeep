@@ -44,6 +44,8 @@ func test_dungeon() -> void:
 	test_generation()
 	await test_scenes()
 	await test_transition()
+	test_stair_spots()
+	await test_stairs()
 	await test_room_validation()
 	await test_legacy_migration()
 	print("EMBERKEEP DUNGEON TEST RESULT: %d checks, %d failures" % [checks, failures])
@@ -445,6 +447,157 @@ func test_transition() -> void:
 	game.return_to_title()
 	await process_frame
 	check(not game.in_transition() and game.previous_view == null and not is_instance_valid(leaving), "quitting mid-slide cleans up both rooms")
+	game.queue_free()
+	await process_frame
+
+## Euclidean distance from a point to a rectangle (zero inside it).
+func rect_distance(rect: Rect2, point: Vector2) -> float:
+	return point.distance_to(Vector2(clampf(point.x, rect.position.x, rect.end.x), clampf(point.y, rect.position.y, rect.end.y)))
+
+## Every boss room keeps a clear spot for its stair, every later floor's
+## start room one for its stairwell, and the solid stair never cuts a room off.
+func test_stair_spots() -> void:
+	var Stairs = load("res://scripts/dungeon/staircase.gd")
+	var bad = 0
+	var cut_off = 0
+	var stairs_seen = 0
+	var wells_seen = 0
+	var cellar_wells = 0
+	for seed_value in range(1, 61):
+		for floor_number in [1, 2, 3]:
+			var floor_data = Generator.generate(seed_value * 977, floor_number)
+			for id in floor_data.rooms:
+				var room: Dictionary = floor_data.rooms[id]
+				var key = "stairs" if room.type == "boss" else ("stairwell" if room.type == "start" else "")
+				if key == "": continue
+				if not room.has(key):
+					if room.type == "boss" or floor_number > 1: bad += 1
+					continue
+				if floor_number == 1 and key == "stairwell": cellar_wells += 1
+				if key == "stairs": stairs_seen += 1
+				else: wells_seen += 1
+				var spot = Generator.vec2(room[key])
+				var anchor = Generator.vec(room.anchor)
+				var geometry = Geometry.new(Generator.room_cells(room).map(func(cell): return cell - anchor))
+				var zones = Generator.reserved_zones(floor_data, room).filter(func(zone): return zone.kind in ["door", "lantern"])
+				var props: Array = room.get("props", []).filter(func(prop): return prop.kind == "pillar" or catalog.record("furniture", prop.kind).get("solid", false))
+				if not geometry.contains(spot, Stairs.OUTER + .99) or Generator.in_zones(spot, zones, Stairs.OUTER + .39) \
+					or spot.distance_to(Generator.vec2(room.pedestal)) < Stairs.OUTER + 1.59 \
+					or props.any(func(prop): return rect_distance(Generator.prop_rect(prop), spot) < Stairs.CLEARANCE - .01):
+					bad += 1
+					continue
+				# With the stair solid, every doorway is still reachable from its foot.
+				var blockers = {"stairs": Rect2(spot - Vector2.ONE * Stairs.OUTER, Vector2.ONE * Stairs.OUTER * 2.0)}
+				for prop in props: blockers[prop.id] = Generator.prop_rect(prop)
+				var navigation = Navigation.new(geometry, .5, blockers)
+				var pedestal = Generator.vec2(room.pedestal)
+				var foot = spot + (pedestal - spot).normalized() * (Stairs.OUTER + .75)
+				for portal_id in room.portals:
+					var portal = floor_data.portals[portal_id]
+					var side = portal.a if portal.a.room == id else portal.b
+					var entry = Geometry.entry_point(Generator.vec(side.cell) - anchor, Generator.vec(side.dir))
+					if not navigation.reachable(foot, entry): cut_off += 1
+	check(bad == 0, "every boss room and later start room has a clear stair spot (%d bad)" % bad)
+	check(stairs_seen == 180 and wells_seen == 120 and cellar_wells == 0, "one stair per floor, a stairwell from floor 2 up, none in the cellar (%d, %d)" % [stairs_seen, wells_seen])
+	check(cut_off == 0, "the standing stair never cuts a doorway off (%d)" % cut_off)
+
+func boss_room_id() -> String:
+	for id in run.rooms:
+		if run.rooms[id].type == "boss": return id
+	return ""
+
+## The stair builds itself when the boss falls, stands when you come back,
+## and climbing it carries you up to the next floor's stairwell.
+func test_stairs() -> void:
+	var Stairs = load("res://scripts/dungeon/staircase.gd")
+	game = load("res://scenes/main.tscn").instantiate()
+	root.add_child(game)
+	current_scene = game
+	await process_frame
+	game.set_physics_process(false)
+	game.set_process(false)
+	game.start_run("candle", 51515, false)
+	var boss_id = boss_room_id()
+	run.current_room = boss_id
+	game.enter_room(Vector3(0, 0, 4))
+	check(not is_instance_valid(game.stairs), "no stair while the boss stands")
+	var spot = Generator.vec2(run.rooms[boss_id].stairs)
+	game.player.place(Vector3(spot.x + .3, 0, spot.y))
+	game.player.invulnerability = 999
+	game.get_boss().take_hit(100000, Vector3.ZERO)
+	# The killing blow's hitstop passes before the room clears.
+	var waited = 0
+	while not game.in_transition() and waited < 60:
+		step(1)
+		waited += 1
+	check(is_instance_valid(game.stairs) and not game.stairs.built and game.transition.get("kind", "") == "build", "the boss's fall starts the stair building")
+	check(not game.interactions.targets.has("stairs") and game.submit({"type": "place_bomb"}).get("reason", "") == "between rooms", "nothing to climb and nothing to do while it builds")
+	var ticks = 0
+	game.paused = true
+	step(30)
+	check(game.stairs.time < .05, "pausing holds the build")
+	game.paused = false
+	while game.in_transition() and ticks < 400:
+		step(1)
+		ticks += 1
+	check(absi(ticks - roundi(Stairs.BUILD_TIME * 60)) <= 1, "the stair takes %.1f s to build (%d ticks)" % [Stairs.BUILD_TIME, ticks])
+	check(game.stairs.built and game.interactions.targets.get("stairs", {}).get("kind", "") == "exit", "once built, the stair is the floor's exit")
+	var placed = true
+	for i in Stairs.STEPS:
+		var step_node: Node3D = game.stairs.steps[i]
+		placed = placed and step_node.visible and step_node.scale.is_equal_approx(Vector3.ONE) and is_equal_approx(step_node.position.y, Stairs.RISE * (i + 1))
+	check(placed, "every step settles into the spiral")
+	check(Vector2(game.player.position.x, game.player.position.z).distance_to(spot) >= Stairs.OUTER + .45, "whoever stood there was eased out of the way")
+	check(game.room.obstacles.any(func(o): return o.get("id", "") == "stairs"), "paths and spawns treat the stair as solid")
+	# It stands complete after leaving, reloading or coming back.
+	run.load_run()
+	game.enter_room(Vector3(0, 0, 4))
+	check(is_instance_valid(game.stairs) and game.stairs.built and not game.in_transition() and game.interactions.targets.has("stairs"), "a standing stair is there on return, already built")
+	# A room saved before stairs existed finds a clear spot and keeps it.
+	run.rooms[boss_id].erase("stairs")
+	game.enter_room(Vector3(0, 0, 4))
+	var found = Generator.vec2(run.rooms[boss_id].stairs)
+	check(not game.room.obstacles.filter(func(o): return o.get("id", "") != "stairs").any(func(o): return o.rect.grow(Stairs.CLEARANCE).has_point(found)),
+		"an older room's stair finds a spot clear of its furniture")
+	# Climbing: up the spiral into the light, then up the next floor's stairwell.
+	game.player.place(game.stairs.approach_point())
+	game.update_interaction()
+	check(game.interaction_text == "Climb to the next floor", "the stair offers the climb")
+	game.interact()
+	check(game.transition.get("kind", "") == "stairs" and game.interaction_text == "", "climbing hides the prompt")
+	var highest = 0.0
+	var climb_ticks = 0
+	var veil_max = 0.0
+	while game.transition.get("phase", "") == "climb" and climb_ticks < 400:
+		step(1)
+		climb_ticks += 1
+		if game.transition.get("phase", "") == "climb":
+			highest = maxf(highest, game.player.position.y)
+			veil_max = maxf(veil_max, game.light_veil.color.a)
+	check(highest > Stairs.RISE * Stairs.STEPS * .8 and veil_max > .9, "the figure climbs high into light that fills the view (%.1f)" % highest)
+	check(absi(climb_ticks - roundi((game.CLIMB_APPROACH + game.CLIMB_STEPS) * 60)) <= 1, "the climb takes %.1f s" % (game.CLIMB_APPROACH + game.CLIMB_STEPS))
+	check(run.floor_number == 2 and run.current_room == "0,0" and run.has_save(), "the floor changes and saves at the top")
+	check(game.player.position.y < -1.0 and game.room.obstacles.any(func(o): return o.get("id", "") == "stairwell"), "the next floor opens with the figure below its stairwell")
+	var arrive_ticks = 0
+	while game.in_transition() and arrive_ticks < 400:
+		step(1)
+		arrive_ticks += 1
+	check(is_zero_approx(game.player.position.y) and is_zero_approx(game.light_veil.color.a) and figure_alpha() == 1.0, "up out of the stairwell as the light recedes")
+	check(Vector2(game.player.position.x, game.player.position.z).distance_to(Vector2(float(run.entry.position[0]), float(run.entry.position[1]))) < .01,
+		"a reload resumes where the figure stepped off")
+	# The last stair leads out into the light: the run is won.
+	run.floor_number = 3
+	run.generate_floor()
+	run.current_room = boss_room_id()
+	run.rooms[run.current_room].cleared = true
+	run.rooms[run.current_room].claimed = true
+	game.enter_room(Vector3(0, 0, 4))
+	game.player.place(game.stairs.approach_point())
+	game.update_interaction()
+	check(game.interaction_text == "Carry the light home", "the last stair carries the light home")
+	game.interact()
+	step(roundi((game.CLIMB_APPROACH + game.CLIMB_STEPS) * 60) + 2)
+	check(game.ui.mode == "won" and not run.active and not game.in_transition() and is_zero_approx(game.light_veil.color.a), "climbing the last stair wins the run")
 	game.queue_free()
 	await process_frame
 

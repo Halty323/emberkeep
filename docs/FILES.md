@@ -58,6 +58,8 @@ scripts/dungeon/room_geometry.gd
 scripts/dungeon/room_geometry.gd.uid
 scripts/dungeon/room_navigation.gd
 scripts/dungeon/room_navigation.gd.uid
+scripts/dungeon/staircase.gd
+scripts/dungeon/staircase.gd.uid
 scripts/effects/effects_pool.gd
 scripts/effects/effects_pool.gd.uid
 scripts/enemy.gd
@@ -111,6 +113,8 @@ scripts/world.gd.uid
 shaders/floor_mark.gdshader
 shaders/floor_mark.gdshader.uid
 shaders/halo.gdshader
+shaders/light_shaft.gdshader
+shaders/light_shaft.gdshader.uid
 shaders/halo.gdshader.uid
 shaders/ui_stone.gdshader
 shaders/ui_stone.gdshader.uid

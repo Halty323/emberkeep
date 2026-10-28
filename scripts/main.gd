@@ -38,6 +38,15 @@ var previous_view: Node3D
 # The footprint the glow mask was last set to by a transition.
 var view_mask: RoomGeometry
 var fade_prewarm = 0
+# The way up: a stair that builds itself when the boss falls, climbed into
+# the light from the floor above; the next floor opens at its stairwell.
+const CLIMB_APPROACH := .5
+const CLIMB_STEPS := 2.0
+const ARRIVE_RISE := .8
+const ARRIVE_STEP_OFF := .5
+var stairs: Staircase
+var well_spot := Vector3.ZERO
+var light_veil: ColorRect
 var entity_counter = 10
 var chosen_reward_shop = false
 var snapshot_timer = 0.0
@@ -114,6 +123,11 @@ func _ready() -> void:
 	vignette.shader = preload("res://shaders/vignette.gdshader")
 	overlay.material = vignette
 	fx_layer.add_child(overlay)
+	light_veil = ColorRect.new()
+	light_veil.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	light_veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	light_veil.color = Color(1, .95, .84, 0)
+	fx_layer.add_child(light_veil)
 	var layer = CanvasLayer.new()
 	layer.layer = 3
 	add_child(layer)
@@ -295,6 +309,15 @@ func begin_transition(portal_id: String) -> void:
 
 func advance_transition(delta: float) -> void:
 	transition.time += delta
+	if transition.get("kind", "") == "stairs":
+		advance_climb()
+		return
+	if transition.get("kind", "") == "build":
+		ease_from_stairs(delta)
+		if not is_instance_valid(stairs) or stairs.advance(delta):
+			if is_instance_valid(stairs): stairs_ready(true)
+			transition = {}
+		return
 	match transition.phase:
 		"exit":
 			var t = phase_progress(TRANSITION_EXIT)
@@ -314,6 +337,69 @@ func advance_transition(delta: float) -> void:
 					gate.get_node("Barrier").visible = not room.open
 					Audio.play_sound("door", .8)
 				transition = {}
+
+## Walks to the stair's foot and up every step, fading into the light that
+## fills the view; the floor changes under it, then the figure comes up the
+## new floor's stairwell as the light recedes. Simulation clock, like doorways.
+func begin_climb() -> void:
+	var path: Array = [player.position] + stairs.climb_path()
+	var times: Array = [CLIMB_APPROACH * .6, CLIMB_APPROACH * .4]
+	for i in Staircase.STEPS: times.append(CLIMB_STEPS / Staircase.STEPS)
+	transition = {"kind": "stairs", "phase": "climb", "time": 0.0, "path": path, "times": times}
+	player.velocity = Vector3.ZERO
+	request_dash = false
+	interaction_text = ""
+	interaction_kind = ""
+
+func advance_climb() -> void:
+	var total: float = transition.times.reduce(func(sum, t): return sum + t, 0.0)
+	var u = clampf(transition.time / total + .0001, 0.0, 1.0)
+	player.walk_to(path_point(transition.path, transition.times, transition.time))
+	if transition.phase == "climb":
+		player.set_fade(1.0 - clampf((u - .55) / .4, 0.0, 1.0))
+		light_veil.color.a = pow(clampf((u - .4) / .6, 0.0, 1.0), 1.6)
+		if u >= 1.0: reach_next_floor()
+	else:
+		player.set_fade(clampf(transition.time / (ARRIVE_RISE * .8), 0.0, 1.0))
+		light_veil.color.a = 1.0 - smoothstep(0.0, 1.0, transition.time / ARRIVE_RISE)
+		if u >= 1.0:
+			player.place(transition.path[-1])
+			light_veil.color.a = 0.0
+			transition = {}
+
+## The top of the last floor is the end of the run; otherwise the next floor.
+func reach_next_floor() -> void:
+	if Run.floor_number >= 3:
+		transition = {}
+		light_veil.color.a = 0.0
+		end_run(true)
+		return
+	Run.next_floor()
+	enter_room(Vector3(0, 0, 2.0))
+	var pedestal = Vector2(room.pedestal.x, room.pedestal.z)
+	var out = (pedestal - Vector2(well_spot.x, well_spot.z)).normalized()
+	var landing = room.geometry.safe_point(Vector2(well_spot.x, well_spot.z) + out * (Staircase.OUTER + .9), .5, room.blocked_at)
+	var arrival = Vector3(landing.x, 0, landing.y)
+	var path = Staircase.rise_path(well_spot, arrival)
+	var times: Array = []
+	for i in path.size() - 2: times.append(ARRIVE_RISE / (path.size() - 2))
+	times.append(ARRIVE_STEP_OFF)
+	transition = {"kind": "stairs", "phase": "arrive", "time": 0.0, "path": path, "times": times}
+	player.position = path[0]
+	player.face(path[1] - path[0])
+	player.set_fade(0.0)
+	light_veil.color.a = 1.0
+	Run.entry = {"room": Run.current_room, "position": [snappedf(arrival.x, .001), snappedf(arrival.z, .001)]}
+	Run.save_run()
+	ui.notify("A little higher", "More light reaches this floor.")
+
+## Position along a path of segments with their own durations.
+static func path_point(path: Array, times: Array, time: float) -> Vector3:
+	for i in times.size():
+		if time <= times[i] or i == times.size() - 1:
+			return path[i].lerp(path[i + 1], clampf(time / times[i], 0.0, 1.0))
+		time -= times[i]
+	return path[-1]
 
 ## Fixed ticks never land exactly on a phase length in floating point.
 func phase_progress(duration: float, extra := 0.0) -> float:
@@ -433,6 +519,10 @@ func update_camera(delta: float, snap := false) -> void:
 	var target = Vector3.ZERO
 	if not in_menu and is_instance_valid(player):
 		target = camera_target(player.position)
+		# Rise with a climb so the figure stays framed on the stair; watch a
+		# stair build from a little above its middle.
+		if transition.get("kind", "") == "stairs": target.y = player.position.y
+		elif transition.get("kind", "") == "build" and is_instance_valid(stairs): target = stairs.position + Vector3(0, 2.8, 0)
 		var actors: Array = []
 		for enemy in enemies:
 			if is_instance_valid(enemy) and enemy.alive: actors.append(enemy.position)
@@ -480,7 +570,10 @@ func clean_room(keep_view := false) -> void:
 	interactions.clear()
 	if is_instance_valid(previous_view): previous_view.queue_free()
 	previous_view = null
-	if not keep_view: transition = {}
+	if not keep_view:
+		transition = {}
+		if light_veil: light_veil.color.a = 0.0
+	stairs = null
 	if scene_root:
 		if keep_view:
 			previous_view = scene_root
@@ -599,11 +692,16 @@ func enter_room(spawn: Vector3, keep_view := false) -> void:
 			make_marker(data.type, room.pedestal)
 		elif data.cleared and not data.claimed and data.has("offers"):
 			make_marker("treasure", room.pedestal)
-		elif data.type == "boss":
-			make_marker("exit", room.pedestal + Vector3(0, 0, -1.5))
+		if data.type == "boss":
+			raise_stairs(false)
 		Run.save_run()
 	for drop in data.get("pickups", []):
 		spawn_pickup(Vector3(float(drop.position[0]), 0, float(drop.position[1])), drop.def, float(drop.get("value", -1)), str(drop.id))
+	if data.type == "start" and Run.floor_number > 1:
+		var spot = stair_spot(data, "stairwell")
+		well_spot = Vector3(spot.x, 0, spot.y)
+		Staircase.make_well(scene_root, well_spot)
+		room.add_obstacle("stairwell", spot, Staircase.OUTER)
 	if data.type == "secret" and not data.get("found", false):
 		data["found"] = true
 		ui.notify("A forgotten gallery" if data.get("variant", "") == "gallery" else "A hidden cache", "Few little lights ever find this room.", Color("d7c3e8"))
@@ -735,12 +833,50 @@ func pickup_node(drop_id: String) -> DungeonPickup:
 func pickup_feedback(at: Vector3, definition: Dictionary) -> void:
 	Effects.play("pickup", at + Vector3(0, .35, 0), Color(definition.color))
 
+## The room's stair (or stairwell) spot. Rooms generated before the stairs
+## existed find one now, clear of their saved furniture, and keep it.
+func stair_spot(data: Dictionary, key: String) -> Vector2:
+	if not data.has(key):
+		var zones = FloorGenerator.reserved_zones({"portals": Run.portals}, data)
+		var blockers = room.obstacles.map(func(obstacle): return obstacle.rect)
+		data[key] = FloorGenerator.point_array(Staircase.find_spot(room.geometry, zones, Vector2(room.pedestal.x, room.pedestal.z), blockers))
+	return FloorGenerator.vec2(data[key])
+
+func raise_stairs(animated: bool) -> void:
+	var spot = stair_spot(Run.rooms[Run.current_room], "stairs")
+	stairs = Staircase.new()
+	scene_root.add_child(stairs)
+	stairs.position = Vector3(spot.x, 0, spot.y)
+	stairs.setup(Vector2(room.pedestal.x, room.pedestal.z), not animated)
+	if stairs.built: stairs_ready(false)
+
+func stairs_ready(announce: bool) -> void:
+	stairs.make_solid()
+	room.add_obstacle("stairs", Vector2(stairs.position.x, stairs.position.z), Staircase.OUTER)
+	interactions.register("stairs", "exit", stairs.approach_point(), 2.1, "", stairs)
+	if announce:
+		if Run.floor_number >= 3: ui.notify("The last stair", "It climbs out into the light.", Color("f3dfb8"))
+		else: ui.notify("A stair winds upward", "Climb it toward the light above.", Color("f3dfb8"))
+
+## While the stair builds, nobody stands where it will be solid.
+func ease_from_stairs(delta: float) -> void:
+	var away = Vector2(player.position.x - stairs.position.x, player.position.z - stairs.position.z)
+	var room_needed = Staircase.OUTER + .5 - away.length()
+	if room_needed <= 0: return
+	var direction = away.normalized() if away.length() > .01 else Vector2(0, 1)
+	var moved = direction * minf(room_needed, 6.0 * delta)
+	player.position += Vector3(moved.x, 0, moved.y)
+
 func clear_room() -> void:
 	room.set_open(true)
 	Run.mark_cleared()
 	var data: Dictionary = Run.rooms[Run.current_room]
 	Audio.play_sound("door", 1.3)
 	ui.notify("A little more warmth", "The doorways are open.")
+	if data.type == "boss":
+		# The stair builds as a short scene: play waits and the camera watches.
+		raise_stairs(true)
+		transition = {"kind": "build", "time": 0.0}
 	if data.type == "boss" or Run.cleared % 2 == 0:
 		ensure_offers(data.type == "boss")
 		make_marker("treasure", room.pedestal)
@@ -832,6 +968,10 @@ func interaction_eligible(target: Dictionary) -> bool:
 	return true
 
 func update_interaction() -> void:
+	if in_transition():
+		interaction_text = ""
+		interaction_kind = ""
+		return
 	var target = interactions.choose(player.position, interaction_eligible)
 	interaction_kind = target.get("kind", "")
 	interaction_text = prompt_for(target) if not target.is_empty() else ""
@@ -863,12 +1003,9 @@ func use_pedestal(target: Dictionary) -> Dictionary:
 			Audio.play_sound("item")
 			ui.notify("A moment of warmth", "Recovered 3 health.")
 		"exit":
-			if Run.floor_number >= 3:
-				end_run(true)
-			else:
-				Run.next_floor()
-				enter_room(Vector3(0, 0, 2.0))
-				ui.notify("A little higher", "More light reaches this floor.")
+			if not is_instance_valid(stairs) or not stairs.built:
+				return GameActions.result(false, "the stair is still rising")
+			begin_climb()
 	return GameActions.result(true)
 
 ## Inspecting discovers the work for good. The viewer pauses solo play.
@@ -919,7 +1056,6 @@ func choose_offer(index: int) -> void:
 	else:
 		Run.gain_item(offer.id)
 	remove_marker()
-	if data.type == "boss": make_marker("exit", room.pedestal + Vector3(0, 0, -1.5))
 	Run.save_run()
 	close_reward()
 
