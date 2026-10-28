@@ -57,7 +57,7 @@ func setup(owner_game: Node3D, type: String, id: int) -> void:
 	color = {"mote": Color("bf8173"), "spitter": Color("9caaa1"), "charger": Color("c68e65"),
 		"splitter": Color("9f8eb2"), "brute": Color("968b78"), "wisp": Color("d1b6d6"), "boss": Color("c4a27a")}[kind]
 	collision_layer = 4
-	collision_mask = 7
+	collision_mask = 7 | PropVisuals.FURNITURE_LAYER
 	var shape = CollisionShape3D.new()
 	var sphere = SphereShape3D.new()
 	sphere.radius = radius

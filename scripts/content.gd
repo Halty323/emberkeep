@@ -15,7 +15,12 @@ var errors := PackedStringArray()
 const RARITY_COLORS = {"common": Color("c6d3bf"), "uncommon": Color("96d9ba"), "rare": Color("b9b2e9"), "mythic": Color("f1c579")}
 const CATALOG_PATH := "res://assets/data.json"
 const FAMILY_DIR := "res://content/"
-const FAMILIES := ["rooms", "pickups", "actives", "drop_tables"]
+const FAMILIES := ["rooms", "furniture", "pickups", "actives", "drop_tables"]
+# Extra record lists that live in a family's file.
+const EXTRA_LISTS := {"furniture": ["layouts"]}
+const PROP_RECIPES := ["pillar", "table", "chair", "bookcase", "bench", "cupboard", "crate", "barrel", "jar", "brazier",
+	"wall_shelf", "book_pile", "rug", "partition", "workbench", "cot", "painting_frame"]
+const PROP_PLACEMENTS := ["floor", "center", "companion", "wall", "cluster", "scatter", "mount"]
 # Registered behaviour. Data may only name these; it never names scripts or
 # methods, and an unknown name is a validation error rather than a fallback.
 const PICKUP_KINDS := ["coin", "heal", "ward", "key", "bomb", "battery", "battery_full"]
@@ -59,6 +64,8 @@ func load_catalog() -> void:
 			errors.append("%s is missing or does not contain a '%s' list" % [path, family])
 			parsed = {family: []}
 		ingest(family, parsed[family])
+		for extra in EXTRA_LISTS.get(family, []):
+			ingest(extra, parsed.get(extra, []) if parsed.get(extra) is Array else [])
 	errors.append_array(validate())
 	revision = "%08x" % stable_hash(digest_source)
 
@@ -104,6 +111,10 @@ func validate() -> PackedStringArray:
 			if not valid_stats.has(key): problems.append("weapon %s uses unknown effect '%s'" % [weapon.id, key])
 	for template in families.get("rooms", []):
 		problems.append_array(validate_template(template))
+	for prop in families.get("furniture", []):
+		problems.append_array(validate_prop(prop))
+	for layout in families.get("layouts", []):
+		problems.append_array(validate_layout(layout))
 	for pickup in families.get("pickups", []):
 		problems.append_array(validate_pickup(pickup))
 	for active in families.get("actives", []):
@@ -114,6 +125,38 @@ func validate() -> PackedStringArray:
 
 static func is_number(value) -> bool:
 	return value is float or value is int
+
+func validate_prop(prop: Dictionary) -> PackedStringArray:
+	var problems := PackedStringArray()
+	if prop.get("recipe") not in PROP_RECIPES: problems.append("prop %s has unknown visual recipe '%s'" % [prop.id, prop.get("recipe")])
+	if prop.get("placement") not in PROP_PLACEMENTS: problems.append("prop %s has unknown placement '%s'" % [prop.id, prop.get("placement")])
+	var size = prop.get("size", [])
+	if not size is Array or size.size() != 2 or not is_number(size[0]) or not is_number(size[1]) or size[0] <= 0 or size[1] <= 0:
+		problems.append("prop %s has an invalid footprint" % prop.id)
+	if not is_number(prop.get("height")) or prop.height <= 0: problems.append("prop %s needs a positive height" % prop.id)
+	if prop.get("detail") not in ["essential", "decor"]: problems.append("prop %s has an unknown detail class" % prop.id)
+	# Lowering Small details may hide decoration, never collision or loot.
+	if prop.get("detail") == "decor" and (prop.get("solid", false) or prop.has("breakable")):
+		problems.append("decorative prop %s cannot be solid or breakable" % prop.id)
+	if prop.get("blocks_shots", false) and not prop.get("solid", false): problems.append("prop %s blocks shots but is not solid" % prop.id)
+	if prop.has("breakable"):
+		var breakable = prop.breakable
+		if not is_number(breakable.get("health")) or breakable.health <= 0: problems.append("prop %s needs positive break health" % prop.id)
+		if not by_id.get("drop_tables", {}).has(breakable.get("drops", "")): problems.append("prop %s names missing drop table '%s'" % [prop.id, breakable.get("drops", "")])
+		if not prop.get("blocks_shots", false): problems.append("breakable prop %s must be hittable" % prop.id)
+	return problems
+
+func validate_layout(layout: Dictionary) -> PackedStringArray:
+	var problems := PackedStringArray()
+	for role in layout.get("roles", []):
+		if role not in ROOM_ROLES: problems.append("layout %s has unknown role '%s'" % [layout.id, role])
+	for piece in layout.get("pieces", []):
+		if not by_id.get("furniture", {}).has(piece.get("prop", "")): problems.append("layout %s names missing prop '%s'" % [layout.id, piece.get("prop", "")])
+		var count = piece.get("count", [])
+		if not count is Array or count.size() != 2 or count[0] < 0 or count[0] > count[1]: problems.append("layout %s has an impossible count" % layout.id)
+		for companion in piece.get("with", []):
+			if not by_id.get("furniture", {}).has(companion): problems.append("layout %s names missing companion '%s'" % [layout.id, companion])
+	return problems
 
 func validate_pickup(pickup: Dictionary) -> PackedStringArray:
 	var problems := PackedStringArray()

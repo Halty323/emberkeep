@@ -24,7 +24,7 @@ var last_valid = Vector3.ZERO
 func setup(owner_game: Node3D) -> void:
 	game = owner_game
 	collision_layer = 2
-	collision_mask = 5
+	collision_mask = 5 | PropVisuals.FURNITURE_LAYER
 	var collider = CollisionShape3D.new()
 	var shape = SphereShape3D.new()
 	shape.radius = .36
@@ -99,13 +99,14 @@ func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting:
 	if dash_time > 0:
 		dash_time -= delta
 		velocity = dash_direction * 21.0
-		collision_mask = 1
+		# Dashing slips past foes but never through walls or furniture.
+		collision_mask = 1 | PropVisuals.FURNITURE_LAYER
 		if Run.stats.dash_damage > 0:
 			for enemy in game.enemies:
 				if is_instance_valid(enemy) and enemy.alive and global_position.distance_to(enemy.global_position) < 1.1:
 					enemy.take_hit(float(Run.stats.dash_damage) * delta * 8, Vector3.ZERO, false)
 	else:
-		collision_mask = 5
+		collision_mask = 5 | PropVisuals.FURNITURE_LAYER
 		var target = direction * 5.2 * float(Run.stats.speed)
 		velocity = velocity.move_toward(target, delta * 47.0)
 	var geometry: RoomGeometry = game.room.geometry

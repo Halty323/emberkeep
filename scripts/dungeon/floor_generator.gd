@@ -73,6 +73,7 @@ static func attempt_floor(seed_value: int, floor_number: int, attempt: int) -> D
 		return {}
 	if not assign_roles(floor_data):
 		return {}
+	add_secret_room(floor_data, seed_value, floor_number)
 	dress_floor(floor_data, seed_value, floor_number)
 	return floor_data
 
@@ -96,7 +97,9 @@ static func pillar_points(cells: Array, room_seed: int, pedestal: Vector2) -> Ar
 ## containers never block a way in or the room's reward.
 static func reserved_zones(floor_data: Dictionary, room: Dictionary) -> Array:
 	var anchor = vec(room.anchor)
-	var zones: Array = [{"circle": vec2(room.pedestal), "radius": 2.6}]
+	var zones: Array = [{"kind": "pedestal", "circle": vec2(room.pedestal), "radius": 2.6}]
+	for light in room.get("lights", []):
+		zones.append({"kind": "lantern", "circle": vec2(light), "radius": .95})
 	for portal_id in room.portals:
 		var portal = floor_data.portals[portal_id]
 		var side = portal.a if portal.a.room == room.id else portal.b
@@ -105,8 +108,8 @@ static func reserved_zones(floor_data: Dictionary, room: Dictionary) -> Array:
 		var socket = RoomGeometry.socket_point(cell, direction)
 		var inward = socket - Vector2(direction) * 2.1
 		var size = Vector2(4.2, 3.2) if direction.x != 0 else Vector2(3.2, 4.2)
-		zones.append({"rect": Rect2(inward - size / 2, size)})
-		zones.append({"circle": RoomGeometry.entry_point(cell, direction), "radius": 2.0})
+		zones.append({"kind": "door", "rect": Rect2(inward - size / 2, size)})
+		zones.append({"kind": "door", "circle": RoomGeometry.entry_point(cell, direction), "radius": 2.0})
 	return zones
 
 static func vec2(value) -> Vector2:
@@ -118,9 +121,66 @@ static func in_zones(point: Vector2, zones: Array, grow := 0.0) -> bool:
 		if zone.has("circle") and point.distance_to(zone.circle) < zone.radius + grow: return true
 	return false
 
+const MOUNT_ROOMS := {"rest": 2, "secret": 4}
+const MOUNT_HEIGHT := 1.7
+const MOUNT_MAX_WIDTH := 3.4
+const VIEW_DEPTH := 2.6
+
+## One optional secret room per floor, outside the required route: a leaf
+## behind a concealed passage, never the boss's only way in. Its own seed
+## stream keeps topology, roles and encounters unchanged.
+static func add_secret_room(floor_data: Dictionary, seed_value: int, floor_number: int) -> void:
+	var gen = RandomNumberGenerator.new()
+	gen.seed = Content.stable_hash("secret:%d:%d" % [seed_value, floor_number])
+	var candidates: Array = []
+	for room in floor_data.rooms.values():
+		if room.type in ["boss", "start"]: continue
+		for edge in free_edges(floor_data, room):
+			candidates.append(edge)
+	if candidates.is_empty():
+		return
+	var edge: Dictionary = candidates[gen.randi_range(0, candidates.size() - 1)]
+	var host: String = floor_data.owners[key_of(edge.cell)]
+	var id = place_room(floor_data, Content.record("rooms", "hearth_1x1"), 0, edge.cell + edge.dir, seed_value, floor_number)
+	var secret: Dictionary = floor_data.rooms[id]
+	secret.type = "secret"
+	secret["secret"] = true
+	secret["variant"] = "cache" if gen.randf() < .5 else "gallery"
+	secret.depth = int(floor_data.rooms[host].depth) + 1
+	add_portal(floor_data, edge.cell, edge.dir, "concealed")
+
+## Painting mounts on rear walls (which stay visible when foreground walls cut
+## away), sized to clear doorways and lanterns, each with a reserved view.
+static func painting_mounts(room: Dictionary, geometry: RoomGeometry, zones: Array, limit: int) -> Array:
+	var mounts: Array = []
+	var lights: Array = room.get("lights", []).map(func(light): return vec2(light))
+	for segment in geometry.wall_segments():
+		if RoomGeometry.is_front(segment.dir) or mounts.size() >= limit: continue
+		var mid = (segment.from + segment.to) / 2.0
+		var half = minf(mid - segment.from, segment.to - mid) - .4
+		for light in lights:
+			var across = light.x if segment.dir.x != 0 else light.y
+			var along = light.y if segment.dir.x != 0 else light.x
+			if absf(across - segment.line) < 2.0:
+				half = minf(half, absf(along - mid) - .7)
+		var width = minf(MOUNT_MAX_WIDTH, half * 2.0)
+		if width < 1.2: continue
+		var inward = -Vector2(segment.dir)
+		var face = Vector2(segment.line, mid) if segment.dir.x != 0 else Vector2(mid, segment.line)
+		var view_size = Vector2(VIEW_DEPTH, width + .6) if segment.dir.x != 0 else Vector2(width + .6, VIEW_DEPTH)
+		var view_rect = Rect2(face + inward * VIEW_DEPTH / 2.0 - view_size / 2.0, view_size)
+		if in_zones(view_rect.get_center(), zones.filter(func(zone): return zone.kind == "door"), 1.0): continue
+		var view = face + inward * 1.8
+		if not geometry.contains(view, .5): continue
+		mounts.append({"id": "%s:m%d" % [room.id, mounts.size()], "position": point_array(face), "dir": [segment.dir.x, segment.dir.y],
+			"width": snappedf(width, .01), "height": MOUNT_HEIGHT, "view": point_array(view), "painting": ""})
+		zones.append({"kind": "view", "rect": view_rect})
+	return mounts
+
 ## Resolved dressing for every room, from its own named seed stream so it
 ## never shifts topology, encounters or loot. Stored with the room, so later
-## content edits cannot move a chest onto an old saved spawn.
+## content edits cannot move a chest onto an old saved spawn. Reserved space
+## (doorways, pedestal, lanterns, painting views, chests) is claimed first.
 static func dress_floor(floor_data: Dictionary, seed_value: int, floor_number: int) -> void:
 	for id in floor_data.rooms:
 		var room: Dictionary = floor_data.rooms[id]
@@ -133,10 +193,16 @@ static func dress_floor(floor_data: Dictionary, seed_value: int, floor_number: i
 		var props: Array = []
 		if room.type in ["combat", "boss"]:
 			for point in pillar_points(cells, int(room.seed), vec2(room.pedestal)):
-				props.append({"id": "%s:p%d" % [id, props.size()], "kind": "pillar", "position": point_array(point), "size": [1.3, 1.3]})
-		room["props"] = props
+				props.append({"id": "%s:p%d" % [id, props.size()], "kind": "pillar", "position": point_array(point), "rotation": 0, "size": [1.3, 1.3]})
+		var mount_limit = MOUNT_ROOMS.get(room.type, 0)
+		if room.type == "secret" and room.get("variant", "") != "gallery":
+			mount_limit = 0
+		room["mounts"] = painting_mounts(room, geometry, zones, mount_limit) if mount_limit > 0 else []
 		room["chests"] = []
-		if gen.randf() < CHEST_CHANCE.get(room.type, 0.0):
+		if room.type == "secret" and room.variant == "cache":
+			room.chests.append({"id": "%s:c0" % id, "position": room.pedestal.duplicate(), "locked": false, "opened": false,
+				"table": "secret_cache", "size": [1.0, .66]})
+		elif gen.randf() < CHEST_CHANCE.get(room.type, 0.0):
 			var spots: Array = []
 			for cell in cells:
 				for offset in CHEST_OFFSETS:
@@ -147,6 +213,10 @@ static func dress_floor(floor_data: Dictionary, seed_value: int, floor_number: i
 			if not spots.is_empty():
 				room.chests.append({"id": "%s:c0" % id, "position": point_array(spots[gen.randi_range(0, spots.size() - 1)]),
 					"locked": true, "opened": false, "table": "locked_chest", "size": [1.0, .66]})
+		for chest in room.chests:
+			zones.append({"kind": "chest", "rect": Rect2(vec2(chest.position) - Vector2(1.3, 1.6), Vector2(2.6, 3.2))})
+		props.append_array(Furnisher.furnish(room, geometry, zones, props, gen))
+		room["props"] = props
 
 static func pick_template(gen: RandomNumberGenerator, templates: Array, cells_left: int) -> Dictionary:
 	var choices = templates.filter(func(t): return t.cells.size() <= maxi(1, cells_left))

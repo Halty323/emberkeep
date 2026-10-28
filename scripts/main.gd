@@ -423,6 +423,9 @@ func enter_room(spawn: Vector3) -> void:
 		Run.save_run()
 	for drop in data.get("pickups", []):
 		spawn_pickup(Vector3(float(drop.position[0]), 0, float(drop.position[1])), drop.def, float(drop.get("value", -1)), str(drop.id))
+	if data.type == "secret" and not data.get("found", false):
+		data["found"] = true
+		ui.notify("A forgotten gallery" if data.get("variant", "") == "gallery" else "A hidden cache", "Few little lights ever find this room.", Color("d7c3e8"))
 	for chest in data.get("chests", []):
 		chest_views[chest.id] = ItemViews.chest(scene_root, chest)
 	refresh_items()
@@ -527,11 +530,8 @@ func spawn_pickup(at: Vector3, pickup_id: String, amount := -1.0, restored_id :=
 	var pickup = DungeonPickup.new()
 	scene_root.add_child(pickup)
 	pickup.setup(self, Vector3(safe.x, 0, safe.y), pickup_id, amount)
-	var data: Dictionary = Run.rooms[Run.current_room]
 	if restored_id.is_empty():
-		pickup.drop_id = Run.next_instance("d")
-		if not data.has("pickups"): data.pickups = []
-		data.pickups.append({"id": pickup.drop_id, "def": pickup_id, "value": pickup.value, "position": [snappedf(safe.x, .001), snappedf(safe.y, .001)]})
+		pickup.drop_id = Run.add_drop(Run.current_room, pickup_id, safe, pickup.value)
 	else:
 		pickup.drop_id = restored_id
 	pickups.append(pickup)
@@ -760,8 +760,60 @@ func bomb_exploded(record: Dictionary, at: Vector3, radius: float) -> void:
 
 ## A bomb's breach capability: breakable props and concealed seams in range.
 ## Offscreen rooms resolve from their saved state without any effects.
-func breach(_room_id: String, _at: Vector3, _radius: float, _live: bool) -> void:
-	pass
+func breach(room_id: String, at: Vector3, radius: float, live: bool) -> void:
+	var data: Dictionary = Run.rooms[room_id]
+	var flat = Vector2(at.x, at.z)
+	for record in data.get("props", []):
+		if record.get("destroyed", false) or not Content.record("furniture", record.kind).has("breakable"): continue
+		var rect = Furnisher.record_rect(record)
+		var nearest = Vector2(clampf(flat.x, rect.position.x, rect.end.x), clampf(flat.y, rect.position.y, rect.end.y))
+		if nearest.distance_to(flat) <= radius:
+			destroy_prop(room_id, record, live)
+	for portal_id in data.get("portals", []):
+		var portal: Dictionary = Run.portals[portal_id]
+		if portal.state != "concealed": continue
+		var side = Run.portal_side(portal_id, room_id)
+		if RoomGeometry.socket_point(side.cell, side.dir).distance_to(flat) <= radius + .6:
+			# Revealed for good: saved with the blast, never resealed on reload.
+			portal.state = "revealed"
+			if live:
+				room.reveal_socket(portal_id)
+				ui.notify("A hidden passage", "The old wall gives way.", Color("d7c3e8"))
+				Audio.play_sound("door", .7)
+
+## Friendly shots chip at breakable furniture.
+func hit_prop(id: String, damage: float) -> void:
+	if room.damage_prop(id, damage):
+		var record = GameActions.find_record(Run.rooms[Run.current_room].get("props", []), id)
+		if not record.is_empty():
+			destroy_prop(Run.current_room, record, true)
+			if Run.rooms[Run.current_room].cleared: Run.save_run()
+
+## Breaking marks the prop destroyed, creates its drops from a per-prop loot
+## stream exactly once, and updates navigation; dust is purely cosmetic.
+func destroy_prop(room_id: String, record: Dictionary, live: bool) -> void:
+	if record.get("destroyed", false):
+		return
+	record.destroyed = true
+	var definition: Dictionary = Content.record("furniture", record.kind)
+	var loot = RandomNumberGenerator.new()
+	loot.seed = Content.stable_hash("loot:%d:%d:%s" % [Run.seed_value, Run.floor_number, record.id])
+	var drops = Drops.roll(definition.breakable.drops, loot, Run.stats.luck)
+	var at = Vector3(float(record.position[0]), 0, float(record.position[1]))
+	for i in drops.size():
+		var point = Drops.scatter(drops.size(), i, at)
+		if drops[i].has("active"):
+			if not Run.rooms[room_id].has("items"): Run.rooms[room_id].items = []
+			Run.rooms[room_id].items.append({"id": Run.next_instance("a"), "def": drops[i].active, "position": [point.x, point.z]})
+		elif live:
+			spawn_pickup(point, drops[i].def)
+		else:
+			Run.add_drop(room_id, drops[i].def, Vector2(point.x, point.z))
+	if live:
+		room.break_prop(record.id)
+		Effects.burst(scene_root, at + Vector3(0, .5, 0), Color("a08462"), 8, .9)
+		Audio.play_sound("hit", .7)
+		if drops.any(func(drop): return drop.has("active")): refresh_items()
 
 ## Companion views follow the saved Moth Jar modifier, so they survive room
 ## changes and reloads with their remaining time.

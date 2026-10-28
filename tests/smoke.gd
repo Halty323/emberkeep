@@ -28,15 +28,20 @@ func test_all() -> void:
 		for floor_value in range(1, 4):
 			run.floor_number = floor_value
 			run.generate_floor()
-			var visited := {"0,0": true}
-			var queue: Array = ["0,0"]
-			while not queue.is_empty():
-				var key: String = queue.pop_front()
-				for next in run.neighbors(key):
-					if not visited.has(next):
-						visited[next] = true
-						queue.append(next)
-			check(visited.size() == run.rooms.size(), "all rooms reachable")
+			# Required rooms never depend on a secret; the optional secret room is
+			# reachable once its concealed passage counts.
+			for include_secrets in [false, true]:
+				var visited := {"0,0": true}
+				var queue: Array = ["0,0"]
+				while not queue.is_empty():
+					var key: String = queue.pop_front()
+					for next in run.neighbors(key, include_secrets):
+						if not visited.has(next):
+							visited[next] = true
+							queue.append(next)
+				var expected = run.rooms.values().filter(func(room): return include_secrets or not room.get("secret", false)).size()
+				check(visited.size() == expected, "all rooms reachable" + (" through secrets" if include_secrets else " without secrets"))
+			check(run.rooms.values().filter(func(room): return room.get("secret", false)).size() == 1, "one optional secret room per floor")
 			for kind in ["boss", "treasure", "shop", "rest"]:
 				var count := 0
 				for room in run.rooms.values():

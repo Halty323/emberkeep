@@ -31,6 +31,10 @@ var obstacles: Array[Dictionary] = []
 var front_walls: Array[Dictionary] = []
 var navigators: Dictionary = {}
 var pedestal := Vector3.ZERO
+# Live view of each prop: {"record", "definition", "node", "base", "health"}.
+var props: Dictionary = {}
+var occluders: Array = []
+var detail_meshes: Array = []
 
 func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 	game = owner_game
@@ -52,13 +56,13 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 		Geo.box(self, pedestal + Vector3(0, -.003, 0), Vector3(6.2, .03, 4.6), Color("514450") if room_type == "shop" else Color("5d4c3e"))
 		Geo.ring(self, pedestal + Vector3(0, .035, 0), 1.65, Color("9e875c"), .025)
 		Geo.ring(self, pedestal + Vector3(0, .035, 0), 1.45, Color("7c7359"), .018)
-	if room.has("props"):
-		for prop in room.props:
-			if prop.kind == "pillar": make_pillar(Vector3(float(prop.position[0]), 0, float(prop.position[1])))
-	elif room_type in ["combat", "boss"] and not preview:
+	var records: Array = room.get("props", [])
+	if not room.has("props") and room_type in ["combat", "boss"] and not preview:
 		# Rooms saved before resolved dressing derive the same pillars.
-		for point in FloorGenerator.pillar_points(geometry.cells, int(room.seed), Vector2(pedestal.x, pedestal.z)):
-			make_pillar(Vector3(point.x, 0, point.y))
+		var pillars = FloorGenerator.pillar_points(geometry.cells, int(room.seed), Vector2(pedestal.x, pedestal.z))
+		for i in pillars.size():
+			records.append({"id": "%s:p%d" % [room.get("id", ""), i], "kind": "pillar", "position": [pillars[i].x, pillars[i].y], "rotation": 0, "size": [1.3, 1.3]})
+	build_props(records)
 	# Containers are solid: navigation and spawns route around them.
 	for chest in room.get("chests", []):
 		var at = Vector2(float(chest.position[0]), float(chest.position[1]))
@@ -131,6 +135,8 @@ func build_walls() -> void:
 
 func make_plug(socket: Dictionary) -> void:
 	var direction: Vector2i = socket.dir
+	if socket.state == "concealed":
+		make_seam_hints(socket)
 	var front = RoomGeometry.is_front(direction)
 	var height = WALL_FRONT_HEIGHT if front else WALL_BACK_HEIGHT
 	var point = RoomGeometry.socket_point(socket.cell, direction)
@@ -139,6 +145,47 @@ func make_plug(socket: Dictionary) -> void:
 	var along = point.dot(Vector2(absi(direction.y), absi(direction.x)))
 	socket["walls"] = make_wall(Vector3(at.x, height / 2, at.y), Vector3(.45, height, 2.5) if direction.x != 0 else Vector3(2.5, height, .45),
 		direction if front else Vector2i.ZERO, line, along - 1.25, along + 1.25)
+
+## Subtle tells of a concealed passage: cracked mortar on the inner face, a
+## little rubble at its foot and a faint draft of dust.
+func make_seam_hints(socket: Dictionary) -> void:
+	var direction: Vector2i = socket.dir
+	var inward = -Vector2(direction)
+	var point = RoomGeometry.socket_point(socket.cell, direction) + inward * .02
+	var across = Vector2(absi(direction.y), absi(direction.x))
+	var hints = Node3D.new()
+	hints.name = "SeamHints"
+	add_child(hints)
+	var crack_color = Color("23292d")
+	for i in 5:
+		var along = (i - 2) * .32
+		var at = point + across * along
+		var crack = Geo.box(hints, Vector3(at.x, .5 + i * .27, at.y), Vector3(.05 + across.x * .22, .04, .05 + across.y * .22), crack_color)
+		crack.rotation.y = .5 * (1 if i % 2 == 0 else -1)
+		crack.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	for i in 4:
+		var at = point + inward * (.25 + .12 * (i % 2)) + across * ((i - 1.5) * .35)
+		var rubble = Geo.box(hints, Vector3(at.x, .05, at.y), Vector3(.14, .1, .12) * (1.0 + .3 * (i % 3)), Color("5a5d58"))
+		rubble.rotation.y = i * .8
+		rubble.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	socket["hints"] = hints
+
+## Opens a revealed passage in the live room: the plug and its tells go, a
+## doorway takes their place. Collision changes with the visible wall.
+func reveal_socket(portal_id: String) -> void:
+	for key in sockets:
+		var socket: Dictionary = sockets[key]
+		if socket.portal != portal_id or socket.state != "concealed": continue
+		socket.state = "revealed"
+		var walls: Dictionary = socket.get("walls", {})
+		for part in ["body", "cap", "collider", "shadow_caster"]:
+			if walls.has(part) and is_instance_valid(walls[part]): walls[part].queue_free()
+		front_walls.erase(walls)
+		if socket.has("hints"): socket.hints.queue_free()
+		make_gate(socket)
+		set_open(open)
+		var at = RoomGeometry.socket_point(socket.cell, socket.dir)
+		Effects.burst(self, Vector3(at.x, .8, at.y), Color("8f8a7c"), 12, 1.4)
 
 func make_gate(socket: Dictionary) -> void:
 	var direction: Vector2i = socket.dir
@@ -201,13 +248,84 @@ func update_wall_visibility(focus: Vector3, delta: float, others: Array = []) ->
 		wall.body.scale.y = height / WALL_FRONT_HEIGHT
 		wall.body.position.y = height / 2
 		wall.cap.position.y = height + .035
+	# Free-standing pieces lower when they actually stand between the camera
+	# and an actor; their collision and shadow occluder stay on the base.
+	for occluder in occluders:
+		var hidden = prop_obstructs(occluder, focus)
+		if not hidden:
+			for actor in others:
+				if prop_obstructs(occluder, actor):
+					hidden = true
+					break
+		var goal = .35 if hidden else 1.0
+		var value = goal if delta <= 0 else move_toward(occluder.current, goal, delta * 5.0)
+		if is_equal_approx(value, occluder.current): continue
+		occluder.current = value
+		occluder.node.scale.y = value
 
-func make_pillar(p: Vector3) -> void:
-	Geo.box(self, p + Vector3(0, .6, 0), Vector3(1.2, 1.2, 1.2), Color("4f5855"))
-	Geo.box(self, p + Vector3(0, 1.22, 0), Vector3(1.35, .14, 1.35), Color("747b68"))
-	Geo.collider(self, p + Vector3(0, 1.0, 0), Vector3(1.3, 2.0, 1.3))
-	obstacles.append({"position": p, "radius": 1.05, "rect": Rect2(p.x - .65, p.z - .65, 1.3, 1.3)})
-	make_candle(p + Vector3(0, 1.32, 0), .6)
+const VIEW_GROUND = Vector2(-0.6332378, -0.7739573)
+
+func prop_obstructs(occluder: Dictionary, point: Vector3) -> bool:
+	var offset = Vector2(point.x, point.z) - occluder.position
+	var behind = offset.dot(VIEW_GROUND)
+	var across = Vector2(-VIEW_GROUND.y, VIEW_GROUND.x)
+	var reach = absf(across.x) * occluder.half.x + absf(across.y) * occluder.half.y + .6
+	return behind > 0 and behind < 2.6 and absf(offset.dot(across)) < reach
+
+## Builds every intact prop. Small details at Low hide decorative pieces only;
+## collision, breakables and layout are identical at every detail level.
+func build_props(records: Array) -> void:
+	var batch = DetailBatch.new()
+	var detail: int = Settings.detail_level()
+	var rng = RandomNumberGenerator.new()
+	rng.seed = int(data.get("seed", 53)) + 4049
+	for record in records:
+		var definition: Dictionary = Content.record("furniture", record.kind)
+		if definition.is_empty() or record.get("destroyed", false):
+			continue
+		if definition.detail == "decor" and detail == 0:
+			continue
+		var at = Vector2(float(record.position[0]), float(record.position[1]))
+		var built = PropVisuals.build(self, record, definition, detail, batch, geometry.cell_at(at), rng)
+		props[record.id] = {"record": record, "definition": definition, "node": built.node, "base": built.base,
+			"health": float(definition.get("breakable", {}).get("health", 0))}
+		if definition.recipe == "pillar":
+			make_candle(Vector3(at.x, 1.32, at.y), .6)
+		if definition.get("solid", false):
+			var size = Vector2(float(record.size[0]), float(record.size[1]))
+			obstacles.append({"id": record.id, "position": Vector3(at.x, 0, at.y), "radius": maxf(size.x, size.y) * .5 + .4,
+				"rect": Rect2(at - size / 2.0, size)})
+		if not built.occluder.is_empty():
+			built.occluder["id"] = record.id
+			built.occluder["current"] = 1.0
+			occluders.append(built.occluder)
+	detail_meshes = batch.build(self)
+
+func prop_count(kind := "") -> int:
+	return props.values().filter(func(entry): return kind == "" or entry.record.kind == kind).size()
+
+## Returns true when this hit broke the prop.
+func damage_prop(id: String, amount: float) -> bool:
+	if not props.has(id) or not props[id].definition.has("breakable"):
+		return false
+	props[id].health -= amount
+	var node: Node3D = props[id].node
+	node.scale = Vector3(1.08, .93, 1.08)
+	create_tween().tween_property(node, "scale", Vector3.ONE, .12)
+	return props[id].health <= 0
+
+## Removes a broken prop's view, collision and navigation blocker once.
+func break_prop(id: String) -> void:
+	if not props.has(id):
+		return
+	var entry: Dictionary = props[id]
+	props.erase(id)
+	entry.node.queue_free()
+	entry.base.queue_free()
+	obstacles = obstacles.filter(func(obstacle): return obstacle.get("id", "") != id)
+	occluders = occluders.filter(func(occluder): return occluder.id != id)
+	for navigator in navigators.values():
+		navigator.remove_blocker(id)
 
 func make_lantern(p: Vector3) -> void:
 	Geo.box(self, p + Vector3(0, .28, 0), Vector3(.85, .55, .85), Color("424d4c"))
@@ -334,7 +452,7 @@ func navigation(clearance := .5) -> RoomNavigation:
 	if not navigators.has(key):
 		var blockers := {}
 		for i in obstacles.size():
-			blockers["obstacle%d" % i] = obstacles[i].rect
+			blockers[obstacles[i].get("id", "obstacle%d" % i)] = obstacles[i].rect
 		navigators[key] = RoomNavigation.new(geometry, clearance, blockers)
 	return navigators[key]
 

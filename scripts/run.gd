@@ -147,6 +147,15 @@ func grant_all_relics() -> int:
 		changed.emit()
 	return added
 
+## Adds a stable drop record to any room, on screen or not.
+func add_drop(room_id: String, pickup_id: String, at: Vector2, value := -1.0) -> String:
+	var room: Dictionary = rooms[room_id]
+	if not room.has("pickups"): room.pickups = []
+	var id = next_instance("d")
+	room.pickups.append({"id": id, "def": pickup_id, "value": value if value > 0 else float(Content.record("pickups", pickup_id).value),
+		"position": [snappedf(at.x, .001), snappedf(at.y, .001)]})
+	return id
+
 func next_instance(prefix: String) -> String:
 	instance_counter += 1
 	return "%s%d" % [prefix, instance_counter]
