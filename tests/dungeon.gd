@@ -43,6 +43,7 @@ func test_dungeon() -> void:
 	test_geometry()
 	test_generation()
 	await test_scenes()
+	await test_transition()
 	await test_room_validation()
 	await test_legacy_migration()
 	print("EMBERKEEP DUNGEON TEST RESULT: %d checks, %d failures" % [checks, failures])
@@ -292,6 +293,156 @@ func test_scenes() -> void:
 	game.ui.close_subscreen()
 	check(game.ui.mode == "play" and not game.paused, "closing the map resumes play")
 	game.return_to_title()
+	game.queue_free()
+	await process_frame
+
+## How visible the player figure is: 1.0 unless it wears its fade copies.
+func figure_alpha() -> float:
+	for mesh in game.player.find_children("*", "MeshInstance3D", true, false):
+		if mesh.has_meta("fade_source"):
+			return mesh.material_override.albedo_color.a / mesh.get_meta("fade_source").albedo_color.a
+	return 1.0
+
+## Steps one doorway transition tick by tick through the real physics path.
+func step(frames: int) -> void:
+	for i in frames:
+		game._physics_process(1.0 / 60.0)
+		game.update_camera(1.0 / 60.0)
+
+## Doorways take 1.5 s: walk out and fade, slide across both rooms, walk in.
+func test_transition() -> void:
+	game = load("res://scenes/main.tscn").instantiate()
+	root.add_child(game)
+	current_scene = game
+	await process_frame
+	game.set_physics_process(false)
+	game.set_process(false)
+	game.start_run("candle", 31338, false)
+	var floor_data = build_test_floor()
+	use_floor(floor_data, "0,0")
+	run.rooms["0,0"].cleared = true
+	game.enter_room(Vector3.ZERO)
+	var old_cells: Array = game.room.geometry.cells.duplicate()
+	var portal_id: String = run.rooms["0,0"].portals.filter(func(id): return run.other_room(id, "0,0") == "1,0")[0]
+	var side = run.portal_side(portal_id, "0,0")
+	var socket: Vector2 = Geometry.socket_point(side.cell, side.dir)
+	var trigger = socket - Vector2(side.dir) * .5
+	game.player.place(Vector3(trigger.x, 0, trigger.y))
+	game.transition_cooldown = 0
+	var lantern: OmniLight3D = game.player.find_children("*", "OmniLight3D", true, false)[0]
+	var lantern_energy = lantern.light_energy
+	step(1)
+	check(game.in_transition() and game.transition.phase == "exit" and run.current_room == "0,0", "a doorway starts a transition in the departing room")
+	var bombs: int = run.bombs
+	check(game.submit({"type": "place_bomb"}).get("reason", "") == "between rooms" and run.bombs == bombs, "actions wait while between rooms")
+	# Walk out and fade: input is ignored, the figure heads through the doorway.
+	var ticks = 0
+	var last_distance = INF
+	var approaching = true
+	var fading = true
+	var last_alpha = 1.0
+	var focus_before = game.camera_focus
+	game.ui.left_vector = Vector2(-1, 0)
+	while game.transition.get("phase", "") == "exit" and ticks < 200:
+		focus_before = game.camera_focus
+		step(1)
+		ticks += 1
+		if game.transition.get("phase", "") != "exit": break
+		var distance = flat(game.player.position).distance_to(socket + Vector2(side.dir) * game.DOOR_STEP)
+		approaching = approaching and distance <= last_distance + .0001
+		fading = fading and figure_alpha() <= last_alpha + .0001
+		last_distance = distance
+		last_alpha = figure_alpha()
+	game.ui.left_vector = Vector2.ZERO
+	check(ticks == 27, "walking out takes 0.45 s (%d ticks)" % ticks)
+	check(approaching and fading, "the figure walks into the doorway while fading")
+	check(run.current_room == "1,0" and game.transition.phase == "slide", "the room changes as the slide begins")
+	# The old room stays on screen behind the new one along the way travelled,
+	# whole floor cells back, so neither shows while the other is framed.
+	var old_view: Node3D = game.previous_view
+	check(is_instance_valid(old_view) and old_view.get_parent() == game, "the departing room stays on screen for the slide")
+	var arrival_side = run.portal_side(portal_id, "1,0")
+	var arrival_socket: Vector2 = Geometry.socket_point(arrival_side.cell, arrival_side.dir)
+	var apart: Vector2 = arrival_socket - (socket + flat(old_view.position))
+	var cells_apart = apart / Geometry.CELL
+	check(apart.normalized().is_equal_approx(Vector2(side.dir)) and is_equal_approx(cells_apart.length(), roundf(cells_apart.length())),
+		"the rooms are whole cells apart along the way travelled (%s)" % cells_apart)
+	check(not game.room_in_view(game.room.geometry.cells, Vector3.ZERO, game.transition.focus_from), "the new room is off screen as the slide begins")
+	check(not game.room_in_view(old_cells, old_view.position, game.transition.focus_to), "the old room is off screen as the slide ends")
+	check((game.camera_focus - old_view.position).distance_to(focus_before) < .05, "the view does not jump when the room changes")
+	check(not game.room.geometry.contains(flat(game.player.position), 0) and figure_alpha() < .001, "the figure waits unseen outside the new doorway")
+	var masked: Array = game.view_mask.cells
+	check(masked.size() == 4 and (Vector2(old_view.position.x, old_view.position.z) / Geometry.CELL).round() in masked.map(func(c): return Vector2(c)),
+		"glow masks cover both rooms while they share the screen")
+	var foes = game.enemies.map(func(e): return e.position)
+	check(foes.size() > 0, "the destination encounter is waiting")
+	var arrival_gate: Node3D = game.room.gates.filter(func(g): return g.get_meta("portal", "") == portal_id)[0]
+	check(not game.room.open and not arrival_gate.get_node("Barrier").visible, "the sealing room leaves the arrival doorway open for the walk in")
+	# The pan is smooth: no jump at the switch, at either end, or between ticks.
+	var largest_step = 0.0
+	var focus = game.camera_focus
+	var pan: float = game.transition.focus_from.distance_to(game.transition.focus_to) * (1.0 - game.transition.dark_skip)
+	var new_cells: Array = game.room.geometry.cells
+	var shown = func(at: Vector3): return game.room_in_view(old_cells, old_view.position, at) or game.room_in_view(new_cells, Vector3.ZERO, at)
+	var skips_unseen = true
+	var always_something = true
+	var slide_ticks = 0
+	while game.transition.get("phase", "") == "slide" and slide_ticks < 200:
+		step(1)
+		slide_ticks += 1
+		var moved = game.camera_focus.distance_to(focus)
+		if moved > pan / 36.0 * 1.6:
+			skips_unseen = skips_unseen and not shown.call(focus) and not shown.call(game.camera_focus)
+		else:
+			largest_step = maxf(largest_step, moved)
+		always_something = always_something and shown.call(game.camera_focus)
+		focus = game.camera_focus
+		if slide_ticks == 10:
+			game.paused = true
+			var held = game.transition.time
+			step(20)
+			check(game.transition.time == held and game.transition.phase == "slide", "pausing holds the transition")
+			game.paused = false
+	check(slide_ticks == 36, "the slide takes 0.6 s (%d ticks)" % slide_ticks)
+	check(largest_step < pan / 36.0 * 1.6, "the camera pans smoothly (largest step %.2f of %.1f)" % [largest_step, pan])
+	check(skips_unseen, "the camera only skips across empty darkness")
+	check(always_something, "one room or the other is always on screen")
+	check(game.previous_view == null and game.view_mask == game.room.geometry,
+		"after the slide only the new room remains and owns the glow mask")
+	# Walk in and appear, then play resumes where the old entry anchor was.
+	var enter_ticks = 0
+	while game.in_transition() and enter_ticks < 200:
+		step(1)
+		enter_ticks += 1
+	check(enter_ticks == 27 and ticks + slide_ticks + enter_ticks == 90, "the whole doorway takes 1.5 s")
+	check(flat(game.player.position).distance_to(Geometry.entry_point(arrival_side.cell, arrival_side.dir)) < .6, "the walk ends at the arrival anchor")
+	check(game.enemies.map(func(e): return e.position) == foes, "foes wait until the figure is through the door")
+	check(arrival_gate.get_node("Barrier").visible and not game.room.open, "the doorway seals behind the figure")
+	var whole = true
+	for mesh in game.player.find_children("*", "MeshInstance3D", true, false):
+		var material = mesh.material_override
+		if mesh.has_meta("fade_source") or game.player.fade_copies.values().has(material): whole = false
+		if material is ShaderMaterial and mesh.has_meta("fade_tint") and material.get_shader_parameter("tint") != mesh.get_meta("fade_tint"): whole = false
+	check(figure_alpha() == 1.0 and whole and is_equal_approx(game.player.find_children("*", "OmniLight3D", true, false)[0].light_energy, lantern_energy),
+		"the figure is whole again with its shared materials, glow and lantern")
+	check(game.submit({"type": "place_bomb"}).get("reason", "") != "between rooms", "actions work again after arriving")
+	await process_frame
+	check(not is_instance_valid(old_view), "the departing room is freed")
+	# Leaving for the title mid-slide leaves nothing behind.
+	for foe in game.enemies: if is_instance_valid(foe): foe.take_hit(100000, Vector3.ZERO)
+	game.enemies.clear()
+	game.clear_room()
+	var back_id: String = portal_id
+	var back = run.portal_side(back_id, "1,0")
+	var back_trigger = Geometry.socket_point(back.cell, back.dir) - Vector2(back.dir) * .5
+	game.player.place(Vector3(back_trigger.x, 0, back_trigger.y))
+	game.transition_cooldown = 0
+	step(40)
+	check(game.transition.get("phase", "") == "slide" and run.current_room == "0,0", "doorways work in both directions")
+	var leaving: Node3D = game.previous_view
+	game.return_to_title()
+	await process_frame
+	check(not game.in_transition() and game.previous_view == null and not is_instance_valid(leaving), "quitting mid-slide cleans up both rooms")
 	game.queue_free()
 	await process_frame
 

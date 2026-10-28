@@ -20,6 +20,7 @@ var orbit_meshes: Array[MeshInstance3D] = []
 var shelter: MeshInstance3D
 const ROOM_MARGIN := .3
 var last_valid = Vector3.ZERO
+var fade_copies: Dictionary = {}
 
 func setup(owner_game: Node3D) -> void:
 	game = owner_game
@@ -69,6 +70,62 @@ func refresh_shelter() -> void:
 func place(at: Vector3) -> void:
 	position = at
 	last_valid = at
+
+## Scripted steps for doorway transitions: the walking bob and footfalls,
+## without collision, input or firing.
+func walk_to(at: Vector3) -> void:
+	var step = at - position
+	step.y = 0
+	if step.length_squared() > .000001:
+		face(step)
+		var stride = floori(walk_time / PI)
+		walk_time += step.length() * 2.7
+		if floori(walk_time / PI) != stride:
+			Effects.play("footstep", global_position + Vector3(0, .05, 0))
+	position = at
+	visual.position.y = absf(sin(walk_time)) * .055
+	visual.rotation.z = 0.0
+	visual.visible = true
+	for i in orbit_meshes.size():
+		orbit_meshes[i].position = orbit_position(i)
+
+func orbit_position(index: int) -> Vector3:
+	var angle = game.sim_time * 2.4 + TAU * float(index) / orbit_meshes.size()
+	return Vector3(cos(angle) * 1.35, .6, sin(angle) * 1.35)
+
+func face(direction: Vector3) -> void:
+	aim_direction = direction.normalized()
+	visual.rotation.y = atan2(-aim_direction.x, -aim_direction.z)
+	gun.rotation.y = visual.rotation.y
+	gun.position = Vector3.ZERO
+
+## Fades the whole figure, its glow and its lantern. The Compatibility
+## renderer has no per-instance transparency, so while faded each mesh wears
+## a transparent copy of its (shared) material; 1.0 restores the originals.
+func set_fade(alpha: float) -> void:
+	alpha = clampf(alpha, 0.0, 1.0)
+	for mesh in find_children("*", "MeshInstance3D", true, false):
+		var source: Material = mesh.get_meta("fade_source") if mesh.has_meta("fade_source") else mesh.material_override
+		if source is ShaderMaterial:
+			if not mesh.has_meta("fade_tint"): mesh.set_meta("fade_tint", source.get_shader_parameter("tint"))
+			var tint: Color = mesh.get_meta("fade_tint")
+			source.set_shader_parameter("tint", Color(tint, tint.a * alpha))
+		elif source is BaseMaterial3D:
+			if alpha >= 1.0:
+				mesh.material_override = source
+				mesh.remove_meta("fade_source")
+				continue
+			if not fade_copies.has(source):
+				var made: BaseMaterial3D = source.duplicate()
+				made.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+				fade_copies[source] = made
+			var copy: BaseMaterial3D = fade_copies[source]
+			copy.albedo_color.a = source.albedo_color.a * alpha
+			mesh.set_meta("fade_source", source)
+			mesh.material_override = copy
+	for light in find_children("*", "OmniLight3D", true, false):
+		if not light.has_meta("fade_energy"): light.set_meta("fade_energy", light.light_energy)
+		light.light_energy = light.get_meta("fade_energy") * alpha
 
 func reset_room() -> void:
 	shield = int(Run.stats.shield)
@@ -128,8 +185,7 @@ func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting:
 	if shooting and fire_cooldown <= 0 and dash_time <= 0:
 		fire()
 	for i in orbit_meshes.size():
-		var angle = game.sim_time * 2.4 + TAU * float(i) / orbit_meshes.size()
-		orbit_meshes[i].position = Vector3(cos(angle) * 1.35, .6, sin(angle) * 1.35)
+		orbit_meshes[i].position = orbit_position(i)
 		for enemy in game.enemies:
 			if is_instance_valid(enemy) and enemy.alive and enemy.orbital_cooldown <= 0 and enemy.global_position.distance_to(orbit_meshes[i].global_position - Vector3(0, .6, 0)) < .65:
 				enemy.orbital_cooldown = .25

@@ -27,6 +27,17 @@ var interaction_text = ""
 var interaction_kind = ""
 var transition_cooldown = 0.0
 var pending_portal = ""
+# Doorways play out over 1.5 s: walk out and fade, slide, walk in and appear.
+const TRANSITION_EXIT := .45
+const TRANSITION_SLIDE := .6
+const TRANSITION_ENTER := .45
+const DOOR_STEP := .7
+var transition: Dictionary = {}
+# The departing room, kept on screen (and nothing else) during the slide.
+var previous_view: Node3D
+# The footprint the glow mask was last set to by a transition.
+var view_mask: RoomGeometry
+var fade_prewarm = 0
 var entity_counter = 10
 var chosen_reward_shop = false
 var snapshot_timer = 0.0
@@ -197,6 +208,10 @@ func screen_direction(value: Vector2) -> Vector3:
 
 func _physics_process(delta: float) -> void:
 	if not is_playing(): return
+	# A doorway transition owns the tick: foes, shots and timers wait for it.
+	if not transition.is_empty():
+		advance_transition(delta)
+		return
 	if hitstop > 0:
 		hitstop -= delta
 		return
@@ -257,13 +272,148 @@ func _physics_process(delta: float) -> void:
 		snapshot_timer = .1
 		Session.publish({"player": {"id": player.entity_id, "owner": player.owner_peer_id, "position": [player.position.x, player.position.z], "hp": Run.hp},
 			"room": Run.current_room, "seed": Run.seed_value, "floor": Run.floor_number})
-	# Room changes happen only here, after every actor finished this tick.
+	# Room changes start only here, after every actor finished this tick.
 	if pending_portal != "":
 		var portal_id: String = pending_portal
 		pending_portal = ""
-		travel(portal_id)
+		begin_transition(portal_id)
+
+func in_transition() -> bool:
+	return not transition.is_empty()
+
+## The character walks through the doorway and fades. Everything runs on the
+## simulation clock, so pausing holds it and every frame rate sees the same.
+func begin_transition(portal_id: String) -> void:
+	var side = Run.portal_side(portal_id, Run.current_room)
+	var door = RoomGeometry.socket_point(side.cell, side.dir)
+	transition = {"portal": portal_id, "phase": "exit", "time": 0.0, "from": player.position,
+		"to": Vector3(door.x, 0, door.y) + Vector3(side.dir.x, 0, side.dir.y) * DOOR_STEP}
+	player.velocity = Vector3.ZERO
+	request_dash = false
+	interaction_text = ""
+	interaction_kind = ""
+
+func advance_transition(delta: float) -> void:
+	transition.time += delta
+	match transition.phase:
+		"exit":
+			var t = phase_progress(TRANSITION_EXIT)
+			player.walk_to(transition.from.lerp(transition.to, t))
+			player.set_fade(1.0 - t)
+			if t >= 1.0: slide_to(transition.portal)
+		"slide":
+			if phase_progress(TRANSITION_SLIDE) >= 1.0: finish_slide()
+		"enter":
+			var t = phase_progress(TRANSITION_ENTER)
+			player.walk_to(transition.from.lerp(transition.to, t))
+			player.set_fade(t)
+			if t >= 1.0:
+				player.place(transition.to)
+				var gate = transition.get("reseal")
+				if is_instance_valid(gate):
+					gate.get_node("Barrier").visible = not room.open
+					Audio.play_sound("door", .8)
+				transition = {}
+
+## Fixed ticks never land exactly on a phase length in floating point.
+func phase_progress(duration: float, extra := 0.0) -> float:
+	return clampf((transition.time + extra) / duration + .0001, 0.0, 1.0)
+
+## The room changes (and saves) here. The new room is built at the origin as
+## always and the old one stays on screen behind it along the way travelled:
+## the camera pans from one to the other, like pushing to the next screen.
+func slide_to(portal_id: String) -> void:
+	var old_anchor: Vector2i = Run.room_anchor(Run.rooms[Run.current_room])
+	var old_cells: Array = room.geometry.cells.duplicate()
+	var old_focus = camera_focus
+	var outward: Vector2i = Run.portal_side(portal_id, Run.current_room).dir
+	travel(portal_id, true)
+	var side = Run.portal_side(portal_id, Run.current_room)
+	var door = RoomGeometry.socket_point(side.cell, side.dir)
+	var start = Vector3(door.x, 0, door.y) + Vector3(side.dir.x, 0, side.dir.y) * DOOR_STEP
+	var arrival: Vector3 = player.position
+	var focus_to = camera_target(start)
+	# Rooms float apart in the dark. Adjacent on the floor grid, each would
+	# pop in or out beside the other's doorway, so the old room steps back
+	# whole cells until neither shows while the other is framed.
+	var adjacent: Vector2i = old_anchor - Run.room_anchor(Run.rooms[Run.current_room])
+	var shift := adjacent
+	var offset := Vector3.ZERO
+	for gap in range(6):
+		shift = adjacent - outward * gap
+		offset = Vector3(shift.x * RoomGeometry.CELL.x, 0, shift.y * RoomGeometry.CELL.y)
+		if not room_in_view(room.geometry.cells, Vector3.ZERO, old_focus + offset) and not room_in_view(old_cells, offset, focus_to):
+			break
+	previous_view.position = offset
+	# Lantern glows and floor marks are masked to the room; cover both for now.
+	view_mask = RoomGeometry.new(room.geometry.cells + old_cells.map(func(cell): return cell + shift))
+	view_mask.apply_shader_mask()
+	# Whole cells can leave a stretch of the pan where neither room shows.
+	# Those frames are identical darkness, so the camera skips them.
+	var focus_from = old_focus + offset
+	var old_leaves = view_crossing(func(u): return room_in_view(old_cells, offset, focus_from.lerp(focus_to, u)))
+	var new_arrives = view_crossing(func(u): return not room_in_view(room.geometry.cells, Vector3.ZERO, focus_from.lerp(focus_to, u)))
+	transition.merge({"phase": "slide", "time": 0.0, "from": start, "to": arrival, "focus_from": focus_from,
+		"focus_to": focus_to, "dark_from": old_leaves, "dark_skip": maxf(0.0, new_arrives - old_leaves)}, true)
+	player.position = start
+	player.face(arrival - start)
+	player.set_fade(0.0)
+	# A room that seals on entry keeps this doorway open until the figure is in.
+	for gate in room.gates:
+		if gate.get_meta("portal", "") == portal_id and not room.open:
+			gate.get_node("Barrier").visible = false
+			transition["reseal"] = gate
+
+## Whether any of a room's cells (floor, walls with caps up to 2.9 units, wall
+## faces 0.45 past the floor) would be on screen with the camera at this
+## focus. Orthographic: each cell box projects to a convex hexagon, tested
+## exactly against the view at the current aspect.
+func room_in_view(cells: Array, offset: Vector3, focus: Vector3) -> bool:
+	var view = get_viewport().get_visible_rect().size
+	var half = Vector2(camera.size * view.x / view.y, camera.size) / 2.0
+	var screen = PackedVector2Array([-half, Vector2(half.x, -half.y), half, Vector2(-half.x, half.y)])
+	var basis: Basis = camera.global_basis
+	var eye = camera_home + focus
+	for cell in cells:
+		var box = Rect2(RoomGeometry.cell_center(cell) - RoomGeometry.HALF, RoomGeometry.CELL).grow(.5)
+		var corners = PackedVector2Array()
+		for x in [box.position.x, box.end.x]:
+			for z in [box.position.y, box.end.y]:
+				for y in [0.0, 3.0]:
+					var relative = Vector3(x, y, z) + offset - eye
+					corners.append(Vector2(relative.dot(basis.x), relative.dot(basis.y)))
+		if not Geometry2D.intersect_polygons(Geometry2D.convex_hull(corners), screen).is_empty():
+			return true
+	return false
+
+## Where along the pan (0..1) a test that holds at the start stops holding.
+func view_crossing(holds: Callable) -> float:
+	var low = 0.0
+	var high = 1.0
+	for i in 18:
+		var middle = (low + high) / 2.0
+		if holds.call(middle): low = middle
+		else: high = middle
+	return low
+
+## Pan position for a slide progress: eased, with the dark stretch removed.
+func slide_focus(progress: float) -> Vector3:
+	var along = smoothstep(0.0, 1.0, progress) * (1.0 - transition.dark_skip)
+	if along > transition.dark_from: along += transition.dark_skip
+	return transition.focus_from.lerp(transition.focus_to, along)
+
+func finish_slide() -> void:
+	if is_instance_valid(previous_view): previous_view.queue_free()
+	previous_view = null
+	view_mask = room.geometry
+	view_mask.apply_shader_mask()
+	transition.phase = "enter"
+	transition.time = 0.0
 
 func _process(delta: float) -> void:
+	if fade_prewarm > 0:
+		fade_prewarm -= 1
+		if fade_prewarm == 0 and in_menu and is_instance_valid(player): player.set_fade(1.0)
 	shake = maxf(0, shake - delta * .9)
 	hurt_flash = maxf(0, hurt_flash - delta * 1.6)
 	update_camera(delta)
@@ -287,7 +437,12 @@ func update_camera(delta: float, snap := false) -> void:
 		for enemy in enemies:
 			if is_instance_valid(enemy) and enemy.alive: actors.append(enemy.position)
 		if is_instance_valid(room): room.update_wall_visibility(player.position, 0.0 if snap else delta, actors)
-	camera_focus = target if snap else camera_focus.lerp(target, 1.0 - exp(-7.0 * delta))
+	if transition.get("phase", "") == "slide":
+		# Interpolate between fixed ticks so the pan is smooth at any frame rate.
+		var between = Engine.get_physics_interpolation_fraction() / Engine.physics_ticks_per_second if is_playing() else 0.0
+		camera_focus = slide_focus(phase_progress(TRANSITION_SLIDE, between))
+	else:
+		camera_focus = target if snap else camera_focus.lerp(target, 1.0 - exp(-7.0 * delta))
 	if not in_menu and is_instance_valid(room):
 		room.update_light_selection(camera_focus)
 	var amount = shake if Settings.values.shake else 0.0
@@ -307,13 +462,14 @@ func camera_target(at: Vector3) -> Vector3:
 	return Vector3(center.x + clampf((at.x - center.x) * gain.x, -limit.x, limit.x), 0,
 		center.y + clampf((at.z - center.y) * gain.y, -limit.y, limit.y))
 
-func clean_room() -> void:
+func clean_room(keep_view := false) -> void:
 	for shot in shots:
 		if is_instance_valid(shot): shot.queue_free()
 	for enemy in enemies:
 		if is_instance_valid(enemy): enemy.queue_free()
 	for pickup in pickups:
-		if is_instance_valid(pickup): pickup.queue_free()
+		# Kept views show their drops as they slide away; nothing collects them.
+		if is_instance_valid(pickup) and not keep_view: pickup.queue_free()
 	shots.clear()
 	enemies.clear()
 	pickups.clear()
@@ -322,9 +478,15 @@ func clean_room() -> void:
 	item_views.clear()
 	chest_views.clear()
 	interactions.clear()
+	if is_instance_valid(previous_view): previous_view.queue_free()
+	previous_view = null
+	if not keep_view: transition = {}
 	if scene_root:
-		remove_child(scene_root)
-		scene_root.queue_free()
+		if keep_view:
+			previous_view = scene_root
+		else:
+			remove_child(scene_root)
+			scene_root.queue_free()
 	scene_root = Node3D.new()
 	add_child(scene_root)
 	marker = null
@@ -347,6 +509,10 @@ func show_title_room() -> void:
 	player.setup(self)
 	player.place(Vector3(0, 0, .1))
 	player.visual.rotation_degrees.y = 150
+	# Draw the faded variant for a few title frames: its shaders then compile
+	# here rather than mid-transition, which would stall on phones.
+	player.set_fade(.99)
+	fade_prewarm = 3
 	make_marker("treasure", Vector3(2.3, 0, -1.5))
 	update_camera(0.0, true)
 
@@ -380,8 +546,8 @@ func saved_entry() -> Vector3:
 		return Vector3(float(Run.entry.position[0]), 0, float(Run.entry.position[1]))
 	return Vector3(0, 0, 2.0)
 
-func enter_room(spawn: Vector3) -> void:
-	clean_room()
+func enter_room(spawn: Vector3, keep_view := false) -> void:
+	clean_room(keep_view)
 	var data: Dictionary = Run.rooms[Run.current_room]
 	data.visited = true
 	room = DungeonRoom.new()
@@ -466,13 +632,13 @@ func check_portals() -> void:
 			return
 
 ## Enter the paired room at the entry anchor of the portal's other side.
-func travel(portal_id: String) -> void:
+func travel(portal_id: String, keep_view := false) -> void:
 	var destination = Run.other_room(portal_id, Run.current_room)
 	var side = Run.portal_side(portal_id, destination)
 	Run.current_room = destination
 	Audio.play_sound("door")
 	var point = RoomGeometry.entry_point(side.cell, side.dir)
-	enter_room(Vector3(point.x, 0, point.y))
+	enter_room(Vector3(point.x, 0, point.y), keep_view)
 
 func spawn_enemy(at: Vector3, kind: String, source := "") -> DungeonEnemy:
 	var enemy = DungeonEnemy.new()
