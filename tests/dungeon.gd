@@ -116,6 +116,7 @@ func test_geometry() -> void:
 
 func test_generation() -> void:
 	var fallbacks = 0
+	var crossroads = 0
 	var templates := {}
 	var rotations := {}
 	for seed_value in range(1, 161):
@@ -125,18 +126,26 @@ func test_generation() -> void:
 			var problems = Generator.validate(floor_data)
 			check(problems.is_empty(), "seed %d floor %d validates: %s" % [seed_value, floor_number, "; ".join(problems)])
 			for room in floor_data.rooms.values():
+				if room.type == "boss" and room.portals.size() != 1: crossroads += 1
+			for room in floor_data.rooms.values():
 				templates[room.template] = true
 				if room.template == "bend_l3": rotations[room.rotation] = true
 			if seed_value <= 20:
 				check(JSON.stringify(Generator.generate(seed_value, floor_number)) == JSON.stringify(floor_data), "generation is repeatable")
 	check(fallbacks == 0, "no floor needed the single-cell fallback (%d did)" % fallbacks)
+	check(crossroads == 0, "every boss waits at a dead end, one doorway in (%d did not)" % crossroads)
 	for id in ["hearth_1x1", "hall_2x1", "hall_1x2", "great_2x2", "bend_l3"]:
 		check(templates.has(id), "template appears in generated floors: " + id)
 	check(rotations.size() == 4, "all four L rotations appear in generated floors")
-	# The bounded fallback itself is a valid, playable floor.
-	var fallback = Generator.from_legacy(Generator.legacy_rooms(5, 2))
-	fallback["fallback"] = true
-	check(Generator.validate(fallback).is_empty(), "known-valid fallback floor validates")
+	# The bounded fallback itself is a valid, playable floor, its boss at a
+	# dead end even where the old layout left it a crossroads.
+	var walled = 0
+	var invalid = 0
+	for seed_value in range(1, 41):
+		var old = Generator.from_legacy(Generator.legacy_rooms(seed_value, 2))
+		if old.rooms.values().any(func(room): return room.type == "boss" and room.portals.size() > 1): walled += 1
+		if not Generator.validate(Generator.fallback_floor(seed_value, 2)).is_empty(): invalid += 1
+	check(walled > 0 and invalid == 0, "known-valid fallback floors validate, %d bosses walled down to a dead end" % walled)
 
 ## A hand-built floor: start, an L, a 2x2 hall, and a 2x1 hall whose long wall
 ## has two separate doorways.
