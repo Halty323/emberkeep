@@ -17,9 +17,27 @@ static func generate(seed_value: int, floor_number: int) -> Dictionary:
 		var floor_data = attempt_floor(seed_value, floor_number, attempt)
 		if not floor_data.is_empty() and validate(floor_data).is_empty():
 			return floor_data
-	var fallback = from_legacy(legacy_rooms(seed_value, floor_number))
-	fallback["fallback"] = true
-	return fallback
+	return fallback_floor(seed_value, floor_number)
+
+## The last resort: the original single-cell layout, its boss walled down to
+## the one doorway it was first reached by. Nothing lies beyond the deepest
+## room, so every other room keeps its way in.
+static func fallback_floor(seed_value: int, floor_number: int) -> Dictionary:
+	var floor_data = from_legacy(legacy_rooms(seed_value, floor_number))
+	floor_data["fallback"] = true
+	var depth = distances(floor_data)
+	for boss in floor_data.rooms.values():
+		if boss.type != "boss": continue
+		var kept = false
+		for portal_id in boss.portals.duplicate():
+			var portal = floor_data.portals[portal_id]
+			var other: String = portal.b.room if portal.a.room == boss.id else portal.a.room
+			if not kept and depth.get(other, -1) == depth[boss.id] - 1:
+				kept = true
+				continue
+			floor_data.portals.erase(portal_id)
+			for id in [portal.a.room, portal.b.room]: floor_data.rooms[id].portals.erase(portal_id)
+	return floor_data
 
 static func vec(value) -> Vector2i:
 	return Vector2i(int(value[0]), int(value[1]))
@@ -318,6 +336,8 @@ static func distances(floor_data: Dictionary, include_concealed := false) -> Dic
 				queue.append(other)
 	return result
 
+## The deepest rooms take the special roles; the boss only a dead end, so
+## its room is never a way through to anywhere else.
 static func assign_roles(floor_data: Dictionary) -> bool:
 	var depth = distances(floor_data)
 	var order: Array = floor_data.rooms.keys()
@@ -330,6 +350,7 @@ static func assign_roles(floor_data: Dictionary) -> bool:
 		var chosen = ""
 		for id in order:
 			var room = floor_data.rooms[id]
+			if role == "boss" and room.portals.size() != 1: continue
 			if room.type == "combat" and role in Content.record("rooms", room.template).get("roles", []):
 				chosen = id
 				break
@@ -376,6 +397,11 @@ static func validate(floor_data: Dictionary) -> PackedStringArray:
 			problems.append("room %s template does not allow role %s" % [room.id, room.type])
 	for role in ["start"] + SPECIAL_ROLES:
 		if counts.get(role, 0) != 1: problems.append("floor needs exactly one %s room" % role)
+	# Floors from version 1 saves keep the layout they were made with.
+	var legacy_save = floor_data.get("generator", VERSION) == LEGACY_VERSION and not floor_data.get("fallback", false)
+	for room in floor_data.rooms.values():
+		if room.type == "boss" and room.portals.size() != 1 and not legacy_save:
+			problems.append("boss room %s is not a dead end" % room.id)
 	var open_depth = distances(floor_data)
 	var all_depth = distances(floor_data, true)
 	for id in floor_data.rooms:
