@@ -38,7 +38,8 @@ func setup(owner_game: Node3D, at: Vector3, travel: Vector3, power: float, veloc
 	if not friendly:
 		Geo.ring(self, Vector3.ZERO, radius * 1.4, Color("f39b88"), .025)
 	else:
-		for i in 3:
+		# Trails are cosmetic, so they follow the Effects detail budget.
+		for i in [0, 2, 3][Settings.DETAIL_LEVELS.find(Settings.values.effects_detail)]:
 			var mesh = Geo.sphere(self, -direction * (i + 1) * .14, radius * (.65 - i * .15), color, 1.0)
 			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			trail.append(mesh)

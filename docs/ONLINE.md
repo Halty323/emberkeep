@@ -7,7 +7,9 @@ The current game is **single-player and offline**. There is no networking transp
 - Floor graphs use a seeded generator separated from cosmetic randomness. Save data preserves the gameplay RNG state as a string to avoid JSON integer precision loss.
 - Entities have runtime IDs; the player also has an owner peer ID.
 - `Run.snapshot()` produces versioned run data for local saves.
-- `Session` exposes command and snapshot signals and an authority check. The main scene publishes a small player/room snapshot at 10 Hz while playing. These signals are local only. Commands are not yet the source of player movement or firing.
+- `Session` exposes command and snapshot signals and an authority check. The main scene publishes a small player/room snapshot at 10 Hz while playing. These signals are local only.
+- Discrete player actions — use item, place bomb, interact, inspect painting, collect pickup and enter a doorway — already travel as commands through `Session.submit` to one validated handler (`scripts/interactions/game_actions.gd`). Each command carries an event id and the issuing peer; the handler checks ownership, range and resources, applies once, persists the result with its debit, and ignores duplicate event ids. A future host can run the same handlers for remote players. Movement and firing are still read locally.
+- Rewards are credited once per stable source id (`<room>:e<n>`, splitter children derived from their parent), stored with the room, so restarting an encounter never pays twice. Client-side collection counts are not proof for any future leaderboard.
 
 These are extension points, not an implementation of authoritative multiplayer or deterministic lockstep. Simulation uses physics and frame timing, so sharing a seed alone cannot synchronize two clients.
 

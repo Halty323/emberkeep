@@ -153,7 +153,7 @@ func show_screen(screen: String) -> void:
 		"menu": build_menu()
 		"play":
 			button("II", Rect2(1180, 24, 76, 58), func(): game.pause_game(), false)
-			button("RELICS", Rect2(1012, 24, 154, 58), func(): open_journal("pause"), false)
+			button("JOURNAL", Rect2(1012, 24, 154, 58), func(): open_journal("pause"), false)
 			# The minimap itself opens the full floor map.
 			var map_button = Button.new()
 			map_button.name = "MapButton"
@@ -168,7 +168,7 @@ func show_screen(screen: String) -> void:
 			button("← Back", Rect2(396, 590, 488, 58), func(): close_subscreen())
 		"pause":
 			button("Continue the journey", Rect2(430, 280, 420, 62), func(): game.resume_game(), true)
-			button("Relic journal", Rect2(430, 358, 420, 58), func(): open_journal("pause"))
+			button("Journal", Rect2(430, 358, 420, 58), func(): open_journal("pause"))
 			button("Settings", Rect2(430, 432, 420, 58), func(): open_settings("pause"))
 			button("Return to title", Rect2(430, 506, 420, 58), func(): game.return_to_title())
 			var trigger = Button.new()
@@ -345,10 +345,10 @@ func build_menu() -> void:
 	if Run.has_save():
 		button("Continue saved run", Rect2(64, 530, 418, 56), func(): game.continue_run())
 		button("Today’s seed", Rect2(64, 598, 201, 54), func(): game.start_run(starter_weapon().id, Run.daily_seed(), true))
-		button("Relic journal", Rect2(281, 598, 201, 54), func(): open_journal("menu"))
+		button("Journal", Rect2(281, 598, 201, 54), func(): open_journal("menu"))
 	else:
 		button("Today’s seed", Rect2(64, 536, 201, 56), func(): game.start_run(starter_weapon().id, Run.daily_seed(), true))
-		button("Relic journal", Rect2(281, 536, 201, 56), func(): open_journal("menu"))
+		button("Journal", Rect2(281, 536, 201, 56), func(): open_journal("menu"))
 	button("Settings", Rect2(1080, 32, 154, 56), func(): open_settings("menu"))
 
 func cycle_weapon(step: int) -> void:

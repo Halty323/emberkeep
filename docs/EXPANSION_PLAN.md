@@ -1,6 +1,6 @@
 # Emberkeep: graphics, exploration and collection expansion
 
-Status: implementation plan for review. No gameplay or settings changes are included in this planning pass. Baseline: [81edbf3](https://github.com/Halty323/emberkeep/commit/81edbf3e6ca59d03f238216f2f8fb1b1be05de57), Godot 4.6.3 Standard, GL Compatibility, Android/iOS/desktop.
+Status: **implemented**, phase by phase; see [§16 Implementation status](#16-implementation-status) for what was built, the few deviations, and what still needs real devices or network access. Baseline: [81edbf3](https://github.com/Halty323/emberkeep/commit/81edbf3e6ca59d03f238216f2f8fb1b1be05de57), Godot 4.6.3 Standard, GL Compatibility, Android/iOS/desktop.
 
 The confirmed choices are **one equipped active item with time-based cooldowns**, **familiar European classics** for the painting collection, and **a detailed plan before implementation**. Existing cozy lighting, close isometric framing, large stone UI, twin-stick controls, 60 relics, and ten weapons remain the foundation.
 
@@ -253,3 +253,28 @@ Phases remain independently playable. Do not pile new content onto unfinished ro
 - [Engine.max_fps](https://docs.godotengine.org/en/4.6/classes/class_engine.html#class-engine-property-max-fps) and [DisplayServer VSync API](https://docs.godotengine.org/en/4.6/classes/class_displayserver.html).
 - [Android VSync implementation](https://github.com/godotengine/godot/blob/4.6.3-stable/platform/android/display_server_android.cpp) and [Apple-embedded implementation](https://github.com/godotengine/godot/blob/4.6.3-stable/drivers/apple_embedded/display_server_apple_embedded.mm).
 - Artwork records and exact reproduction candidates are listed in [PAINTING_COLLECTION_PLAN.md](PAINTING_COLLECTION_PLAN.md).
+
+## 16. Implementation status
+
+All seven phases are implemented and covered by the suites described in [TESTING.md](TESTING.md).
+
+| Phase | Where it lives | Notes |
+| --- | --- | --- |
+| 1 — Settings and data foundation | `scripts/settings_service.gd`, `scripts/ui_setting_row.gd`, `scripts/content.gd`, `content/*.json` | Versioned `settings.json` with one-time profile migration; Compatibility bilinear 3D scaling; `Engine.max_fps`; VSync shown as *System controlled* on Android/iOS. Families are typed and validated; `tools/verify_pack.sh` tests the packaged catalog for every preset. Run saves are version 2 with a v1 adapter. |
+| 2 — Room geometry | `scripts/dungeon/room_geometry.gd`, `floor_generator.gd`, `room_navigation.gd`, `scripts/world.gd` | Five templates including the rotatable L; explicit portals; last-valid-position recovery; AStarGrid2D without corner cutting; geometry-aware camera bounds; footprint-masked halos via global shader uniforms; full-map view. |
+| 3 — Items and resources | `scripts/items/`, `scripts/interactions/` | Nine pickups, eight actives, gameplay-time ledger, pending bombs, reward-credit ledger, interaction registry and one validated action path reached through `Session`. |
+| 4 — Furniture and secrets | `scripts/dungeon/furnisher.gd`, `prop_visuals.gd`, `detail_batch.gd`, `content/furniture.json` | Sixteen families, six themed layouts, persistent breakables, concealed secret rooms (cache or gallery). |
+| 5 — Effects and graphics | `scripts/effects/effects_pool.gd`, `scripts/fx.gd`, `content/effects.json`, `shaders/floor_mark.gdshader` | Room-owned pool with per-level budgets, atmosphere dropped first, recipes, rate limits, culling, ambient emitters. |
+| 6 — Gallery and Paint Sprayer | `scripts/progression/`, `content/paintings.json`, `content/collections.json`, `tools/import_paintings.py` | Provenance manifest, importer with offline test, wall paintings, viewer, journal tab, unseen-first distribution, reconciliation, availability gate, pigment cycle. |
+| 7 — Content and shipping | `tools/verify_pack.sh`, `tools/render_stress.sh`, extended render captures | All content shipped; packs verified; worst-case workload measured on software GL only. |
+
+Deviations and decisions made during implementation:
+
+- **Water Lilies (1906)** could not be verified per image (the AIC website and API are unreachable from the build environment), so its documented fallback, **Woman with a Parasol**, holds the ninth place in `world_classics_12_v1`. Water Lilies remains in the manifest as an unverified alternate, and validators forbid unverified works in a collection.
+- **No reproductions are bundled yet.** The image hosts were blocked from the implementation environment. The importer, manifest, credits generation and offline checks are complete; until `tools/import_paintings.py` runs, a slot shows a covered canvas and the viewer says the reproduction awaits import. Nothing generates or approximates an artwork.
+- **Tall furniture stands only on rear walls**, so it never hides the room; only free-standing pieces taller than a small foe cut away for the camera.
+- **Rest rooms carry the guaranteed painting.** Every generated rest room has a rear-wall mount; secret galleries add optional chances.
+- **Projectile trails follow Effects detail** (none at Low), which removed about a third of the worst-case draw calls without touching gameplay.
+- **Entity ids restart with each run**, so a seed and a fixed command stream play out identically, which the effects suite checks across detail levels and FPS limits.
+
+Still open, as in §14: device profiling on named Android and iPhone hardware, tuning a mobile Balanced preset, touch-cluster ergonomics, and importing and reviewing the painting files.

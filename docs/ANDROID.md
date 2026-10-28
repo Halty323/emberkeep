@@ -56,8 +56,12 @@ godot --headless --path . --export-debug Android ../builds/emberkeep-debug.apk
 
 `tools/configure_android.gd` sets only those Android export preferences in your Godot editor settings. The helper does not download software, create a release signing key or publish anything. `ANDROID_HOME` takes precedence if both SDK variables are set. Debug signing uses the standard public Android debug credentials; do not use this keystore for a store release.
 
+## Before exporting
+
+Run `python3 tools/import_paintings.py` (needs network access to the image hosts) and `python3 tools/import_paintings.py --check` so the painting reproductions are bundled, then `./tools/verify_pack.sh` to confirm the packaged catalog. Without imported files the game still runs; painting slots show a covered canvas.
+
 ## Device checks before sharing a build
 
-Play a full run on an arm64 phone. Check simultaneous movement/aim/dash touches, interruptions and resume, Android Back, safe-area placement on wide/notched screens, text size, and heat/frame rate with many split or bouncing shots. Lantern shadows can be disabled in Settings for slower hardware. The game requests no internet or microphone permissions.
+Play a full run on an arm64 phone. Check simultaneous movement/aim with Item, Bomb and Dash taps, interruptions and resume (item cooldowns must not advance while away), Android Back, safe-area placement on wide/notched screens, text size, and heat/frame rate with many split or bouncing shots. `tools/render_stress.sh` describes the worst-case scene to profile. Render resolution, FPS limit, Effects detail, Small details and Lantern shadows can be lowered in Settings for slower hardware; VSync is system controlled on Android. The game requests no internet or microphone permissions.
 
 For a store release, choose a final package ID, configure a private release keystore outside version control, review the then-current Google Play target API requirement, and configure an AAB/Gradle release export if required. Current debug APK settings are intended for development and sideloading.

@@ -47,6 +47,11 @@ var screen_right = Vector3(22, 0, -18).normalized()
 var screen_down = Vector3(18, 0, 22).normalized()
 
 func _ready() -> void:
+	# Packaged-build diagnostic: report what the catalog actually loaded.
+	if "--verify-catalog" in OS.get_cmdline_user_args():
+		print("EMBERKEEP CATALOG REPORT " + JSON.stringify(Content.report()))
+		get_tree().quit(0 if Content.errors.is_empty() else 1)
+		return
 	setup_inputs()
 	# Reserve a useful 512px tile for the single optional lantern shadow.
 	get_viewport().positional_shadow_atlas_quad_0 = Viewport.SHADOW_ATLAS_QUADRANT_SUBDIV_1

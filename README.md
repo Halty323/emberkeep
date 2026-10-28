@@ -1,6 +1,6 @@
 # Emberkeep
 
-A native Godot prototype of a cozy, isometric 3D dungeon roguelike for Android. All characters, props and effects use simple geometry and plain colors. Warm lanterns, dynamic shadows, soft additive halos and drifting embers establish the atmosphere before final art.
+A native Godot prototype of a cozy, isometric 3D dungeon roguelike for Android and iOS. Characters, furniture and effects use simple procedural geometry and plain colors; the only bundled artwork will be the reproductions of twelve public-domain paintings. Warm lanterns, dynamic shadows, soft additive halos and drifting embers establish the atmosphere.
 
 ## Play from source
 
@@ -8,7 +8,7 @@ Use **Godot 4.6.3 Standard**; no .NET, external libraries or asset downloads are
 
 1. Import `project.godot` into Godot.
 2. Press **F6** with `scenes/main.tscn` open, or **F5** to run the project.
-3. Choose a starting weapon and begin a run. Every weapon is available for testing.
+3. Choose a starting weapon and begin a run. Ten weapons are available from the start; Paint Sprayer unlocks with the painting collection.
 
 From a terminal:
 
@@ -29,41 +29,44 @@ iPhone/iPad: [unsigned iOS builds and sideloading](docs/IOS.md) are available th
 | Move | Drag on the lower left | WASD / arrows | Left stick |
 | Aim and fire | Drag on the lower right | Aim with mouse; hold left click | Right stick |
 | Dash | Dash button | Space / Shift | Right shoulder |
-| Interact | Tap the interaction prompt near a pedestal | E / click the prompt | A |
+| Use held item | Item button (shows its cooldown) | F | Left shoulder |
+| Place a bomb | Bomb button | B | X |
+| Interact | Tap the interaction prompt | E / click the prompt | A |
+| Floor map | Tap the minimap | M | — |
 | Pause | Top-right pause button / Android Back | Escape / P | Start |
-| Relic journal | Relics button | Tab | Menu button via focus navigation |
+| Journal (relics and paintings) | Journal button | Tab | Menu button via focus navigation |
 
-The sticks float to the initial touch position. Release the aiming stick to stop firing. Dash grants a short invulnerability window. Doors open after all enemies in a combat room are defeated; walk through the middle of a doorway to enter the next room.
+The sticks float to the initial touch position, and the Item, Bomb and Dash buttons are hit-tested before a stick can capture the finger, so both sticks stay held while you tap actions. Items and bombs need a fresh press; holding a key never repeats them. Dash grants a short invulnerability window. Doors open after all enemies in a combat room are defeated; walk into a doorway to take that exit.
 
-## Planned expansion
+## What is in the game
 
-The [graphics, exploration and collection implementation plan](docs/EXPANSION_PLAN.md) covers display settings, multi-cell rooms, furniture, secrets, timed active items, new pickups, and twelve classical paintings unlocking Paint Sprayer. This is a planning document; those features are not implemented yet. [Painting source research](docs/PAINTING_COLLECTION_PLAN.md) records the proposed collection and remaining asset preparation.
+- **Rooms of several shapes.** Floors mix single rooms with 2×1 and 1×2 halls, 2×2 great halls and rotated three-cell L passages. Rooms join only through explicit doorways; a long wall can hold more than one. Enemies path around bends and furniture, and the camera keeps its close zoom while following you through large rooms.
+- **Furnished rooms.** Sixteen furniture families (bookcases, cupboards, tables and chairs, crates, barrels, jars, braziers, cots, workbenches, rugs and more) form reading rooms, storage, workshops, living quarters, shrines and galleries. Crates, barrels and jars break and stay broken.
+- **Secrets.** Every floor hides one optional room behind a wall with subtle cracks and rubble. A bomb opens it; the Miner's Lantern points to it. Secrets are never on the way to the boss.
+- **Pickups and supplies.** Copper and silver coins, half and full hearts, wards (persistent protective hits), keys for locked chests, bombs, and small and full batteries for your held item. New runs start with one bomb.
+- **One held item.** Eight original actives — Pocket Hearth, Gale Bell, Ember Flask, Winter Globe, Copper Kettle, Moth Jar, Miner's Lantern and Bell Jar — with cooldowns that run only during play. Only a useful activation starts the timer, and swapping never resets one.
+- **Twelve classic paintings.** A rest room on every floor shows a painting, and secret galleries may hold more. Inspect one to add it to the permanent journal; finding all twelve unlocks the **Paint Sprayer**, an eleventh weapon that cycles red, blue and green bursts (burn, chill, poison). See [painting provenance](docs/PAINTING_CREDITS.md). Reproductions are fetched with `tools/import_paintings.py`; until then a slot shows a covered canvas.
+- Ten starting weapons and 60 stackable relics with homing, piercing, ricochets, elemental status, chain lightning, split shots, explosions, orbitals and dash attacks.
+- Six regular enemy types including splitter offspring, plus a boss encounter on each floor.
+- Dim, warm lantern pools with one directional shadow caster and at most one local shadow spotlight; large rooms move a small pool of fill lights with the view. Restrained, budgeted effects: muzzle flecks, impact chips, footstep motes, dust, paint splashes and a few candle wisps and fireflies.
+- **Display settings** that work on each platform: 3D render resolution (50–100 %, with the resulting pixel size), FPS limit (30–120 or unlimited), VSync where the platform honours it (shown as *System controlled* on Android and iOS), an FPS readout, and Low/Balanced/High effects and small-details levels that never change gameplay.
+- Optional seeds and a date-derived “Today’s seed.” This is a local mode using the device’s UTC date, with no server verification or online ranking. Daily runs follow a fixed painting schedule.
 
-## Current content
-
-- Three seeded floors with connected, branching room layouts; combat, treasure, merchant, rest and boss rooms.
-- Closer isometric gameplay framing with smooth, bounded player follow. Tall foreground walls cut away near players/enemies while retaining their full-height shadows and collision boundaries.
-- Dim, warm lantern pools and darker ambient fill, with a directional shadow caster and one optional warm spotlight for stronger contrast.
-- Larger stone-and-brass menus and HUD, with beveled surfaces that share the dungeon's projected lantern positions, colors and flicker. Text stays clear as the stone catches the light; touch targets and relic descriptions are larger too.
-- Ten weapon types and 60 stackable relics, with effects including homing, piercing, ricochets, elemental status, chain lightning, split shots, explosions, orbitals and dash attacks.
-- Six regular enemy types including splitter offspring, plus a boss encounter on each floor. Bosses share a base design with floor scaling and attack variations.
-- One relic or weapon selection per reward pedestal or merchant visit. Defeat the floor boss, claim its reward and use the revealed exit to descend; the third exit completes the run.
-- Coins, healing pickups, a local discovery journal, pause/settings screens, procedural sound effects and an ambient pad.
-- Optional seeds and a date-derived “Today’s seed.” This is a local mode using the device’s UTC date, with no server verification or online ranking.
-
-This is a playable first implementation, not a balanced release. Device performance, touch comfort and long-run item combinations still need testing on real Android hardware. Co-op, accounts, leaderboards and cloud saves are planned, not implemented; see [docs/ONLINE.md](docs/ONLINE.md).
+This is a playable implementation, not a balanced release. Device performance, touch comfort and long-run item combinations still need testing on real Android and iOS hardware. Co-op, accounts, leaderboards and cloud saves are planned, not implemented; see [docs/ONLINE.md](docs/ONLINE.md). The [expansion plan](docs/EXPANSION_PLAN.md) records what was built and what remains.
 
 ## Secret code
 
 During a run, pause and type **ALLRELICS** on a physical keyboard. On Android (or with a mouse), tap/click the **Catch your breath** pause title five times, enter **ALLRELICS**, and choose **Make a wish** or submit from the keyboard.
 
-The code adds one of every missing relic, preserves existing stacks, activates their effects immediately and saves the collection. Repeating it does not add duplicates or refill health/guards. It works only during an active run. Codes ignore letter case and surrounding spaces; Back/Escape cancels the hidden entry.
+The code adds one of every missing relic, preserves existing stacks, activates their effects immediately and saves the collection. It is passive-only: it never discovers paintings or unlocks a weapon. Repeating it does not add duplicates or refill health/guards. It works only during an active run. Codes ignore letter case and surrounding spaces; Back/Escape cancels the hidden entry.
 
 ## Saves
 
-`user://profile.json` stores settings, discovered relics and local lifetime counters. `user://run.json` stores the active run checkpoint: seed, floor map, health, inventory, weapon, coins and gameplay RNG state. Godot chooses the platform-specific application data directory.
+- `user://settings.json` (version 1) holds device preferences: display, graphics, sound and touch. Older profiles' settings migrate into it once.
+- `user://profile.json` (version 2) holds discovered relics, the painting collection, unlocked rewards and lifetime counters. It survives death and new runs.
+- `user://run.json` (version 2) holds the active run: seed, floor rooms and doorways (including resolved furniture, chests, paintings and opened secrets), health, inventory, weapon, coins, keys, bombs, wards, the held item and its cooldown ledger, timed effects, lit bombs, Paint Sprayer's pigment and the gameplay RNG state.
 
-Safe-room checkpoints are saved automatically, including reward selections and floor transitions. If you return to the title during combat or the app closes mid-fight, continuation returns to the saved checkpoint rather than restoring an exact combat frame. Projectiles and enemy positions are not serialized. Dropped coin and heart records are stored with the room so uncollected pickups can return when revisiting or reloading a cleared room. Death or victory removes the active run save; the profile remains. Starting another run replaces the active checkpoint.
+Safe rooms save automatically, as do bombs and item uses. If the app closes mid-fight, continuing restarts that encounter rather than restoring an exact combat frame: projectiles and enemy positions are not saved, but your resources, timers and lit fuses are, and a foe you already defeated never pays out twice. Timers never catch up on time spent away. Version 1 run saves load through an adapter that keeps their floor, offers, drops and RNG state, and later floors of such a run use the original generator. Death or victory removes the active run save; the profile remains.
 
 ## Development
 
@@ -71,30 +74,42 @@ Safe-room checkpoints are saved automatically, including reward selections and f
 # Import resources and check that scripts load.
 godot --headless --editor --path . --import --quit
 
-# Stateful regression checks. Use a separate user-data directory to protect saves.
+# Stateful regression checks with disposable user data.
 ./tools/test.sh
 
-# Or invoke the suite directly with separate user data:
-XDG_DATA_HOME=/tmp/emberkeep-test-data godot --headless --path . --script res://tests/smoke.gd
+# Export every preset's resource pack and check the packaged catalog runs.
+./tools/verify_pack.sh
 
-# Opt-in OpenGL captures and pixel checks; requires a working display.
+# Opt-in OpenGL captures and pixel checks; requires a display (or Xvfb).
 ./tools/render_lighting.sh
 ./tools/render_ui.sh
+./tools/render_stress.sh        # worst-case workload report
 
-# Rebuild the inspectable content catalog after editing its authoring source.
+# Authoring only: fetch approved painting reproductions and record provenance.
+python3 tools/import_paintings.py
+python3 tools/import_paintings.py --check
+
+# Rebuild the relic and weapon catalog after editing its authoring source.
 python3 tools/make_content.py
 ```
 
-The suites check dungeon connectivity and seed repeatability, catalog effect names, saves, combat, rewards, progression, lighting quality, secret codes, camera/wall presentation, larger UI layout, shared lighting and input routing. All 2,514 headless checks pass. OpenGL captures also verify lantern shadows, the closer framing, native menu clicks and the stone UI's response to real room-light changes. See [docs/TESTING.md](docs/TESTING.md). Android performance and touch ergonomics still require device testing.
+Twelve headless suites cover settings, the content catalog, multi-cell geometry and generation, items, furniture and secrets, pooled effects, the painting collection, gameplay, lighting, secret codes, camera presentation and UI. See [docs/TESTING.md](docs/TESTING.md) for what is verified and what still needs real devices.
 
 | Location | Purpose |
 | --- | --- |
 | `scripts/main.gd` | Run flow, spawning, rooms, rewards and input |
-| `scripts/run.gd` | Seeded floor graphs, run state and versioned local saves |
+| `scripts/run.gd` | Run state, painting assignment and versioned local saves |
+| `scripts/settings_service.gd` | Device settings: render scale, FPS, VSync, detail levels |
+| `scripts/content.gd`, `content/*.json` | Typed, validated content families |
+| `scripts/dungeon/` | Room geometry, floor generation, navigation, furnishing and prop visuals |
+| `scripts/items/`, `scripts/interactions/` | Pickups, drops, active items, bombs and the validated action handlers |
+| `scripts/effects/effects_pool.gd`, `scripts/fx.gd` | Pooled, budgeted effects behind the `Effects` facade |
+| `scripts/progression/` | Painting collection, library and wall views |
 | `scripts/avatar.gd`, `enemy.gd`, `shot.gd` | Combat |
-| `scripts/world.gd`, `geo.gd`, `fx.gd`, `shaders/` | Placeholder geometry, lighting and effects |
-| `scripts/ui.gd`, `ui_surface.gd`, `shaders/ui_stone.gdshader` | Larger menus, HUD, touch controls and dungeon-lit stone surfaces |
-| `tools/make_content.py`, `assets/data.json` | Content authoring and runtime catalog |
-| `scripts/session.gd` | Initial offline networking boundary |
+| `scripts/world.gd`, `geo.gd`, `shaders/` | Room views, lighting and shaders |
+| `scripts/ui.gd`, `ui_surface.gd`, `ui_setting_row.gd` | Menus, HUD, touch controls, map, journal and painting viewer |
+| `tools/make_content.py`, `assets/data.json` | Relic and weapon authoring and runtime catalog |
+| `tools/import_paintings.py` | Authoring-only painting importer and provenance |
+| `scripts/session.gd` | Offline command/snapshot boundary |
 
-Font notices and licenses are in [THIRD_PARTY.md](THIRD_PARTY.md) and `assets/fonts/licenses/`. No Binding of Isaac art, audio or characters are included.
+Font notices and licenses are in [THIRD_PARTY.md](THIRD_PARTY.md) and `assets/fonts/licenses/`; painting provenance is in [docs/PAINTING_CREDITS.md](docs/PAINTING_CREDITS.md). No Binding of Isaac art, audio or characters are included.

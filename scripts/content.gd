@@ -72,6 +72,21 @@ func load_catalog() -> void:
 	errors.append_array(validate())
 	revision = "%08x" % stable_hash(digest_source)
 
+## Summary for packaged-build checks: what loaded, and which painting files
+## are bundled versus still awaiting import.
+func report() -> Dictionary:
+	var counts := {}
+	for family in families:
+		counts[family] = families[family].size()
+	var imported: Array = []
+	var missing: Array = []
+	for painting in families.get("paintings", []):
+		if painting.asset.status != "imported": continue
+		if ResourceLoader.exists(painting.asset.wall) and ResourceLoader.exists(painting.asset.full): imported.append(painting.id)
+		else: missing.append(painting.id)
+	return {"revision": revision, "errors": errors, "families": counts, "relics": items.size(), "weapons": weapons.size(),
+		"paintings_imported": imported, "paintings_missing": missing}
+
 ## Replaces one family's records. Tests use this to prove broken data is rejected.
 func ingest(family: String, raw_records: Array) -> void:
 	families[family] = []
