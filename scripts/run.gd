@@ -3,6 +3,8 @@ signal changed
 signal item_gained(item: Dictionary)
 const SAVE_VERSION := 2
 const ALL_RELICS_CODE := "ALLRELICS"
+const PAINT_SPRAYER_CODE := "PAINTSPRAYER"
+const SECRET_CODES := [ALL_RELICS_CODE, PAINT_SPRAYER_CODE]
 const PROFILE_PATH := "user://profile.json"
 const SAVE_PATH := "user://run.json"
 var rng = RandomNumberGenerator.new()
@@ -156,6 +158,23 @@ func grant_all_relics() -> int:
 		save_run()
 		changed.emit()
 	return added
+
+## Unlocks a weapon for good and puts it in hand, the way the painting
+## collection would have. Returns false when it was already both.
+func grant_weapon(id: String) -> bool:
+	if not active or not Content.weapon_by_id.has(id):
+		return false
+	var granted = false
+	if id not in profile.unlocks:
+		profile.unlocks.append(id)
+		save_profile()
+		granted = true
+	if weapon_id != id:
+		weapon_id = id
+		save_run()
+		changed.emit()
+		granted = true
+	return granted
 
 ## Adds a stable drop record to any room, on screen or not.
 func add_drop(room_id: String, pickup_id: String, at: Vector2, value := -1.0) -> String:

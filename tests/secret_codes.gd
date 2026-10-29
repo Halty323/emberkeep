@@ -1,5 +1,6 @@
 extends SceneTree
-## Stateful regression for the all-relics secret and its hidden mobile entry.
+## Stateful regression for the all-relics and Paint Sprayer secrets and their
+## hidden mobile entry.
 var checks = 0
 var failures = 0
 var game
@@ -147,10 +148,64 @@ func test_secret_codes() -> void:
 		key.unicode = character.unicode_at(0)
 		game.ui._input(key)
 	check(run.inventory.is_empty(), "normal gameplay typing cannot accidentally activate the paused-only secret")
+	await test_paint_sprayer()
 	game.return_to_title()
 	check(not game.redeem_secret_code("ALLRELICS"), "secret stays inactive after returning to title")
+	check(not game.redeem_secret_code("PAINTSPRAYER"), "sprayer secret stays inactive after returning to title")
 	game.queue_free()
 	await process_frame
 	await process_frame
 	print("EMBERKEEP SECRET CODE TEST RESULT: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
+
+## PAINTSPRAYER skips the painting collection for the weapon alone.
+func test_paint_sprayer() -> void:
+	var collection = root.get_node("Collection")
+	var unlocks_before = run.profile.unlocks.duplicate()
+	var paintings_before = run.profile.paintings.duplicate()
+	run.profile.unlocks.clear()
+	run.save_profile()
+	game.start_run("paint_sprayer", 140031, false)
+	check(run.weapon_id == "candle", "a locked Paint Sprayer cannot start a run before the code")
+	game.pause_game()
+	var coins: int = run.coins
+	var inventory = run.inventory.duplicate()
+	var rooms = JSON.stringify(run.rooms)
+	check(not game.redeem_secret_code("PAINTSPRAY"), "partial sprayer code is rejected")
+	check(not collection.weapon_available("paint_sprayer") and run.weapon_id == "candle", "rejected codes leave the weapon locked and out of hand")
+	check(game.redeem_secret_code("  paintsprayer\n"), "sprayer secret accepts case differences and surrounding whitespace")
+	check(run.weapon_id == "paint_sprayer", "sprayer secret puts the weapon in hand")
+	check(collection.weapon_available("paint_sprayer") and run.profile.unlocks.count("paint_sprayer") == 1,
+		"sprayer secret unlocks the weapon for later runs")
+	check("paint_sprayer" in collection.available_weapons().map(func(weapon): return weapon.id), "the unlocked sprayer joins the starters")
+	check(run.profile.paintings == paintings_before, "sprayer secret discovers no paintings")
+	check(run.inventory == inventory and run.coins == coins and run.seed_value == 140031 and JSON.stringify(run.rooms) == rooms,
+		"sprayer secret leaves relics, coins, seed and rooms alone")
+	var saved_profile = JSON.parse_string(FileAccess.get_file_as_string("user://profile.json"))
+	check("paint_sprayer" in saved_profile.unlocks, "the unlock is saved to the profile")
+	var saved_run = JSON.parse_string(FileAccess.get_file_as_string("user://run.json"))
+	check(saved_run.weapon == "paint_sprayer", "the weapon in hand is saved with the run")
+	check(game.redeem_secret_code("PAINTSPRAYER") and run.profile.unlocks.count("paint_sprayer") == 1,
+		"repeating the sprayer secret never duplicates the unlock")
+	# Typed on a keyboard while paused, in a run holding something else.
+	game.start_run("needle", 140032, false)
+	game.pause_game()
+	for character in "PAINTSPRAYER":
+		var key = InputEventKey.new()
+		key.pressed = true
+		key.unicode = character.unicode_at(0)
+		game.ui._input(key)
+	check(run.weapon_id == "paint_sprayer" and game.ui.mode == "play" and not game.paused,
+		"typing the sprayer secret while paused equips it and resumes")
+	# The hidden mobile entry takes it too.
+	game.start_run("needle", 140033, false)
+	game.pause_game()
+	await process_frame
+	for tap in 5: game.ui.register_secret_tap()
+	game.ui.submit_secret_code("PaintSprayer")
+	check(run.weapon_id == "paint_sprayer" and game.ui.mode == "play" and not game.paused, "valid mobile entry equips the sprayer and resumes")
+	check(run.inventory.is_empty(), "the sprayer secret grants no relics")
+	game.start_run("paint_sprayer", 140034, false)
+	check(run.weapon_id == "paint_sprayer", "an unlocked sprayer can start a new run")
+	run.profile.unlocks = unlocks_before
+	run.save_profile()

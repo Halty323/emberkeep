@@ -149,6 +149,8 @@ shaders/floor_mark.gdshader.uid
 shaders/halo.gdshader
 shaders/light_shaft.gdshader
 shaders/light_shaft.gdshader.uid
+shaders/residue.gdshader
+shaders/residue.gdshader.uid
 shaders/halo.gdshader.uid
 shaders/ui_stone.gdshader
 shaders/ui_stone.gdshader.uid

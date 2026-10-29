@@ -10,7 +10,7 @@ Use **Godot 4.6.3 Standard**; no .NET, external libraries or asset downloads are
 
 1. Import `project.godot` into Godot.
 2. Press **F6** with `scenes/main.tscn` open, or **F5** to run the project.
-3. Choose a starting weapon and begin a run. Ten weapons are available from the start; Paint Sprayer unlocks with the painting collection.
+3. Choose a starting weapon and begin a run. Ten weapons are available from the start; Paint Sprayer unlocks with the painting collection or the PAINTSPRAYER code.
 
 From a terminal:
 
@@ -65,11 +65,14 @@ The play screen keeps out of the way: one small slab top left for health, coins,
 
 This is a playable implementation, not a balanced release. Device performance, touch comfort and long-run item combinations still need testing on real Android and iOS hardware. Co-op, accounts, leaderboards and cloud saves are planned, not implemented; see [docs/ONLINE.md](docs/ONLINE.md). The [expansion plan](docs/EXPANSION_PLAN.md) records what was built and what remains.
 
-## Secret code
+## Secret codes
 
-During a run, pause and type **ALLRELICS** on a physical keyboard. On Android (or with a mouse), tap/click the **Catch your breath** pause title five times, enter **ALLRELICS**, and choose **Make a wish** or submit from the keyboard.
+During a run, pause and type a code on a physical keyboard. On Android (or with a mouse), tap/click the **Catch your breath** pause title five times, enter the code, and choose **Make a wish** or submit from the keyboard.
 
-The code adds one of every missing relic, preserves existing stacks, activates their effects immediately and saves the collection. It is passive-only: it never discovers paintings or unlocks a weapon. Repeating it does not add duplicates or refill health/guards. It works only during an active run. Codes ignore letter case and surrounding spaces; Back/Escape cancels the hidden entry.
+- **ALLRELICS** adds one of every missing relic, preserves existing stacks, activates their effects immediately and saves the collection. It is passive-only: it never discovers paintings or unlocks a weapon. Repeating it does not add duplicates or refill health/guards.
+- **PAINTSPRAYER** puts the Paint Sprayer in your hands and unlocks it for good, so it is offered as a starting weapon in every later run. It discovers no paintings, so the journal's progress stays as it was, and it leaves relics, coins and rooms alone. Repeating it changes nothing.
+
+Codes work only during an active run. They ignore letter case and surrounding spaces; Back/Escape cancels the hidden entry.
 
 ## Saves
 
