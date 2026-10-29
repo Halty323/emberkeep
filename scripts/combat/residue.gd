@@ -13,51 +13,54 @@ const SPREAD_DELAY := .28
 const MAX_CLOUDS := 4
 const CLOUD_LIFE := 6.5
 const CLOUD_BLAST := 22.0
-const COLORS := {"wax": Color(.86, .78, .6, .85), "ice": Color(.68, .86, .96, .7), "fire": Color(1.0, .55, .2, 1.0),
-	"moss": Color(.42, .62, .33, .9), "glass": Color(.82, .94, 1.0, .55)}
+# Per kind: colour (alpha is its opacity), glow so it shows in the dark,
+# shimmer, roughness and height above the floor.
+const LOOKS := {"wax": [Color(.86, .78, .6, .9), .12, 0.0, .45, .025], "ice": [Color(.7, .87, .97, .82), .35, 0.0, .15, .03],
+	"fire": [Color(1.0, .55, .2, .95), 1.6, 1.0, .9, .035], "moss": [Color(.42, .62, .33, .92), .08, 0.0, .9, .028],
+	"glass": [Color(.82, .94, 1.0, .62), .4, 0.0, .1, .032]}
 var game: Node3D
 var geometry: RoomGeometry
-# Vector2i tile -> {"kind", "age", "life", "spread"}.
+# Vector2i tile -> {"kind", "age", "life", "spread", "under"}.
 var tiles: Dictionary = {}
 var clouds: Array = []
+# Per kind: {"view", "image", "texture"}; one texel per tile over the room.
 var views: Dictionary = {}
+var grid_origin := Vector2i.ZERO
+var grid_size := Vector2i.ONE
 var dirty := {}
 var tick = 0.0
-var flicker = 0.0
 
 func setup(owner_game: Node3D, room_geometry: RoomGeometry) -> void:
 	game = owner_game
 	geometry = room_geometry
-	for kind in COLORS:
-		# Overlapping low discs read as puddles rather than tiles.
-		var mesh = CylinderMesh.new()
-		mesh.top_radius = TILE * .68
-		mesh.bottom_radius = TILE * .68
-		mesh.height = .012
-		mesh.radial_segments = 10
-		mesh.rings = 1
-		var multimesh = MultiMesh.new()
-		multimesh.transform_format = MultiMesh.TRANSFORM_3D
-		multimesh.use_colors = true
-		multimesh.mesh = mesh
-		var view = MultiMeshInstance3D.new()
-		view.multimesh = multimesh
-		view.material_override = tile_material(kind)
+	# A tile of margin on every side lets the edges fade out cleanly.
+	var area: Rect2 = geometry.bounds()
+	grid_origin = key(Vector3(area.position.x, 0, area.position.y)) - Vector2i.ONE
+	grid_size = key(Vector3(area.end.x, 0, area.end.y)) - grid_origin + Vector2i(2, 2)
+	for kind in LOOKS:
+		var look: Array = LOOKS[kind]
+		var image = Image.create(grid_size.x, grid_size.y, false, Image.FORMAT_R8)
+		var texture = ImageTexture.create_from_image(image)
+		var mat = ShaderMaterial.new()
+		mat.shader = preload("res://shaders/residue.gdshader")
+		mat.set_shader_parameter("mask", texture)
+		mat.set_shader_parameter("tint", look[0])
+		mat.set_shader_parameter("glow", look[1])
+		mat.set_shader_parameter("flicker", look[2])
+		mat.set_shader_parameter("roughness_value", look[3])
+		mat.set_shader_parameter("grid_origin", Vector2(grid_origin) * TILE)
+		mat.set_shader_parameter("grid_size", Vector2(grid_size))
+		mat.set_shader_parameter("tile", TILE)
+		var plane = PlaneMesh.new()
+		plane.size = Vector2(grid_size) * TILE
+		var view = MeshInstance3D.new()
+		view.mesh = plane
+		view.material_override = mat
 		view.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		if kind in ["fire", "ice", "glass"]: view.layers = 2
+		view.position = Vector3((grid_origin.x + grid_size.x / 2.0) * TILE, look[4], (grid_origin.y + grid_size.y / 2.0) * TILE)
+		view.visible = false
 		add_child(view)
-		views[kind] = view
-
-static func tile_material(kind: String) -> StandardMaterial3D:
-	var mat = StandardMaterial3D.new()
-	mat.vertex_color_use_as_albedo = true
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.roughness = .35 if kind in ["ice", "glass", "wax"] else .9
-	if kind in ["fire", "ice", "glass"]:
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	if kind == "fire":
-		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	return mat
+		views[kind] = {"view": view, "image": image, "texture": texture}
 
 static func key(at: Vector3) -> Vector2i:
 	return Vector2i(floori(at.x / TILE), floori(at.z / TILE))
@@ -244,27 +247,21 @@ func update_sim(delta: float) -> void:
 				enemy.apply_status({"burn": 1.2})
 		if kind_at(game.player.global_position) == "fire":
 			game.player.hurt(1.0, game.player.global_position)
-	flicker += delta
-	if tiles.values().any(func(entry): return entry.kind == "fire"): dirty["fire"] = true
 	for kind in dirty.keys():
 		if views.has(kind): rebuild(kind)
 	dirty.clear()
 
+## Redraws one kind's mask; a kind with nothing on the floor is not drawn.
 func rebuild(kind: String) -> void:
-	var chosen: Array = tiles.keys().filter(func(tile): return tiles[tile].kind == kind)
-	var multimesh: MultiMesh = views[kind].multimesh
-	multimesh.instance_count = chosen.size()
-	var base: Color = COLORS[kind]
-	for i in chosen.size():
-		var tile: Vector2i = chosen[i]
-		var h = absi(hash(tile))
-		var turn = Basis(Vector3.UP, float(h % 360) * .0175).scaled(Vector3(1, 1, 1) * (.85 + float(h % 7) * .06))
-		var lift = {"wax": .025, "moss": .03, "ice": .035, "glass": .04, "fire": .05}[kind]
-		multimesh.set_instance_transform(i, Transform3D(turn, center(tile) + Vector3(0, lift, 0)))
-		var tint = base
-		if kind == "fire":
-			var wave = .7 + .3 * sin(flicker * 11.0 + float(h % 17))
-			tint = Color(base.r * wave, base.g * wave * .9, base.b * wave * .6, 1.0)
-		elif kind == "wax":
-			tint = base.darkened(float(h % 5) * .03)
-		multimesh.set_instance_color(i, tint)
+	var entry: Dictionary = views[kind]
+	var image: Image = entry.image
+	image.fill(Color.BLACK)
+	var count = 0
+	for tile in tiles:
+		if tiles[tile].kind != kind: continue
+		var at: Vector2i = tile - grid_origin
+		if at.x < 0 or at.y < 0 or at.x >= grid_size.x or at.y >= grid_size.y: continue
+		image.set_pixelv(at, Color.WHITE)
+		count += 1
+	entry.texture.update(image)
+	entry.view.visible = count > 0

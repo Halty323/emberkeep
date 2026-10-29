@@ -265,8 +265,12 @@ func test_residue() -> void:
 	await arena(1)
 	var residue = game.residue
 	game.player.place(Vector3(6, 0, 5))
+	check(residue.views.values().all(func(v): return not v.view.visible), "nothing on the floor draws nothing")
 	residue.add("wax", Vector3(-4, 0, -2), 1.8)
 	var wax = residue.tiles.size()
+	step(1)
+	var marked = residue.views.wax.image.get_pixelv(residue.key(Vector3(-4, 0, -2)) - residue.grid_origin).r
+	check(residue.views.wax.view.visible and marked > .99 and not residue.views.ice.view.visible, "each kind is drawn as one even patch from its own mask")
 	residue.react(Vector3(-4, 0, -2), .7, {"burn": 1.0})
 	var fire_count = func(): return residue.tiles.values().filter(func(t): return t.kind == "fire").size()
 	var first = fire_count.call()
