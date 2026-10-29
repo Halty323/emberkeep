@@ -117,7 +117,7 @@ func test_floor_light() -> void:
 	check(floors[0].background.get_luminance() < floors[1].background.get_luminance() and floors[1].background.get_luminance() < floors[2].background.get_luminance(),
 		"the void between rooms lightens as the tower rises")
 	check(floors[0].foe_glow > floors[1].foe_glow and floors[0].foe_body > 0, "foes carry their own glow where it is darkest")
-	check(floors[0].doorway > floors[1].doorway and floors[1].doorway >= floors[2].doorway and floors[2].doorway > 0, "doorways spill the most light where it is darkest")
+	check(floors[0].doorway > floors[1].doorway and floors[1].doorway >= floors[2].doorway and floors[2].doorway > 0, "doorway outlines glow brightest where it is darkest")
 	for profile in floors:
 		check(profile.ambient < .36 and profile.key < .45 and profile.lamp < 2.0, "every floor keeps the shadow contrast")
 	# Which lanterns burn is the room's own, repeatable, and never all dark.
@@ -151,16 +151,19 @@ func test_floor_light() -> void:
 		var spot: SpotLight3D = room.shadow_lamps[0]
 		check(room.lantern_points.any(func(p): return (p + Vector3(0, 2.2, 0)).distance_to(spot.position) < .01) and is_equal_approx(spot.light_energy, profile.shadow),
 			"floor %d's shadow lamp hangs on a burning lantern" % floor)
-		# Every open doorway spills this floor's light inward; a sealed one none.
-		var spills = room.gates.map(func(gate): return gate.get_node("Spill"))
-		var inward = room.gates.all(func(gate):
-			var socket = room.sockets.values().filter(func(s): return s.get("gate") == gate)[0]
-			return gate.get_node("Spill").position.dot(Vector3(socket.dir.x, 0, socket.dir.y)) < -2.0)
-		var shown = spills.all(func(spill): return spill.visible and is_equal_approx(spill.material_override.get_shader_parameter("tint").a, profile.doorway))
+		# Every open doorway's outline glows at this floor's strength, on the
+		# unlit effects layer; a sealed doorway's goes dark.
+		var outlines = room.gates.map(func(gate): return gate.get_node("Outline"))
+		var shown = true
+		for outline in outlines:
+			shown = shown and outline.visible and outline.get_child_count() >= 3
+			for bar in outline.get_children():
+				shown = shown and bar.layers == 2 and bar.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF \
+					and is_equal_approx(bar.material_override.albedo_color.r, profile.doorway)
 		room.set_open(false)
-		var sealed = spills.all(func(spill): return not spill.visible)
+		var sealed = outlines.all(func(outline): return not outline.visible)
 		room.set_open(true)
-		check(spills.size() == run.rooms["0,0"].portals.size() and inward and shown and sealed, "floor %d's open doorways spill light into the room, sealed ones none" % floor)
+		check(outlines.size() == run.rooms["0,0"].portals.size() and shown and sealed, "floor %d's open doorways glow in outline, sealed ones go dark" % floor)
 		var foe = game.spawn_enemy(Vector3(3, 0, 0), "mote")
 		var body: MeshInstance3D = foe.visual.get_child(0)
 		check((body.material_override.emission_enabled and is_equal_approx(body.material_override.emission_energy_multiplier, profile.foe_body)) == (profile.foe_body > 0),
