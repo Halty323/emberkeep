@@ -1,0 +1,94 @@
+name: Windows build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Emberkeep.exe
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Restore Godot 4.6.3 and its Windows template
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/godot-4.6.3
+          key: godot-4.6.3-linux-editor-windows-template-v1
+      - name: Download Godot 4.6.3 and its Windows template
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          download_dir="$RUNNER_TEMP/emberkeep-godot"
+          godot_dir="$HOME/godot-4.6.3"
+          mkdir -p "$download_dir" "$godot_dir"
+          base_url="https://github.com/godotengine/godot-builds/releases/download/4.6.3-stable"
+          curl --fail --location --retry 3 --connect-timeout 30 --max-time 900 \
+            "$base_url/Godot_v4.6.3-stable_linux.x86_64.zip" -o "$download_dir/editor.zip"
+          curl --fail --location --retry 3 --connect-timeout 30 --max-time 900 \
+            "$base_url/Godot_v4.6.3-stable_export_templates.tpz" -o "$download_dir/templates.tpz"
+          # SHA-512 digests from the official 4.6.3 release's SHA512-SUMS.txt.
+          (cd "$download_dir" && sha512sum --check <<'CHECKSUMS'
+          a035258da32b77f966a5376f9fa29c30a6adde826a85ba918e1605bd1fc9823eba7d85f1dd5e748956bd2ba72827c0025ffa11bb82aec91128c407a2e723c99c  editor.zip
+          da606b61c10157844f8300172df374472665f95015495cb1a7cd132c40ede404faa96cc1016a4b9662db9909ddea69632c4948b2cd11163438dad4808881fb68  templates.tpz
+          CHECKSUMS
+          )
+          unzip -q -j "$download_dir/editor.zip" 'Godot_v4.6.3-stable_linux.x86_64' -d "$godot_dir"
+          mv "$godot_dir/Godot_v4.6.3-stable_linux.x86_64" "$godot_dir/godot"
+          chmod +x "$godot_dir/godot"
+          # Only the 64-bit release template is used; the rest of the archive is not kept.
+          unzip -q -j "$download_dir/templates.tpz" 'templates/windows_release_x86_64.exe' 'templates/version.txt' -d "$godot_dir/templates"
+          rm -rf "$download_dir"
+      - name: Put Godot on the path
+        shell: bash
+        run: |
+          set -euo pipefail
+          template_dir="$HOME/.local/share/godot/export_templates/4.6.3.stable"
+          mkdir -p "$template_dir"
+          cp "$HOME/godot-4.6.3/templates/"* "$template_dir/"
+          echo "$HOME/godot-4.6.3" >> "$GITHUB_PATH"
+      - name: Run gameplay and interface checks
+        run: bash tools/test.sh
+      - name: Export and verify Emberkeep.exe
+        run: bash tools/build_windows.sh "$RUNNER_TEMP/emberkeep-windows"
+      - name: Upload the game
+        uses: actions/upload-artifact@v4
+        with:
+          name: Emberkeep-Windows
+          path: |
+            ${{ runner.temp }}/emberkeep-windows/Emberkeep.exe
+            ${{ runner.temp }}/emberkeep-windows/Emberkeep.exe.sha256
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload diagnostics if the build fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-build-diagnostics
+          path: ${{ runner.temp }}/emberkeep-windows/*.log
+          if-no-files-found: ignore
+          retention-days: 1
+      - name: Describe installation
+        shell: bash
+        run: |
+          {
+            echo "### Emberkeep for Windows"
+            echo "Download the **Emberkeep-Windows** artifact below, unzip it and run **Emberkeep.exe**. Nothing needs installing; the game is that one file."
+            echo "The build is not code-signed, so Windows SmartScreen may warn on first launch: choose **More info**, then **Run anyway**."
+            echo "Needs 64-bit Windows 10 or 11. Saves live in %APPDATA%\\Godot\\app_userdata\\Emberkeep."
+          } >> "$GITHUB_STEP_SUMMARY"

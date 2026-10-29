@@ -22,6 +22,8 @@ If a companion `emberkeep.pck` is supplied, it can be run with the same Godot ve
 
 Android export instructions are in [docs/ANDROID.md](docs/ANDROID.md). The repository includes an Android export preset; an SDK, matching Godot export templates and a debug signing key are still required to produce an APK. An APK is not included in this source prototype.
 
+Windows: the **Windows build** GitHub Actions workflow produces a single, self-contained `Emberkeep.exe` (64-bit, no installer, not code-signed) whenever code on `main` changes, or on demand from the Actions tab. Download the **Emberkeep-Windows** artifact, unzip it and run the exe; if SmartScreen warns, choose *More info* → *Run anyway*. Locally, `GODOT_BIN=/path/to/godot ./tools/build_windows.sh` does the same with Godot 4.6.3 and its Windows templates installed.
+
 iPhone/iPad: [unsigned iOS builds and sideloading](docs/IOS.md) are available through the **iOS unsigned IPA** GitHub Actions workflow, with no owned Mac or paid Apple Developer membership required for personal testing.
 
 ## Controls

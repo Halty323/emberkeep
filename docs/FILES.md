@@ -4,6 +4,7 @@ Godot import caches, Python bytecode and Git internals are generated locally and
 
 ```text
 .github/workflows/ios-unsigned.yml
+.github/workflows/windows.yml
 .gitignore
 README.md
 THIRD_PARTY.md
@@ -189,6 +190,7 @@ tests/smoke.gd.uid
 tests/ui_presentation.gd
 tests/ui_presentation.gd.uid
 tools/build_ios_unsigned.sh
+tools/build_windows.sh
 tools/configure_android.gd
 tools/configure_android.gd.uid
 tools/export_android.sh
