@@ -184,7 +184,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		ui.open_journal("pause")
 	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and is_playing() and event.device != InputEvent.DEVICE_ID_EMULATION:
 		var p = ui.local_point(event.position)
-		if ui.INTERACTION_RECT.has_point(p) and interaction_text != "":
+		if ui.INTERACTION_RECT.has_point(ui.from_middle(p)) and interaction_text != "":
 			interact()
 
 ## Local commands take the same path a remote peer's would: through Session
@@ -392,7 +392,7 @@ func reach_next_floor() -> void:
 	light_veil.color.a = 1.0
 	Run.entry = {"room": Run.current_room, "position": [snappedf(arrival.x, .001), snappedf(arrival.z, .001)]}
 	Run.save_run()
-	ui.notify("A little higher", "More light reaches this floor.")
+	ui.announce_floor()
 
 ## Position along a path of segments with their own durations.
 static func path_point(path: Array, times: Array, time: float) -> Vector3:
@@ -623,6 +623,7 @@ func start_run(weapon: String, seed_input: int, is_daily: bool) -> void:
 	enter_room(Vector3(0, 0, 2.0))
 	ui.show_screen("play")
 	ui.notify("You wake in the cellar", "Clear rooms, find relics, climb to the light.")
+	ui.announce_floor()
 
 func continue_run() -> void:
 	if not Run.load_run():
@@ -635,6 +636,7 @@ func continue_run() -> void:
 	enter_room(saved_entry())
 	ui.show_screen("play")
 	ui.notify("Welcome back, little light", "Your last safe room remembers you.")
+	ui.announce_floor()
 
 func saved_entry() -> Vector3:
 	if Run.entry.get("room", "") == Run.current_room:

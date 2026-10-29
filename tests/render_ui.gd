@@ -60,8 +60,9 @@ func patch_luminance(image: Image, rect: Rect2i) -> float:
 func text_peak(image: Image) -> float:
 	# The weapon label is canvas text, independently readable above the relief.
 	var levels: Array[float] = []
-	for y in range(138, 158):
-		for x in range(48, 220): levels.append(image.get_pixel(x, y).get_luminance())
+	var at: Vector2 = game.ui.WEAPON_LABEL
+	for y in range(int(at.y) - 14, int(at.y) + 2):
+		for x in range(int(at.x), int(at.x) + 150): levels.append(image.get_pixel(x, y).get_luminance())
 	levels.sort()
 	var total = 0.0
 	for index in 20: total += levels[levels.size() - 1 - index]
@@ -106,7 +107,7 @@ func capture() -> void:
 	await save_capture("hud-touch")
 	settings.set_value("touch", false)
 	# Click the actual native pause button, rather than emitting its signal.
-	await click(Vector2(1218, 53))
+	await click(game.ui.PAUSE_RECT.get_center() + Vector2(game.ui.widen(), 0))
 	check(game.ui.mode == "pause" and game.paused, "native mouse click opens pause")
 	await save_capture("pause")
 	for tap in 5: await click(Vector2(640, 184))
@@ -139,11 +140,12 @@ func capture() -> void:
 	game.key_light.light_energy = 0
 	var dark = await save_capture("ui-relief-unlit-lanterns")
 	var lamp = game.room.lamps[0]
-	lamp.global_position = game.camera.project_position(game.ui.offset + Vector2(315, 125) * game.ui.scale_value, 30)
+	lamp.global_position = game.camera.project_position(game.ui.offset + Vector2(205, 37) * game.ui.scale_value, 30)
 	lamp.omni_range = 12
 	lamp.light_energy = 4
 	var lit = await save_capture("ui-relief-warm-lantern")
-	var patch = Rect2i(280, 118, 70, 24)
+	# Bare stone beside the hearts, inside the player's slab.
+	var patch = Rect2i(150, 26, 110, 18)
 	var response = patch_luminance(lit, patch) - patch_luminance(dark, patch)
 	check(response > .015, "real lantern change visibly illuminates the HUD stone")
 	check(text_peak(dark) > .6 and text_peak(lit) > .6, "weapon text remains readable in both lighting extremes")

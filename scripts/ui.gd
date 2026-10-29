@@ -5,19 +5,35 @@ const MUTED := Color("c4bda7")
 const GOLD := Color("f1cc8a")
 const PANEL := Color("44463e")
 const EDGE := Color("9d8861")
+# The logical canvas is 720 high and 1280 wide, or wider on screens wider
+# than 16:9. The play HUD is laid out in three groups at 1280: the left group
+# keeps its place, the middle group follows the centre and the right group the
+# right edge (see widen()). Other screens are centred whole.
+# Middle group.
 const INTERACTION_RECT := Rect2(410, 564, 460, 78)
+const TOAST_RECT := Rect2(420, 82, 440, 80)
+const BOSS_RECT := Rect2(470, 16, 340, 50)
+# Right group.
 const DASH_CENTER := Vector2(973, 610)
 const DASH_RADIUS := 48.0
 # One hit-region table drives drawing, touch and mouse handling alike.
 const ACTION_BUTTONS := {"dash": {"center": Vector2(973, 610), "radius": 48.0},
 	"active": {"center": Vector2(904, 510), "radius": 44.0},
 	"bomb": {"center": Vector2(1032, 486), "radius": 38.0}}
-const HUD_RECT := Rect2(24, 24, 370, 176)
+const MINIMAP_RECT := Rect2(1032, 16, 164, 120)
+const MINIMAP_AREA := Rect2(1040, 24, 148, 104)
+const PAUSE_RECT := Rect2(1204, 16, 60, 56)
+# Left group: one small slab for health, resources, weapon and held item.
+const HUD_RECT := Rect2(16, 16, 292, 112)
+const WEAPON_LABEL := Vector2(30, 97)
 const JOURNAL_PAGE_SIZE := 6
-const TOAST_RECT := Rect2(400, 136, 480, 92)
-const MINIMAP_RECT := Rect2(1012, 100, 244, 192)
-const MINIMAP_AREA := Rect2(1030, 150, 208, 134)
 const FULL_MAP_AREA := Rect2(180, 150, 920, 420)
+const FLOOR_NAMES := ["The Waking Cellar", "The Mosslit Halls", "The Last Hearth"]
+# A floor's name spells itself across the screen, holds, then fades.
+const TITLE_DELAY := .35
+const TITLE_LETTER := .07
+const TITLE_HOLD := 1.6
+const TITLE_FADE := .9
 # A newly walked cell is scribbled onto the map over this long.
 const SCRIBBLE_TIME := .75
 const REWARD_WIDTH := 340.0
@@ -80,6 +96,9 @@ var painting_unlock = ""
 var fps_frames = 0
 var fps_time = 0.0
 var fps_value = 0.0
+var view_width = 1280.0
+# When the current floor's title began, or below zero for none showing.
+var floor_title_start = -100.0
 
 func setup(owner_game: Node3D) -> void:
 	game = owner_game
@@ -116,19 +135,52 @@ func resize() -> void:
 			safe_rect = safe_rect.intersection(candidate)
 			if not safe_rect.has_area(): safe_rect = Rect2(Vector2.ZERO, size_value)
 	scale_value = minf(safe_rect.size.x / 1280.0, safe_rect.size.y / 720.0)
-	offset = safe_rect.position + (safe_rect.size - Vector2(1280, 720) * scale_value) / 2.0
-	if content:
-		content.position = offset
-		content.scale = Vector2.ONE * scale_value
-		content.size = Vector2(1280, 720)
-	if surface_layer:
-		surface_layer.position = offset
-		surface_layer.scale = Vector2.ONE * scale_value
-		surface_layer.size = Vector2(1280, 720)
+	var width = maxf(1280.0, safe_rect.size.x / scale_value)
+	var widened = not is_equal_approx(width, view_width)
+	view_width = width
+	offset = safe_rect.position + (safe_rect.size - Vector2(view_width, 720) * scale_value) / 2.0
+	for layer in [content, surface_layer]:
+		if layer:
+			layer.scale = Vector2.ONE * scale_value
+			layer.size = Vector2(view_width, 720)
+	place_layers()
+	# Edge-anchored controls are placed when a screen is built.
+	if widened and game and content and mode in ["play", "menu"]: show_screen(mode)
 	queue_redraw()
 
 func local_point(at: Vector2) -> Vector2:
 	return (at - offset) / scale_value
+
+## How much wider than 1280 the logical canvas is.
+func widen() -> float:
+	return view_width - 1280.0
+
+## A canvas point in the right group's 1280-wide layout.
+func from_right(at: Vector2) -> Vector2:
+	return at - Vector2(widen(), 0)
+
+## A canvas point in the middle group's 1280-wide layout.
+func from_middle(at: Vector2) -> Vector2:
+	return at - Vector2(widen() / 2.0, 0)
+
+func moved(rect: Rect2, by: float) -> Rect2:
+	return Rect2(rect.position + Vector2(by, 0), rect.size)
+
+## Play and the title place their own edge-anchored groups; every other
+## screen is centred whole.
+func layer_shift() -> float:
+	return 0.0 if mode in ["play", "menu"] else widen() / 2.0
+
+func place_layers() -> void:
+	var at = offset + Vector2(layer_shift() * scale_value, 0)
+	for layer in [content, surface_layer]:
+		if layer: layer.position = at
+	for surface in surfaces:
+		if is_instance_valid(surface): surface.set_logical_origin(Vector2(layer_shift(), 0))
+
+## Draws the next items in a group's layout, moved by `by`.
+func anchor(by: float) -> void:
+	draw_set_transform(offset + Vector2(by * scale_value, 0), 0, Vector2.ONE * scale_value)
 
 func show_screen(screen: String) -> void:
 	mode = screen
@@ -151,17 +203,18 @@ func show_screen(screen: String) -> void:
 	interaction_surface = null
 	boss_surface = null
 	backdrop.color = Color(.025, .035, .035, .74) if mode not in ["play", "menu"] else Color(0, 0, 0, 0)
+	place_layers()
 	build_surfaces()
 	seed_field = null
 	match mode:
 		"menu": build_menu()
 		"play":
-			button("II", Rect2(1180, 24, 76, 58), func(): game.pause_game(), false)
-			button("JOURNAL", Rect2(1012, 24, 154, 58), func(): open_journal("pause"), false)
+			# The journal stays a key (Tab) or a pause-menu entry away.
+			button("II", moved(PAUSE_RECT, widen()), func(): game.pause_game(), false)
 			# The minimap itself opens the full floor map.
 			var map_button = Button.new()
 			map_button.name = "MapButton"
-			map_button.position = MINIMAP_RECT.position
+			map_button.position = moved(MINIMAP_RECT, widen()).position
 			map_button.size = MINIMAP_RECT.size
 			map_button.focus_mode = Control.FOCUS_NONE
 			for state in ["normal", "hover", "pressed", "focus"]:
@@ -200,6 +253,7 @@ func make_surface(rect: Rect2, background := PANEL, accent := EDGE, compact := f
 	var surface = DungeonUISurface.new()
 	surface_layer.add_child(surface)
 	surface.configure(rect, background, accent, compact)
+	surface.set_logical_origin(Vector2(layer_shift(), 0))
 	surfaces.append(surface)
 	return surface
 
@@ -221,14 +275,13 @@ func build_surfaces() -> void:
 	match mode:
 		"menu":
 			make_surface(Rect2(36, 28, 474, 660))
-			make_surface(Rect2(762, 530, 472, 156))
+			make_surface(moved(Rect2(762, 530, 472, 156), widen()))
 		"play":
 			make_surface(HUD_RECT)
-			make_surface(Rect2(424, 24, 420, 88), Color("3d423c"))
-			make_surface(MINIMAP_RECT, Color("363c37"))
-			toast_surface = make_surface(TOAST_RECT, Color("45483b"), GOLD)
-			interaction_surface = make_surface(INTERACTION_RECT, PANEL, GOLD)
-			boss_surface = make_surface(Rect2(430, 119, 420, 12), Color("2e3430"), Color("bb8969"), true)
+			make_surface(moved(MINIMAP_RECT, widen()), Color("363c37"))
+			toast_surface = make_surface(moved(TOAST_RECT, widen() / 2.0), Color("45483b"), GOLD)
+			interaction_surface = make_surface(moved(INTERACTION_RECT, widen() / 2.0), PANEL, GOLD)
+			boss_surface = make_surface(moved(BOSS_RECT, widen() / 2.0), Color("2e3430"), Color("bb8969"))
 		"pause": make_surface(Rect2(376, 108, 528, 520))
 		"secret": make_surface(Rect2(376, 140, 528, 448))
 		"settings": make_surface(Rect2(300, 40, 680, 640))
@@ -353,7 +406,7 @@ func build_menu() -> void:
 	else:
 		button("Today’s seed", Rect2(64, 536, 201, 56), func(): game.start_run(starter_weapon().id, Run.daily_seed(), true))
 		button("Journal", Rect2(281, 536, 201, 56), func(): open_journal("menu"))
-	button("Settings", Rect2(1080, 32, 154, 56), func(): open_settings("menu"))
+	button("Settings", moved(Rect2(1080, 32, 154, 56), widen()), func(): open_settings("menu"))
 
 func cycle_weapon(step: int) -> void:
 	starter_index = posmod(starter_index + step, Collection.available_weapons().size())
@@ -613,7 +666,7 @@ func _input(event: InputEvent) -> void:
 		return
 	# Emulated mouse events from touches were already handled as touches.
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and event.device != InputEvent.DEVICE_ID_EMULATION:
-		var action = action_at(local_point(event.position))
+		var action = action_at(from_right(local_point(event.position)))
 		if action != "" and touch_hud_visible():
 			mouse_on_action = true
 			trigger_action(action)
@@ -622,13 +675,15 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		touch_used = true
 		var p = local_point(event.position)
+		# The right stick and action buttons live in the right group's layout.
+		var right = from_right(p)
 		if event.pressed:
 			# Buttons are hit-tested before a floating stick can capture the finger.
-			var action = action_at(p)
+			var action = action_at(right)
 			if action != "":
 				trigger_action(action)
 				get_viewport().set_input_as_handled()
-			elif INTERACTION_RECT.has_point(p) and game.interaction_text != "":
+			elif INTERACTION_RECT.has_point(from_middle(p)) and game.interaction_text != "":
 				game.interact()
 				get_viewport().set_input_as_handled()
 			elif p.y > 330 and p.x < 550 and left_touch == -1:
@@ -636,10 +691,10 @@ func _input(event: InputEvent) -> void:
 				left_origin = Vector2(clampf(p.x, 90, 420), clampf(p.y, 400, 620))
 				left_vector = (p - left_origin).limit_length(58) / 58.0
 				get_viewport().set_input_as_handled()
-			elif p.y > 330 and p.x > 730 and right_touch == -1:
+			elif right.y > 330 and right.x > 730 and right_touch == -1:
 				right_touch = event.index
-				right_origin = Vector2(clampf(p.x, 810, 1190), clampf(p.y, 400, 620))
-				right_vector = (p - right_origin).limit_length(58) / 58.0
+				right_origin = Vector2(clampf(right.x, 810, 1190), clampf(right.y, 400, 620))
+				right_vector = (right - right_origin).limit_length(58) / 58.0
 				get_viewport().set_input_as_handled()
 		else:
 			if event.index == left_touch:
@@ -656,7 +711,7 @@ func _input(event: InputEvent) -> void:
 			left_vector = (p - left_origin).limit_length(58) / 58.0
 			get_viewport().set_input_as_handled()
 		if event.index == right_touch:
-			right_vector = (p - right_origin).limit_length(58) / 58.0
+			right_vector = (from_right(p) - right_origin).limit_length(58) / 58.0
 			get_viewport().set_input_as_handled()
 
 func touch_hud_visible() -> bool:
@@ -694,7 +749,7 @@ func diamond(at: Vector2, radius: float, color: Color, fill := true) -> void:
 func _draw() -> void:
 	if not game:
 		return
-	draw_set_transform(offset, 0, Vector2.ONE * scale_value)
+	anchor(layer_shift())
 	match mode:
 		"menu": draw_menu()
 		"play": draw_hud()
@@ -718,14 +773,18 @@ func _draw() -> void:
 		"map": draw_full_map()
 		"dead", "won": draw_end()
 	if mode == "play":
+		anchor(0)
 		for number in floating_numbers:
 			var c = GOLD if number.critical else INK
 			c.a = minf(1, (0.65 - number.age) * 4)
 			text(number.text, number.at + Vector2(0, -number.age * 65), 26 if number.critical else 21, c, bold)
+		draw_floor_title()
+		anchor(widen() / 2.0)
 		if toast_time > 0:
-			centered(toast_text, 640, 168, 22, toast_color, heading)
-			draw_multiline_string(body, Vector2(424, 195), toast_detail, HORIZONTAL_ALIGNMENT_CENTER, 432, 17, 2, MUTED)
+			centered(toast_text, 640, 112, 21, toast_color, heading)
+			draw_multiline_string(body, Vector2(436, 138), toast_detail, HORIZONTAL_ALIGNMENT_CENTER, 408, 16, 2, MUTED)
 	if Settings.values.show_fps:
+		anchor(widen())
 		text("%d FPS" % roundi(fps_value), Vector2(1072, 697), 15, GOLD, bold)
 	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
 
@@ -753,82 +812,135 @@ func draw_menu() -> void:
 	if not Run.has_save():
 		text("%d runs  ·  %d victories" % [Run.profile.runs, Run.profile.wins], Vector2(66, 632), 17, MUTED)
 	text("%d RELICS · %d PAINTINGS TO DISCOVER" % [Content.items.size(), gallery_ids().size()], Vector2(66, 671), 14, GOLD, bold)
+	anchor(widen())
 	hearth_emblem(Vector2(798, 566), 10)
 	text("A warm place. A wild little dungeon.", Vector2(826, 574), 21, GOLD, heading)
 	text("%d stackable relics  ·  %d weapons  ·  3 floors" % [Content.items.size(), Collection.available_weapons().size()], Vector2(789, 617), 18, INK)
 	text("Strange combinations. One more little light.", Vector2(789, 650), 17, MUTED)
 
 func draw_hud() -> void:
-	text("THE LITTLE LIGHT", Vector2(48, 52), 14, MUTED, bold)
-	if game.player and game.player.shield > 0:
-		text("%d guard" % game.player.shield, Vector2(287, 52), 15, Color("b7ddc0"), bold)
+	anchor(0)
+	draw_hud_left()
+	anchor(widen() / 2.0)
+	draw_hud_middle()
+	anchor(widen())
+	draw_hud_right()
+
+## One small slab: health, resources, weapon and held item; relics beneath.
+func draw_hud_left() -> void:
 	var hearts = int(ceil(Run.stats.max_hp / 2.0))
 	for i in mini(hearts, 10):
-		var at = Vector2(54 + i * 29, 83)
+		var at = Vector2(36 + i * 24, 38)
 		var fill = clampf((Run.hp - i * 2) / 2, 0, 1)
-		diamond(at + Vector2(0, 2), 13, Color("252c27"))
-		diamond(at, 12, Color("717061"))
+		diamond(at + Vector2(0, 2), 11, Color("252c27"))
+		diamond(at, 10, Color("717061"))
 		if fill > 0:
-			diamond(at, 12 * (.58 if fill < 1 else 1.0), Color("f4c68c"))
-			draw_line(at + Vector2(-4, -5), at + Vector2(0, -9), Color("fff0c9"), 1.3, true)
+			diamond(at, 10 * (.58 if fill < 1 else 1.0), Color("f4c68c"))
+			draw_line(at + Vector2(-3, -4), at + Vector2(0, -8), Color("fff0c9"), 1.2, true)
 	if hearts > 10:
-		text("+%d" % (hearts - 10), Vector2(340, 89), 17, GOLD)
-	draw_circle(Vector2(55, 121), 8, Color("302f23"))
-	draw_circle(Vector2(54, 119), 7, Color("ceab68"))
-	draw_line(Vector2(54, 115), Vector2(54, 123), Color("f7dfa5"), 1.5)
-	text("%02d" % Run.coins, Vector2(70, 127), 21, GOLD, bold)
-	resource_icon("key", Vector2(130, 119))
-	text("%d" % Run.keys, Vector2(146, 127), 21, INK if Run.keys > 0 else MUTED, bold)
-	resource_icon("bomb", Vector2(190, 119))
-	text("%d" % Run.bombs, Vector2(206, 127), 21, INK if Run.bombs > 0 else MUTED, bold)
-	resource_icon("ward", Vector2(250, 119))
-	text("%d" % Run.wards, Vector2(266, 127), 21, Color("b7ddc0") if Run.wards > 0 else MUTED, bold)
-	text(Content.weapon_by_id[Run.weapon_id].name, Vector2(48, 154), 19, INK)
+		text("+%d" % (hearts - 10), Vector2(274, 44), 15, GOLD)
+	draw_circle(Vector2(37, 66), 7, Color("302f23"))
+	draw_circle(Vector2(36, 64), 6, Color("ceab68"))
+	draw_line(Vector2(36, 61), Vector2(36, 67), Color("f7dfa5"), 1.4)
+	text("%02d" % Run.coins, Vector2(48, 71), 18, GOLD, bold)
+	resource_icon("key", Vector2(100, 64))
+	text("%d" % Run.keys, Vector2(114, 71), 18, INK if Run.keys > 0 else MUTED, bold)
+	resource_icon("bomb", Vector2(152, 64))
+	text("%d" % Run.bombs, Vector2(166, 71), 18, INK if Run.bombs > 0 else MUTED, bold)
+	resource_icon("ward", Vector2(204, 64))
+	text("%d" % Run.wards, Vector2(218, 71), 18, Color("b7ddc0") if Run.wards > 0 else MUTED, bold)
+	if game.player and game.player.shield > 0:
+		right_text("%d guard" % game.player.shield, Vector2(HUD_RECT.end.x - 14, 71), 14, Color("b7ddc0"), bold)
+	text(Content.weapon_by_id[Run.weapon_id].name, WEAPON_LABEL, 16, INK)
 	draw_active_line()
-	if Run.inventory.size() > 0:
-		text("RELICS", Vector2(40, 231), 14, MUTED, bold)
-		for i in mini(Run.inventory.size(), 10):
-			var item: Dictionary = Content.item_by_id[Run.inventory[i]]
-			diamond(Vector2(114 + i * 22, 225), 8, Content.RARITY_COLORS[item.rarity])
-		if Run.inventory.size() > 10:
-			text("+%d" % (Run.inventory.size() - 10), Vector2(342, 231), 16, GOLD)
-	var floor_names = ["The Waking Cellar", "The Mosslit Halls", "The Last Hearth"]
-	diamond(Vector2(454, 64), 15, Color("292f29"))
-	centered(str(Run.floor_number), 454, 70, 18, GOLD, heading)
-	centered(floor_names[mini(2, Run.floor_number - 1)], 652, 60, 24, INK, heading)
-	var room_label: String = {"combat": "A room full of trouble", "start": "A safe little beginning", "treasure": "Something worth keeping", "shop": "The candle merchant", "rest": "A moment of warmth", "boss": "The hearth is stirring"}.get(Run.rooms[Run.current_room].type, "")
+	for i in mini(Run.inventory.size(), 12):
+		var item: Dictionary = Content.item_by_id[Run.inventory[i]]
+		diamond(Vector2(28 + i * 17, HUD_RECT.end.y + 16), 6, Content.RARITY_COLORS[item.rarity])
+	if Run.inventory.size() > 12:
+		text("+%d" % (Run.inventory.size() - 12), Vector2(232, HUD_RECT.end.y + 21), 14, GOLD)
+	if not touch_hud_visible():
+		text("WASD move · Mouse fire · Space dash · F item · B bomb", Vector2(28, 668), 15, MUTED)
+	text("SEED %d" % Run.seed_value, Vector2(28, 697), 13, MUTED)
+	if touch_hud_visible():
+		draw_stick(left_origin, left_vector, "MOVE", left_touch >= 0)
+
+## The boss's plate while it fights, the room's state and any interaction.
+func draw_hud_middle() -> void:
 	var boss_enemy = game.get_boss()
 	if boss_enemy:
-		room_label = ["THE HEARTH WARDEN", "THE MOSSKEEPER", "THE LAST LIGHT"][mini(2, Run.floor_number - 1)]
-	centered(room_label, 652, 88, 16, Color("efbd9f") if boss_enemy else MUTED)
-	draw_minimap()
+		centered(["THE HEARTH WARDEN", "THE MOSSKEEPER", "THE LAST LIGHT"][mini(2, Run.floor_number - 1)], 640, 40, 15, Color("efbd9f"), bold)
+		draw_rect(Rect2(486, 50, 308, 6), Color("252b27"))
+		draw_rect(Rect2(486, 50, 308 * maxf(0, boss_enemy.hp / boss_enemy.max_hp), 6), Color("d79275"))
 	if game.room and not game.room.open:
 		var remaining = 0
 		for enemy in game.enemies:
 			if is_instance_valid(enemy) and enemy.alive: remaining += 1
-		centered("%d little troubles remain" % remaining, 640, 693, 17, MUTED)
+		centered("%d little troubles remain" % remaining, 640, 697, 15, MUTED)
 	else:
-		centered("Doorways are open · keep exploring", 640, 693, 17, MUTED)
-	if boss_enemy:
-		draw_rect(Rect2(434, 122, 412 * maxf(0, boss_enemy.hp / boss_enemy.max_hp), 6), Color("d79275"))
+		centered("Doorways are open · keep exploring", 640, 697, 15, MUTED)
 	if game.interaction_text != "":
 		centered(game.interaction_text, 640, 596, 21, GOLD, bold)
 		centered("Tap to interact  ·  E / A", 640, 624, 16, MUTED)
-	if touch_hud_visible():
-		draw_stick(left_origin, left_vector, "MOVE", left_touch >= 0)
-		draw_stick(right_origin, right_vector, "AIM + FIRE", right_touch >= 0)
-		var ready: bool = game.player and game.player.dash_cooldown <= 0
-		draw_action_ring("dash", 1.0 if ready else 0.0, GOLD if ready else MUTED)
-		centered("DASH" if ready else "%.1f" % game.player.dash_cooldown, DASH_CENTER.x, DASH_CENTER.y + 7, 18, GOLD if ready else MUTED, bold)
-		draw_active_button()
-		var bomb: Dictionary = ACTION_BUTTONS.bomb
-		draw_action_ring("bomb", 1.0 if Run.bombs > 0 else 0.0, GOLD if Run.bombs > 0 else MUTED)
-		resource_icon("bomb", bomb.center + Vector2(0, -8))
-		centered("×%d" % Run.bombs, bomb.center.x, bomb.center.y + 22, 15, INK if Run.bombs > 0 else MUTED, bold)
-	else:
-		text("WASD move · Mouse fire · Space dash · F item · B bomb", Vector2(28, 660), 16, MUTED)
-	text("SEED %d" % Run.seed_value, Vector2(28, 697), 14, MUTED)
-	text("%d:%02d" % [int(Run.elapsed) / 60, int(Run.elapsed) % 60], Vector2(1182, 697), 16, MUTED)
+
+func draw_hud_right() -> void:
+	draw_minimap()
+	text("%d:%02d" % [int(Run.elapsed) / 60, int(Run.elapsed) % 60], Vector2(1196, 697), 15, MUTED)
+	if not touch_hud_visible(): return
+	draw_stick(right_origin, right_vector, "AIM + FIRE", right_touch >= 0)
+	var ready: bool = game.player and game.player.dash_cooldown <= 0
+	draw_action_ring("dash", 1.0 if ready else 0.0, GOLD if ready else MUTED)
+	centered("DASH" if ready else "%.1f" % game.player.dash_cooldown, DASH_CENTER.x, DASH_CENTER.y + 7, 18, GOLD if ready else MUTED, bold)
+	draw_active_button()
+	var bomb: Dictionary = ACTION_BUTTONS.bomb
+	draw_action_ring("bomb", 1.0 if Run.bombs > 0 else 0.0, GOLD if Run.bombs > 0 else MUTED)
+	resource_icon("bomb", bomb.center + Vector2(0, -8))
+	centered("×%d" % Run.bombs, bomb.center.x, bomb.center.y + 22, 15, INK if Run.bombs > 0 else MUTED, bold)
+
+func right_text(value: String, at: Vector2, size_value := 18, color := INK, font: Font = null) -> void:
+	var f = font if font else body
+	text(value, at - Vector2(f.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1, size_value).x, 0), size_value, color, f)
+
+## Starts the current floor's title: its name spelled out letter by letter
+## across the whole screen, held a moment, then faded.
+func announce_floor() -> void:
+	floor_title_start = elapsed_ui
+
+func floor_title_length() -> float:
+	var letters = FLOOR_NAMES[mini(2, Run.floor_number - 1)].length()
+	return TITLE_DELAY + letters * TITLE_LETTER + .3 + TITLE_HOLD + TITLE_FADE
+
+func draw_floor_title() -> void:
+	var age = elapsed_ui - floor_title_start
+	if age < 0 or age > floor_title_length(): return
+	var name_text: String = FLOOR_NAMES[mini(2, Run.floor_number - 1)].to_upper()
+	var fade = 1.0 - clampf((age - (floor_title_length() - TITLE_FADE)) / TITLE_FADE, 0.0, 1.0)
+	var size_value = 58
+	# Spread the letters over most of the screen's width, whatever its shape.
+	var span = view_width * .82
+	var widths: Array = []
+	var natural = 0.0
+	for letter in name_text:
+		var w = heading.get_string_size(letter, HORIZONTAL_ALIGNMENT_LEFT, -1, size_value).x
+		widths.append(w)
+		natural += w
+	var gap = maxf(0.0, (span - natural) / maxf(1, name_text.length() - 1))
+	var x = (view_width - (natural + gap * (name_text.length() - 1))) / 2.0
+	var baseline = 268.0
+	var caption = clampf(age / TITLE_DELAY, 0.0, 1.0) * fade
+	centered("FLOOR %d" % Run.floor_number, view_width / 2.0, baseline - 74, 16, Color(GOLD, caption), bold)
+	var shown = 0.0
+	for i in name_text.length():
+		var appear = clampf((age - TITLE_DELAY - i * TITLE_LETTER) / .3, 0.0, 1.0)
+		if appear > 0:
+			var rise = (1.0 - appear) * -12.0
+			text(name_text[i], Vector2(x, baseline + rise), size_value, Color(INK, appear * fade), heading)
+			shown = x + widths[i]
+		x += widths[i] + gap
+	# A thin gold rule follows the letters out from the middle.
+	var reach = clampf((age - TITLE_DELAY) / (name_text.length() * TITLE_LETTER + .3), 0.0, 1.0) * span / 2.0
+	if reach > 0:
+		var middle = view_width / 2.0
+		draw_line(Vector2(middle - reach, baseline + 24), Vector2(middle + reach, baseline + 24), Color(GOLD, .55 * fade), 1.5, true)
 
 func resource_icon(kind: String, at: Vector2) -> void:
 	match kind:
@@ -856,12 +968,12 @@ func active_state() -> Dictionary:
 func draw_active_line() -> void:
 	var state = active_state()
 	if state.is_empty():
-		text("No item in hand", Vector2(48, 184), 17, MUTED)
+		text("No item in hand", Vector2(30, 119), 15, MUTED)
 		return
-	diamond(Vector2(56, 178), 8, Color(state.definition.color))
-	text(state.definition.name, Vector2(72, 184), 18, INK)
+	diamond(Vector2(36, 114), 6, Color(state.definition.color))
+	text(state.definition.name, Vector2(48, 119), 15, INK)
 	var status = "ready · F" if state.remaining <= 0 else "%ds" % ceili(state.remaining)
-	text(status, Vector2(372 - body.get_string_size(status, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x, 184), 16, GOLD if state.remaining <= 0 else MUTED, bold)
+	right_text(status, Vector2(HUD_RECT.end.x - 14, 119), 14, GOLD if state.remaining <= 0 else MUTED, bold)
 
 func draw_action_ring(action: String, fraction: float, color: Color) -> void:
 	var button_region: Dictionary = ACTION_BUTTONS[action]
@@ -897,13 +1009,12 @@ func draw_stick(at: Vector2, value: Vector2, label: String, active_touch: bool) 
 	centered(label, at.x, at.y + 91, 14, Color(INK, .8), bold)
 
 func draw_minimap() -> void:
-	text("THE WAY HOME", Vector2(1034, 132), 14, GOLD, bold)
-	text("M", Vector2(1218, 132), 13, MUTED)
-	divider(Vector2(1034, 145), Vector2(1234, 145))
 	var cells = FloorGenerator.room_cells(Run.rooms[Run.current_room])
 	var focus = Vector2.ZERO
 	for cell in cells: focus += Vector2(cell)
-	draw_floor_map(MINIMAP_AREA, focus / cells.size(), 24.0)
+	draw_floor_map(MINIMAP_AREA, focus / cells.size(), 22.0)
+	if not touch_hud_visible():
+		right_text("M", MINIMAP_RECT.end - Vector2(20, 11), 12, MUTED)
 
 ## Rooms the player may know about: those walked through, and every room
 ## glimpsed through one of their open doorways, so the map shows each way on
