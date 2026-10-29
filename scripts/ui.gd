@@ -839,6 +839,7 @@ func draw_hud_left() -> void:
 			draw_line(at + Vector2(-3, -4), at + Vector2(0, -8), Color("fff0c9"), 1.2, true)
 	if hearts > 10:
 		text("+%d" % (hearts - 10), Vector2(274, 44), 15, GOLD)
+	draw_kindle(Vector2(HUD_RECT.end.x - 26, 38))
 	draw_circle(Vector2(37, 66), 7, Color("302f23"))
 	draw_circle(Vector2(36, 64), 6, Color("ceab68"))
 	draw_line(Vector2(36, 61), Vector2(36, 67), Color("f7dfa5"), 1.4)
@@ -865,17 +866,33 @@ func draw_hud_left() -> void:
 		draw_stick(left_origin, left_vector, "MOVE", left_touch >= 0)
 
 ## The boss's plate while it fights, the room's state and any interaction.
+## The kindle as three small flames, lit one by one, and caught sparks as
+## bright points beside them.
+func draw_kindle(at: Vector2) -> void:
+	var level: int = game.kindle_level()
+	for i in 3:
+		var flame = at - Vector2(i * 16, 0)
+		var lit = (2 - i) < level
+		var points = PackedVector2Array([flame + Vector2(0, -9), flame + Vector2(5, 1), flame + Vector2(0, 6), flame + Vector2(-5, 1)])
+		if lit:
+			draw_colored_polygon(points, Color("ffb14e") if level < 3 else Color("ffe08a"))
+		else:
+			points.append(points[0])
+			draw_polyline(points, Color(MUTED, .5), 1.2, true)
+	for i in game.sparks:
+		draw_circle(at - Vector2(54 + i * 9, -1), 2.6, Color("fff3c4"))
+
 func draw_hud_middle() -> void:
 	var boss_enemy = game.get_boss()
 	if boss_enemy:
-		centered(["THE HEARTH WARDEN", "THE MOSSKEEPER", "THE LAST LIGHT"][mini(2, Run.floor_number - 1)], 640, 40, 15, Color("efbd9f"), bold)
+		centered(Foes.BOSS_NAMES.get(boss_enemy.kind, "THE HEARTH WARDEN"), 640, 40, 15, Color("efbd9f"), bold)
 		draw_rect(Rect2(486, 50, 308, 6), Color("252b27"))
-		draw_rect(Rect2(486, 50, 308 * maxf(0, boss_enemy.hp / boss_enemy.max_hp), 6), Color("d79275"))
+		draw_rect(Rect2(486, 50, 308 * boss_enemy.health_fraction(), 6), Color("d79275"))
 	if game.room and not game.room.open:
 		var remaining = 0
 		for enemy in game.enemies:
-			if is_instance_valid(enemy) and enemy.alive: remaining += 1
-		centered("%d little troubles remain" % remaining, 640, 697, 15, MUTED)
+			if is_instance_valid(enemy) and enemy.alive and not enemy.inert: remaining += 1
+		centered("1 little trouble remains" if remaining == 1 else "%d little troubles remain" % remaining, 640, 697, 15, MUTED)
 	else:
 		centered("Doorways are open · keep exploring", 640, 697, 15, MUTED)
 	if game.interaction_text != "":

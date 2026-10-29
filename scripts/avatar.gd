@@ -24,6 +24,13 @@ const RUN_SPEED := 5.2
 const DASH_SPEED := 18.0
 const DASH_TIME := .16
 var leaving_dash := false
+# A dash catches hostile embers that pass this close, and a moment after.
+const GRAZE_RADIUS := .95
+const GRAZE_GRACE := .12
+var graze_grace = 0.0
+var spark_meshes: Array[MeshInstance3D] = []
+var glow_light: OmniLight3D
+var glow_halo: MeshInstance3D
 var last_valid = Vector3.ZERO
 var fade_copies: Dictionary = {}
 
@@ -47,8 +54,13 @@ func setup(owner_game: Node3D) -> void:
 	Geo.box(visual, Vector3(-.16, .12, 0), Vector3(.21, .22, .3), Color("645b4e"))
 	Geo.box(visual, Vector3(.16, .12, 0), Vector3(.21, .22, .3), Color("645b4e"))
 	Geo.ring(self, Vector3(0, .045, 0), .47, Color("e9ca8e"), .025)
-	Geo.halo(self, Vector3(0, .025, 0), 4.2, Color(1, .64, .25, .16))
-	Geo.light(self, Vector3(0, 1.5, 0), Color("ffcb88"), .65, 3.8)
+	glow_halo = Geo.halo(self, Vector3(0, .025, 0), 4.2, Color(1, .64, .25, .16))
+	glow_light = Geo.light(self, Vector3(0, 1.5, 0), Color("ffcb88"), .65, 3.8)
+	for i in 3:
+		var spark = Geo.sphere(self, Vector3.ZERO, .09, Color("fff3c4"), 2.0)
+		spark.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		spark.visible = false
+		spark_meshes.append(spark)
 	gun = Node3D.new()
 	add_child(gun)
 	Geo.box(gun, Vector3(0, .7, -.43), Vector3(.17, .18, .5), Color("b6a080"))
@@ -158,24 +170,37 @@ func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting:
 	var direction: Vector3 = game.screen_direction(move_input)
 	if direction.length_squared() > .01:
 		last_move = direction.normalized()
+	graze_grace = maxf(0, graze_grace - delta)
+	if dash_time > 0 or graze_grace > 0:
+		var chest = global_position + Vector3(0, .65, 0)
+		for shot in game.shots.duplicate():
+			if is_instance_valid(shot) and shot.alive and not shot.friendly and shot.global_position.distance_to(chest) < GRAZE_RADIUS:
+				game.catch_spark(shot)
 	if dash_time > 0:
 		dash_time -= delta
 		velocity = dash_direction * DASH_SPEED
 		leaving_dash = dash_time <= 0
+		if leaving_dash: graze_grace = GRAZE_GRACE
 		# Dashing slips past foes but never through walls or furniture.
 		collision_mask = 1 | PropVisuals.FURNITURE_LAYER
-		if Run.stats.dash_damage > 0:
-			for enemy in game.enemies:
-				if is_instance_valid(enemy) and enemy.alive and global_position.distance_to(enemy.global_position) < 1.1:
-					enemy.take_hit(float(Run.stats.dash_damage) * delta * 8, Vector3.ZERO, false)
+		for enemy in game.enemies.duplicate():
+			if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable: continue
+			var reach = global_position.distance_to(enemy.global_position)
+			# Dashing through a ward pops it; through a prism shatters it.
+			if reach < enemy.radius + .7: enemy.dashed_through()
+			if Run.stats.dash_damage > 0 and reach < 1.1 and enemy.alive:
+				enemy.take_hit(float(Run.stats.dash_damage) * delta * 8, Vector3.ZERO, false, false, "dash")
 	else:
 		collision_mask = 5 | PropVisuals.FURNITURE_LAYER
-		var top_speed = RUN_SPEED * float(Run.stats.speed)
+		# Moss and spores drag at the feet; ice keeps whatever speed you had.
+		var footing: ResidueField = game.residue
+		var top_speed = RUN_SPEED * float(Run.stats.speed) * (footing.slows(global_position) if footing else 1.0)
+		var slippery = footing != null and footing.kind_at(global_position) == "ice"
 		if leaving_dash:
 			velocity = velocity.limit_length(top_speed)
 			leaving_dash = false
 		var target = direction * top_speed
-		velocity = velocity.move_toward(target, delta * 47.0)
+		velocity = velocity.move_toward(target, delta * (4.5 if slippery else 47.0))
 	var geometry: RoomGeometry = game.room.geometry
 	if geometry.contains(Vector2(position.x, position.z), ROOM_MARGIN):
 		last_valid = position
@@ -194,6 +219,7 @@ func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting:
 	gun.position = -aim_direction * recoil
 	if shooting and fire_cooldown <= 0 and dash_time <= 0:
 		fire()
+	show_flame(delta)
 	for i in orbit_meshes.size():
 		orbit_meshes[i].position = orbit_position(i)
 		for enemy in game.enemies:
@@ -212,9 +238,13 @@ func fire() -> void:
 		for key in pigment.effects:
 			stats[key] = float(stats.get(key, 0)) + float(pigment.effects[key])
 		tint = Color(pigment.color)
-	var damage: float = weapon.damage * stats.damage
+	var damage: float = weapon.damage * stats.damage * game.kindle_damage()
 	if Run.hp <= Run.stats.max_hp / 2.0:
 		damage *= 1.0 + float(stats.low_hp)
+	# At full kindle every ember carries flame.
+	if game.kindle_level() >= 3:
+		stats.burn = float(stats.get("burn", 0)) + .6
+	release_sparks(damage, stats)
 	var count = mini(int(weapon.count + stats.shots), 15)
 	var spread: float = weapon.spread
 	if count > int(weapon.count) and stats.radial <= 0:
@@ -229,9 +259,33 @@ func fire() -> void:
 		for side in [-1, 1]:
 			game.spawn_shot(global_position + Vector3(0, .65, 0), aim_direction.rotated(Vector3.UP, side * PI / 2), damage * .75, weapon.speed * stats.shot_speed, stats, tint, true)
 	Effects.play("muzzle", global_position + Vector3(0, .7, 0) + aim_direction * .75, tint, -1, 1.0, aim_direction)
+	game.make_noise(global_position, 1.0)
 	fire_cooldown = maxf(.07, weapon.cooldown / (stats.rate + (stats.kill_haste if haste_time > 0 else 0)))
 	recoil = .17
 	Audio.play_sound("shoot", 1.0 + float(count) * .015)
+
+## Caught sparks leave with the next shot as homing embers.
+func release_sparks(damage: float, stats: Dictionary) -> void:
+	if game.sparks <= 0: return
+	var spark_stats = stats.duplicate()
+	spark_stats.homing = maxf(float(spark_stats.get("homing", 0)), 5.0)
+	spark_stats.pierce = 0
+	for i in game.sparks:
+		var d = aim_direction.rotated(Vector3.UP, (i - (game.sparks - 1) / 2.0) * .35)
+		game.spawn_shot(global_position + Vector3(0, .65, 0) + d * .5, d, damage * 1.5, 15.0, spark_stats, Color("fff3c4"), true)
+	game.sparks = 0
+
+## The flame follows the kindle: a wider, warmer light, and caught sparks
+## circling the head.
+func show_flame(delta: float) -> void:
+	var level = game.kindle_level()
+	glow_light.omni_range = move_toward(glow_light.omni_range, 3.8 + level * 1.1, delta * 4.0)
+	glow_light.light_energy = move_toward(glow_light.light_energy, .65 + level * .22, delta)
+	glow_halo.scale = glow_halo.scale.move_toward(Vector3.ONE * (1.0 + level * .3), delta * 2.0)
+	for i in spark_meshes.size():
+		spark_meshes[i].visible = i < game.sparks
+		var angle = game.sim_time * 3.0 + TAU * i / 3.0
+		spark_meshes[i].position = Vector3(cos(angle) * .55, 1.45 + sin(game.sim_time * 5.0 + i) * .06, sin(angle) * .55)
 
 func dash() -> void:
 	if dash_cooldown > 0 or dash_time > 0:
@@ -241,6 +295,7 @@ func dash() -> void:
 	dash_cooldown = 1.35 * (1.0 - clampf(Run.stats.dash_cd, 0, .75))
 	invulnerability = .32
 	Audio.play_sound("dash")
+	game.make_noise(global_position, 2.0)
 	Effects.ring_burst(game, global_position, Color("efd1a0"), 1.1)
 	Effects.play("dash_dust", global_position + Vector3(0, .1, 0))
 	if Run.stats.dash_nova > 0:
@@ -265,6 +320,7 @@ func hurt(amount: float, source: Vector3) -> void:
 		Audio.play_sound("coin", .7)
 		return
 	Run.hp = maxf(0, Run.hp - amount)
+	game.gutter()
 	invulnerability = 1.0
 	game.shake = .22
 	game.hurt_flash = .75

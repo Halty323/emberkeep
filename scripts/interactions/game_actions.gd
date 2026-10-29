@@ -92,9 +92,11 @@ func detonate(bomb: Dictionary) -> void:
 	var live = bomb.room == Run.current_room and is_instance_valid(game.room)
 	if live:
 		game.bomb_exploded(bomb, at, BOMB_RADIUS)
+		game.make_noise(at, 3.5)
+		if game.residue: game.residue.ignite(at, BOMB_RADIUS * .8)
 		for enemy in game.enemies.duplicate():
-			if is_instance_valid(enemy) and enemy.alive and Vector2(enemy.position.x, enemy.position.z).distance_to(Vector2(at.x, at.z)) < BOMB_RADIUS + enemy.radius:
-				enemy.take_hit(BOMB_DAMAGE, (enemy.position - at).normalized() * 3.0, false)
+			if is_instance_valid(enemy) and enemy.alive and enemy.targetable and Vector2(enemy.position.x, enemy.position.z).distance_to(Vector2(at.x, at.z)) < BOMB_RADIUS + enemy.radius:
+				enemy.take_hit(BOMB_DAMAGE, (enemy.position - at).normalized() * 3.0, false, false, "blast")
 		if is_instance_valid(game.player) and Vector2(game.player.position.x, game.player.position.z).distance_to(Vector2(at.x, at.z)) < BOMB_RADIUS:
 			game.player.hurt(BOMB_SELF_DAMAGE, at)
 	game.breach(bomb.room, at, BOMB_RADIUS, live)
