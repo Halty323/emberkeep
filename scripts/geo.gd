@@ -87,6 +87,26 @@ static func halo(parent: Node3D, position: Vector3, size: float, color: Color) -
 	instance.position = position
 	return instance
 
+## A bar of light added over whatever lies behind it: unlit, on the effects
+## layer, out of every shadow pass. Brightness is carried in the colour.
+static func glow_box(parent: Node3D, position: Vector3, size: Vector3, color: Color) -> MeshInstance3D:
+	var key = "glow" + str(color)
+	if not materials.has(key):
+		var mat = StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		mat.disable_fog = true
+		mat.albedo_color = Color(color.r, color.g, color.b, 1.0)
+		materials[key] = mat
+	var instance = MeshInstance3D.new()
+	instance.mesh = shared_box(size)
+	instance.material_override = materials[key]
+	instance.layers = 2
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(instance)
+	instance.position = position
+	return instance
+
 static func light(parent: Node3D, position: Vector3, color: Color, energy: float, reach: float, shadows := false) -> OmniLight3D:
 	var light = OmniLight3D.new()
 	light.light_color = color
