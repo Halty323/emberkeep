@@ -655,10 +655,13 @@ func _input(event: InputEvent) -> void:
 		return
 	if mode == "pause" and event is InputEventKey and event.pressed and not event.echo:
 		if event.unicode > 0 and not event.ctrl_pressed and not event.alt_pressed and not event.meta_pressed:
-			secret_key_buffer = (secret_key_buffer + String.chr(event.unicode).to_upper()).right(Run.ALL_RELICS_CODE.length())
-			if secret_key_buffer == Run.ALL_RELICS_CODE:
-				submit_secret_code(secret_key_buffer)
-				get_viewport().set_input_as_handled()
+			var longest: int = Run.SECRET_CODES.map(func(code): return code.length()).max()
+			secret_key_buffer = (secret_key_buffer + String.chr(event.unicode).to_upper()).right(longest)
+			for code in Run.SECRET_CODES:
+				if secret_key_buffer.ends_with(code):
+					submit_secret_code(code)
+					get_viewport().set_input_as_handled()
+					break
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
 		mouse_on_action = false

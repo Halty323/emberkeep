@@ -1253,18 +1253,32 @@ func on_item_gained(item: Dictionary) -> void:
 	ui.notify(item.name, item.description, Content.RARITY_COLORS[item.rarity])
 
 func redeem_secret_code(code: String) -> bool:
-	if not Run.active or in_menu or code.strip_edges().to_upper() != Run.ALL_RELICS_CODE:
+	if not Run.active or in_menu:
 		return false
+	var wish = code.strip_edges().to_upper()
+	if wish == Run.ALL_RELICS_CODE: wish_all_relics()
+	elif wish == Run.PAINT_SPRAYER_CODE: wish_paint_sprayer()
+	else: return false
+	Audio.play_sound("item")
+	return true
+
+func wish_all_relics() -> void:
 	var added = Run.grant_all_relics()
 	if added > 0 and player and is_instance_valid(player):
 		player.refresh_orbitals()
 		player.shield = maxi(player.shield, int(Run.stats.shield))
-	Audio.play_sound("item")
 	if added > 0:
 		ui.notify("Every little light, all at once", "%d relics awakened. You carry all %d." % [added, Content.items.size()])
 	else:
 		ui.notify("Every little light is already yours", "You already carry all %d relics." % Content.items.size())
-	return true
+
+## Skips the twelve paintings: the weapon is in hand now and on the starting
+## rack from now on. The journal's own progress is left as it was.
+func wish_paint_sprayer() -> void:
+	if Run.grant_weapon("paint_sprayer"):
+		ui.notify("Paint Sprayer in hand", "Red, blue, green. Choose it when you begin any run.", Color("e7d9c8"))
+	else:
+		ui.notify("The Paint Sprayer is already yours", "It is in your hands and on the starting rack.", Color("e7d9c8"))
 
 func pause_game() -> void:
 	if not Run.active or in_menu: return
