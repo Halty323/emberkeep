@@ -905,11 +905,16 @@ func draw_minimap() -> void:
 	for cell in cells: focus += Vector2(cell)
 	draw_floor_map(MINIMAP_AREA, focus / cells.size(), 24.0)
 
-## Rooms the player may know about: visited ones and the current room's open
-## neighbours. A concealed passage reveals nothing until it is opened.
+## Rooms the player may know about: those walked through, and every room
+## glimpsed through one of their open doorways, so the map shows each way on
+## that is still unexplored. A concealed passage reveals nothing until opened.
 func map_rooms() -> Array:
-	var near = Run.neighbors(Run.current_room)
-	return Run.rooms.keys().filter(func(id): return Run.rooms[id].visited or id == Run.current_room or id in near)
+	var known := {}
+	for id in Run.rooms:
+		if not Run.rooms[id].visited and id != Run.current_room: continue
+		known[id] = true
+		for next in Run.neighbors(id): known[next] = true
+	return Run.rooms.keys().filter(func(id): return known.has(id))
 
 func map_color(id: String) -> Color:
 	var room: Dictionary = Run.rooms[id]

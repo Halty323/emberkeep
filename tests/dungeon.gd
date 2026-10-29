@@ -301,6 +301,9 @@ func test_scenes() -> void:
 	var known: Array = game.ui.map_rooms()
 	check("1,0" in known and "0,0" in known and "1,2" in known and "2,1" not in known and "-2,0" not in known,
 		"map shows the current room and its doorway neighbours only")
+	run.rooms["0,0"].visited = true
+	known = game.ui.map_rooms()
+	check("-2,0" in known and "2,1" not in known, "a room walked through earlier keeps its unexplored doorways on the map")
 	game.ui.open_map("play")
 	await process_frame
 	check(game.ui.mode == "map" and game.paused, "full map opens as a paused view")
