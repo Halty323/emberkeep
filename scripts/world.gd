@@ -215,6 +215,11 @@ func make_gate(socket: Dictionary) -> void:
 	var barrier = Geo.box(gate, Vector3(0, .75, 0), Vector3(.16, 1.45, 2.0) if rotated else Vector3(2.0, 1.45, .16), Color("b85e4c"), .7)
 	barrier.name = "Barrier"
 	Geo.halo(gate, Vector3(0, .035, 0), 3.5, Color(.92, .62, .25, .28))
+	# Light from beyond spills through an open doorway onto this room's floor,
+	# reaching far enough in to show below the HUD when the doorway is on a
+	# far wall.
+	var spill = Geo.halo(gate, Vector3(-direction.x * 2.4, .03, -direction.y * 2.4), 5.2, Color(1.0, .74, .42, light.doorway))
+	spill.name = "Spill"
 	gate.set_meta("portal", socket.portal)
 	socket["gate"] = gate
 	gates.append(gate)
@@ -537,6 +542,7 @@ func set_open(value: bool) -> void:
 	open = value
 	for gate in gates:
 		gate.get_node("Barrier").visible = not value
+		gate.get_node("Spill").visible = value
 
 func apply_lighting_quality() -> void:
 	var enabled: bool = Settings.values.shadows
