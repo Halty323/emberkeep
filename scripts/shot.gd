@@ -49,7 +49,7 @@ func update_sim(delta: float) -> void:
 		return
 	age += delta
 	if age >= lifetime:
-		remove()
+		finish()
 		return
 	if friendly:
 		if stats.get("returning", 0) > 0 and age > lifetime * .48:
@@ -66,10 +66,29 @@ func update_sim(delta: float) -> void:
 			if target:
 				var desired: Vector3 = target.global_position + Vector3.UP * .65 - global_position
 				direction = direction.lerp(desired.normalized(), minf(.85, delta * stats.homing)).normalized()
+	elif stats.get("homing", 0) > 0:
+		# A mirrored volley seeks the player, more gently.
+		var desired: Vector3 = game.player.global_position + Vector3.UP * .65 - global_position
+		desired.y = 0
+		direction = direction.lerp(desired.normalized(), minf(.5, delta * float(stats.homing) * .5)).normalized()
 	var movement = direction * speed * delta
 	if stats.get("wave", 0) > 0:
 		movement += direction.cross(Vector3.UP) * cos(age * 15) * delta * 3.0
 	var target_position = global_position + movement
+	# A shot through a dead lantern's glass lights it again.
+	if friendly and is_instance_valid(game.room):
+		var lantern: int = game.room.lantern_near(Vector2(target_position.x, target_position.z), .6, false)
+		if lantern >= 0:
+			game.relight(lantern)
+			Effects.play("impact", global_position, Color("ffd08a"))
+			remove()
+			return
+	# Glass splits a shot crossing it into three, once.
+	if not stats.get("glassed", false) and game.residue and game.residue.crosses_glass(global_position, target_position):
+		stats["glassed"] = true
+		for side in [-1, 1]:
+			var copy = game.spawn_shot(global_position, direction.rotated(Vector3.UP, side * .32), damage * (.6 if friendly else 1.0), speed, stats, tint, friendly)
+			if copy: copy.hit_ids = hit_ids.duplicate()
 	var query = PhysicsRayQueryParameters3D.create(global_position, target_position, 1)
 	var hit = get_world_3d().direct_space_state.intersect_ray(query)
 	var geometry: RoomGeometry = game.room.geometry
@@ -94,7 +113,7 @@ func update_sim(delta: float) -> void:
 		else:
 			Effects.play("impact", global_position, tint)
 			splash()
-			remove()
+			finish()
 			return
 	else:
 		global_position = target_position
@@ -102,11 +121,14 @@ func update_sim(delta: float) -> void:
 		trail[i].position = -direction * (i + 1) * .17
 	if friendly:
 		for enemy in game.enemies.duplicate():
-			if not is_instance_valid(enemy) or not enemy.alive or hit_ids.has(enemy.entity_id):
+			if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable or hit_ids.has(enemy.entity_id):
 				continue
 			var center: Vector3 = enemy.global_position + Vector3.UP * .65
 			var closest = Geometry3D.get_closest_point_to_segment(center, global_position - movement, global_position)
 			if closest.distance_to(center) < enemy.radius + radius:
+				# Some foes absorb or turn a shot instead of taking it.
+				if enemy.catch_shot(self):
+					return
 				hit_enemy(enemy)
 				if not alive:
 					return
@@ -116,6 +138,14 @@ func update_sim(delta: float) -> void:
 		if closest.distance_to(center) < .32 + radius:
 			game.player.hurt(damage, global_position)
 			remove()
+
+## The end of a shot's flight: what it carries meets what lies here, and a
+## friendly shot that struck nothing is a miss.
+func finish() -> void:
+	if not alive: return
+	if game.residue and friendly: game.residue.react(global_position, .7, stats)
+	if friendly and hit_ids.is_empty(): game.shot_missed(self)
+	remove()
 
 ## Paint lands as a short-lived, budgeted floor mark; it deals no damage.
 func splash() -> void:
@@ -130,7 +160,8 @@ func hit_enemy(enemy: DungeonEnemy) -> void:
 	if enemy.hp < enemy.max_hp * .35:
 		power *= 1.0 + float(stats.get("execute", 0))
 	enemy.apply_status(stats)
-	enemy.take_hit(power, direction * float(stats.get("knockback", 1)) * 2.0, critical)
+	if game.residue: game.residue.react(enemy.global_position, .7, stats)
+	enemy.take_hit(power, direction * float(stats.get("knockback", 1)) * 2.0, critical, false, "shot")
 	if Run.rng.randf() < minf(.25, float(stats.get("lifesteal", 0))):
 		Run.heal(.5)
 	if stats.get("chain", 0) > 0:
@@ -144,7 +175,7 @@ func hit_enemy(enemy: DungeonEnemy) -> void:
 			var at: Vector3 = target.global_position + Vector3.UP * .65
 			Effects.beam(game, previous, at, Color("c4c2ff"))
 			target.apply_status(stats)
-			target.take_hit(power * .6, Vector3.ZERO, false)
+			target.take_hit(power * .6, Vector3.ZERO, false, false, "shot")
 			previous = at
 	if stats.get("explosion", 0) > 0:
 		game.blast(global_position, minf(3.5, stats.explosion), power * .5, true, enemy)

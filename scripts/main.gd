@@ -62,6 +62,20 @@ var last_result: Dictionary = {}
 const PEDESTAL_ID := "pedestal"
 const MAX_SHOTS := 200
 const HOSTILE_SHOT_RESERVE := 50
+# What a fight leaves on the floor; one per room, rebuilt on entry.
+var residue: ResidueField
+# Combat state that outlives a room. Sparks are hostile embers caught by a
+# grazing dash, released with the next shot. Kindle grows with quick kills
+# and gutters with a hit. Noise is what sound-hunting foes follow.
+var sparks = 0
+var kindle_heat = 0.0
+var kindle_quiet = 0.0
+var noises: Array = []
+const MAX_SPARKS := 3
+const KINDLE_STEPS := [3, 6, 10]
+const KINDLE_DAMAGE := [1.0, 1.15, 1.3, 1.5]
+const KINDLE_FADE_AFTER := 3.5
+const PLAYER_LIGHT := 3.6
 var camera_home = Vector3(18, 23, 22)
 var screen_right = Vector3(22, 0, -18).normalized()
 var screen_down = Vector3(18, 0, 22).normalized()
@@ -269,6 +283,10 @@ func _physics_process(delta: float) -> void:
 	for shot in shots.duplicate():
 		if is_instance_valid(shot) and is_playing(): shot.update_sim(delta)
 	shots = shots.filter(func(s): return is_instance_valid(s) and s.alive)
+	if residue: residue.update_sim(delta)
+	# A streak cools once kills stop coming.
+	kindle_quiet += delta
+	if kindle_quiet > KINDLE_FADE_AFTER: kindle_heat = maxf(0.0, kindle_heat - delta)
 	sync_companions()
 	for companion in companions:
 		companion.update_sim(delta)
@@ -277,7 +295,12 @@ func _physics_process(delta: float) -> void:
 	pickups = pickups.filter(func(p): return is_instance_valid(p) and not p.collected)
 	if not Run.active: return
 	track_exploration()
-	if enemies.is_empty() and not room.open:
+	# Posts and dropped lanterns never hold a room shut.
+	if not room.open and enemies.all(func(e): return e.inert):
+		for enemy in enemies:
+			enemy.alive = false
+			enemy.queue_free()
+		enemies.clear()
 		clear_room()
 	update_interaction()
 	if room.open and transition_cooldown <= 0:
@@ -571,6 +594,7 @@ func clean_room(keep_view := false) -> void:
 	interactions.clear()
 	if is_instance_valid(previous_view): previous_view.queue_free()
 	previous_view = null
+	residue = null
 	if not keep_view:
 		transition = {}
 		if light_veil: light_veil.color.a = 0.0
@@ -620,6 +644,7 @@ func start_run(weapon: String, seed_input: int, is_daily: bool) -> void:
 	# Scene entity ids restart with each run, so a seed plays out identically.
 	sim_time = 0
 	entity_counter = 10
+	reset_combat()
 	enter_room(Vector3(0, 0, 2.0))
 	ui.show_screen("play")
 	ui.notify("You wake in the cellar", "Clear rooms, find relics, climb to the light.")
@@ -633,6 +658,7 @@ func continue_run() -> void:
 	paused = false
 	camera.h_offset = 0
 	camera.size = CAMERA_GAME_SIZE
+	reset_combat()
 	enter_room(saved_entry())
 	ui.show_screen("play")
 	ui.notify("Welcome back, little light", "Your last safe room remembers you.")
@@ -650,6 +676,10 @@ func enter_room(spawn: Vector3, keep_view := false) -> void:
 	room = DungeonRoom.new()
 	scene_root.add_child(room)
 	room.build(self, data)
+	residue = ResidueField.new()
+	scene_root.add_child(residue)
+	residue.setup(self, room.geometry)
+	noises.clear()
 	# A saved or requested spawn can be outside a rotated L: validate it.
 	var safe = room.geometry.safe_point(Vector2(spawn.x, spawn.z), .5, room.blocked_at)
 	spawn = Vector3(safe.x, 0, safe.y)
@@ -669,20 +699,29 @@ func enter_room(spawn: Vector3, keep_view := false) -> void:
 		if data.type == "boss":
 			spawn_enemy(room.pedestal + Vector3(0, 0, -2.5), "boss", "%s:boss" % data.id)
 		else:
-			var choices = ["mote", "spitter", "charger", "splitter", "brute"]
 			var cells: int = room.geometry.cells.size()
 			var count = roundi((3 + Run.floor_number + mini(int(data.depth) / 3, 2)) * (1.0 + .45 * (cells - 1)))
-			for i in count:
+			var plan: Array = Foes.compose(Run.floor_number, count, gen)
+			var spawned: Array = []
+			for i in plan.size():
 				var center = RoomGeometry.cell_center(room.geometry.cells[i % cells])
 				var p = Vector3(gen.randf_range(-6, 6), 0, gen.randf_range(-4, 4))
 				if p.distance_to(spawn - Vector3(center.x, 0, center.y)) < 3.0: p = -p
 				p += Vector3(center.x, 0, center.y)
+				# A rootling grows a few steps from its partner.
+				if plan[i].partner >= 0 and plan[i].partner < i:
+					p = spawned[plan[i].partner].global_position + Vector3(3.5, 0, 0).rotated(Vector3.UP, gen.randf() * TAU)
 				for obstacle in room.obstacles:
 					if p.distance_to(obstacle.position) < 1.6: p.z = center.y
 				if p.distance_to(spawn) < 3.0:
 					p = spawn + (p - spawn).normalized() * 3.5 if not p.is_equal_approx(spawn) else spawn + Vector3(3.5, 0, 0)
-				var kind: String = choices[gen.randi_range(0, mini(choices.size() - 1, 2 + Run.floor_number))]
-				spawn_enemy(p, kind, "%s:e%d" % [data.id, i])
+				spawned.append(spawn_enemy(p, plan[i].kind, "%s:e%d" % [data.id, i]))
+			for i in plan.size():
+				if plan[i].partner > i: spawned[i].bind_partner(spawned[plan[i].partner])
+				if plan[i].elite == "twinned":
+					if plan[i].twin > i: spawned[i].make_elite("twinned", spawned[plan[i].twin])
+				elif plan[i].elite != "":
+					spawned[i].make_elite(plan[i].elite)
 	else:
 		room.set_open(true)
 		if not data.cleared:
@@ -719,7 +758,11 @@ func enter_room(spawn: Vector3, keep_view := false) -> void:
 		if bomb.room == Run.current_room: spawn_bomb_view(bomb)
 	sync_companions()
 	if data.type == "boss" and not data.cleared:
-		ui.notify("The hearth is stirring", "Watch the windup. Dash through danger.", Color("e0a18b"))
+		var introductions = {"warden": ["The Hearth Warden listens", "It hunts by sound. Only in its lantern's light can it be hurt."],
+			"mosskeeper": ["The Mosskeeper takes root", "Missed shots feed its moss; fire burns it through its roots."],
+			"last_light": ["The Last Light holds your glow", "It fires your own weapon. Relight what it drains."]}
+		var line: Array = introductions[Foes.boss_kind(Run.floor_number)]
+		ui.notify(line[0], line[1], Color("e0a18b"))
 	apply_floor_light()
 	update_camera(0.0, true)
 
@@ -748,7 +791,9 @@ func travel(portal_id: String, keep_view := false) -> void:
 	enter_room(Vector3(point.x, 0, point.y), keep_view)
 
 func spawn_enemy(at: Vector3, kind: String, source := "") -> DungeonEnemy:
-	var enemy = DungeonEnemy.new()
+	# Each floor has its own boss.
+	if kind == "boss": kind = Foes.boss_kind(Run.floor_number)
+	var enemy: DungeonEnemy = Foes.create(kind)
 	scene_root.add_child(enemy)
 	entity_counter += 1
 	enemy.setup(self, kind, entity_counter)
@@ -776,7 +821,7 @@ func nearest_enemy(at: Vector3, distance: float, excluded: Dictionary = {}) -> D
 	var result: DungeonEnemy = null
 	var best = distance
 	for enemy in enemies:
-		if not is_instance_valid(enemy) or not enemy.alive or excluded.has(enemy.entity_id): continue
+		if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable or enemy.inert or excluded.has(enemy.entity_id): continue
 		var d = at.distance_to(enemy.global_position + Vector3.UP * .65)
 		if d < best:
 			best = d
@@ -785,10 +830,12 @@ func nearest_enemy(at: Vector3, distance: float, excluded: Dictionary = {}) -> D
 
 func blast(at: Vector3, radius: float, damage: float, friendly: bool, excluded: DungeonEnemy) -> void:
 	Effects.ring_burst(scene_root, Vector3(at.x, 0, at.z), Color("edbd7b"), radius)
+	if residue: residue.ignite(Vector3(at.x, 0, at.z), radius * .7)
 	if friendly:
+		make_noise(at, 2.5)
 		for enemy in enemies.duplicate():
-			if is_instance_valid(enemy) and enemy.alive and enemy != excluded and enemy.global_position.distance_to(Vector3(at.x, 0, at.z)) < radius + enemy.radius:
-				enemy.take_hit(damage, (enemy.global_position - at).normalized() * 2, false)
+			if is_instance_valid(enemy) and enemy.alive and enemy.targetable and enemy != excluded and enemy.global_position.distance_to(Vector3(at.x, 0, at.z)) < radius + enemy.radius:
+				enemy.take_hit(damage, (enemy.global_position - at).normalized() * 2, false, false, "blast")
 	else:
 		if player.global_position.distance_to(at) < radius:
 			player.hurt(1, at)
@@ -796,6 +843,7 @@ func blast(at: Vector3, radius: float, damage: float, friendly: bool, excluded: 
 ## A foe pays out once per run: its credit and its stable drop records are
 ## created together, so any later save holds both or neither.
 func on_enemy_killed(enemy: DungeonEnemy) -> void:
+	if not enemy.inert: stoke()
 	if enemy.boss:
 		hitstop = .11
 		shake = .3
@@ -886,6 +934,8 @@ func clear_room() -> void:
 	room.set_open(true)
 	Run.mark_cleared()
 	var data: Dictionary = Run.rooms[Run.current_room]
+	# Lanterns relit or put out in the fight stay that way.
+	if room.lanterns_changed: data["lit"] = room.burning_indices()
 	Audio.play_sound("door", 1.3)
 	ui.notify("A little more warmth", "The doorways are open.")
 	if data.type == "boss":
@@ -1237,6 +1287,86 @@ func end_run(won: bool) -> void:
 	Run.finish(won)
 	paused = true
 	ui.show_screen("won" if won else "dead")
+
+func reset_combat() -> void:
+	hitstop = 0.0
+	sparks = 0
+	kindle_heat = 0.0
+	kindle_quiet = 0.0
+	noises.clear()
+
+func kindle_level() -> int:
+	var level = 0
+	for step in KINDLE_STEPS:
+		if kindle_heat >= step: level += 1
+	return level
+
+func kindle_damage() -> float:
+	return KINDLE_DAMAGE[kindle_level()]
+
+## How far the player's own light reaches: it grows with the kindle.
+func player_light_radius() -> float:
+	return PLAYER_LIGHT + kindle_level()
+
+## A kill feeds the flame.
+func stoke() -> void:
+	var before = kindle_level()
+	kindle_heat = minf(kindle_heat + 1.0, 12.0)
+	kindle_quiet = 0.0
+	if kindle_level() > before and is_instance_valid(player):
+		Effects.ring_burst(scene_root, player.global_position, Color("ffcf7a"), 1.2 + kindle_level() * .4)
+		Audio.play_sound("coin", 1.2 + kindle_level() * .1)
+
+## A hit gutters it back to nothing.
+func gutter() -> void:
+	if kindle_heat <= 0: return
+	kindle_heat = 0.0
+	if is_instance_valid(player): Effects.play("death_puff", player.global_position + Vector3.UP * .9, Color("6a5a48"), 6)
+
+## A hostile ember caught in a grazing dash.
+func catch_spark(shot: EmberShot) -> void:
+	shot.remove()
+	if sparks >= MAX_SPARKS: return
+	sparks += 1
+	Effects.play("pickup", shot.global_position, Color("fff3c4"))
+	Audio.play_sound("coin", 1.5 + sparks * .08)
+
+func make_noise(at: Vector3, loudness: float) -> void:
+	noises.append({"at": Vector3(at.x, 0, at.z), "loudness": loudness, "time": sim_time})
+	while noises.size() > 12: noises.pop_front()
+
+## The newest noise at least this loud, no older than `within` seconds.
+func latest_noise(loudness := 1.0, within := 3.0) -> Dictionary:
+	for i in range(noises.size() - 1, -1, -1):
+		if sim_time - noises[i].time > within: break
+		if noises[i].loudness >= loudness: return noises[i]
+	return {}
+
+## A shot through a dead lantern's glass lights it again.
+func relight(index: int) -> void:
+	if not room.set_lantern(index, true): return
+	make_noise(room.lanterns[index].at, 1.5)
+	Audio.play_sound("item", 1.3)
+	for enemy in enemies:
+		if is_instance_valid(enemy) and enemy.alive: enemy.on_relight(index)
+	save_lanterns()
+
+func snuff(index: int) -> void:
+	if not room.set_lantern(index, false): return
+	Audio.play_sound("door", .6)
+	save_lanterns()
+
+## In a room already won, the lanterns are kept as they are left.
+func save_lanterns() -> void:
+	var data: Dictionary = Run.rooms[Run.current_room]
+	if not room.open: return
+	data["lit"] = room.burning_indices()
+	Run.save_run()
+
+## A friendly shot that ended without striking a foe.
+func shot_missed(shot: EmberShot) -> void:
+	for enemy in enemies:
+		if is_instance_valid(enemy) and enemy.alive: enemy.on_shot_missed(shot)
 
 func get_boss() -> DungeonEnemy:
 	for enemy in enemies:

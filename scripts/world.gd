@@ -18,6 +18,14 @@ var decor_rng = RandomNumberGenerator.new()
 # Selected warm fill lights; large rooms move a small pool between lanterns.
 var lamps: Array[OmniLight3D] = []
 var lantern_points: Array[Vector3] = []
+# Every lantern, burning or dead: {"at", "burning", "glass", "pool", "glow"}.
+# Shooting a dead one relights it; snuffing puts one out. Burning ones make up
+# lantern_points and feed the fill lights.
+var lanterns: Array = []
+# Other light a fight carries (a dropped lantern): nodes with a "reach" meta.
+var extra_lights: Array = []
+var lanterns_changed = false
+const LANTERN_POOL := 4.4
 var lamp_assignment: Array[int] = []
 var shadow_lamps: Array[SpotLight3D] = []
 # This floor's light (FloorLight): lantern warmth, glow and how many still burn.
@@ -57,7 +65,9 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 	build_floor()
 	build_walls()
 	var points: Array = room.get("lights", default_lights())
-	var burning = FloorLight.lit_lanterns(points.size(), light, int(room.get("seed", 53)))
+	var burning: Array = FloorLight.lit_lanterns(points.size(), light, int(room.get("seed", 53)))
+	# A room remembers lanterns relit or put out once its fight was over.
+	if room.has("lit") and not preview: burning = room.lit.map(func(i): return int(i))
 	for i in points.size():
 		make_lantern(Vector3(float(points[i][0]), 0, float(points[i][1])), i in burning)
 	make_fill_lights()
@@ -361,20 +371,61 @@ func make_lantern(p: Vector3, burning := true) -> void:
 	Geo.box(self, p + Vector3(0, .28, 0), Vector3(.85, .55, .85), Color("424d4c"))
 	Geo.box(self, p + Vector3(0, .61, 0), Vector3(1.0, .12, 1.0), Color("716f5d"))
 	Geo.cylinder(self, p + Vector3(0, 1.03, 0), .14, .8, Color("ac9061"))
-	if burning:
-		Geo.box(self, p + Vector3(0, 1.6, 0), Vector3(.5, .55, .5), Color("f7bb6d"), 1.05)
-	else:
-		Geo.box(self, p + Vector3(0, 1.6, 0), Vector3(.5, .55, .5), Color("3d3a35"))
+	var glass = Geo.box(self, p + Vector3(0, 1.6, 0), Vector3(.5, .55, .5), Color("f7bb6d"), 1.05)
 	Geo.box(self, p + Vector3(0, 1.94, 0), Vector3(.68, .12, .68), Color("826d51"))
 	for x in [-.22, .22]:
 		for z in [-.22, .22]:
 			var bar = Geo.box(self, p + Vector3(x, 1.6, z), Vector3(.035, .65, .035), Color("6e6654"))
 			bar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	if not burning: return
-	lantern_points.append(p)
-	Geo.halo(self, p + Vector3(0, .03, 0), 7.5, Color(1, .57, .17, .2 * light.glow))
+	var pool = Geo.halo(self, p + Vector3(0, .03, 0), 7.5, Color(1, .57, .17, .2 * light.glow))
 	var glow = Geo.halo(self, p + Vector3(0, 1.65, 0), 2.0, Color(1, .6, .2, .4 * light.glow))
 	glow.rotation_degrees.x = 58
+	lanterns.append({"at": p, "burning": burning, "glass": glass, "pool": pool, "glow": glow})
+	show_lantern(lanterns.back())
+	if burning: lantern_points.append(p)
+
+func show_lantern(lantern: Dictionary) -> void:
+	lantern.glass.material_override = Geo.material(Color("f7bb6d"), 1.05) if lantern.burning else Geo.material(Color("3d3a35"))
+	lantern.pool.visible = lantern.burning
+	lantern.glow.visible = lantern.burning
+
+## Relights or puts out one lantern; the fill lights follow the burning ones.
+func set_lantern(index: int, burning: bool) -> bool:
+	if index < 0 or index >= lanterns.size() or lanterns[index].burning == burning: return false
+	lanterns[index].burning = burning
+	lanterns_changed = true
+	show_lantern(lanterns[index])
+	lantern_points.clear()
+	for lantern in lanterns:
+		if lantern.burning: lantern_points.append(lantern.at)
+	refresh_fill_lights()
+	var at: Vector3 = lanterns[index].at + Vector3(0, 1.6, 0)
+	Effects.burst(self, at, Color("ffd08a") if burning else Color("5a5650"), 10 if burning else 6, 1.2)
+	return true
+
+func burning_indices() -> Array:
+	return range(lanterns.size()).filter(func(i): return lanterns[i].burning)
+
+func has_dark() -> bool:
+	return lantern_points.size() < lanterns.size()
+
+## Whether a point stands in a burning lantern's pool or another fight light.
+func lit_at(p: Vector3) -> bool:
+	for point in lantern_points:
+		if Vector2(point.x - p.x, point.z - p.z).length() < LANTERN_POOL: return true
+	for node in extra_lights:
+		if is_instance_valid(node) and Vector2(node.global_position.x - p.x, node.global_position.z - p.z).length() < float(node.get_meta("reach", 3.0)): return true
+	return false
+
+## The lantern (burning or dead, as asked) nearest a floor point within reach.
+func lantern_near(flat: Vector2, reach: float, burning: bool) -> int:
+	var best = -1
+	for i in lanterns.size():
+		if lanterns[i].burning != burning: continue
+		var d = Vector2(lanterns[i].at.x, lanterns[i].at.z).distance_to(flat)
+		if d < reach and (best < 0 or d < Vector2(lanterns[best].at.x, lanterns[best].at.z).distance_to(flat)):
+			best = i
+	return best
 
 func make_fill_lights() -> void:
 	# Unshadowed fills preserve warm lantern pools in both quality modes. A
@@ -386,6 +437,24 @@ func make_fill_lights() -> void:
 	# overlapping shadow lights still cost too much on mobile GLES3 renderers.
 	if not lantern_points.is_empty() and shadow_lamps.size() < MAX_LANTERN_SHADOWS:
 		make_shadow_light(lantern_points[0])
+
+## After a lantern changes: as many fills as burning lanterns allow, the
+## shadow lamp on a burning one or dark when none burn.
+func refresh_fill_lights() -> void:
+	var wanted = mini(MAX_ACTIVE_FILLS, lantern_points.size())
+	while lamps.size() > wanted:
+		lamps.pop_back().queue_free()
+	while lamps.size() < wanted:
+		lamps.append(Geo.light(self, Vector3.ZERO, light.lamp_color, light.lamp, 7.0))
+	lamp_assignment.clear()
+	for slot in wanted:
+		lamp_assignment.append(slot)
+		lamps[slot].position = lantern_points[slot] + Vector3(0, 2.2, 0)
+	if not lantern_points.is_empty():
+		if shadow_lamps.is_empty(): make_shadow_light(lantern_points[0])
+		else: place_shadow_light(shadow_lamps[0], lantern_points[0])
+	_quality_enabled = null
+	apply_lighting_quality()
 
 func lantern_distance(index: int, flat: Vector2) -> float:
 	return Vector2(lantern_points[index].x, lantern_points[index].z).distance_to(flat)
@@ -560,7 +629,8 @@ func apply_lighting_quality() -> void:
 	_quality_enabled = enabled
 	for light in shadow_lamps:
 		light.shadow_enabled = enabled
-		light.visible = enabled
+		# With every lantern out there is nothing for it to hang on.
+		light.visible = enabled and not lantern_points.is_empty()
 
 func _process(delta: float) -> void:
 	time += delta
