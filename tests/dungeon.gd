@@ -602,6 +602,7 @@ func test_stairs() -> void:
 	check(game.interaction_text == "Climb to the next floor", "the stair offers the climb")
 	game.interact()
 	check(game.transition.get("kind", "") == "stairs" and game.interaction_text == "", "climbing hides the prompt")
+	game.ui.floor_title_start = -100.0
 	var highest = 0.0
 	var climb_ticks = 0
 	var veil_max = 0.0
@@ -614,6 +615,7 @@ func test_stairs() -> void:
 	check(highest > Stairs.RISE * Stairs.STEPS * .8 and veil_max > .9, "the figure climbs high into light that fills the view (%.1f)" % highest)
 	check(absi(climb_ticks - roundi((game.CLIMB_APPROACH + game.CLIMB_STEPS) * 60)) <= 1, "the climb takes %.1f s" % (game.CLIMB_APPROACH + game.CLIMB_STEPS))
 	check(run.floor_number == 2 and run.current_room == "0,0" and run.has_save(), "the floor changes and saves at the top")
+	check(is_equal_approx(game.ui.floor_title_start, game.ui.elapsed_ui), "the new floor's name is spelled out as it opens")
 	check(game.player.position.y < -1.0 and game.room.obstacles.any(func(o): return o.get("id", "") == "stairwell"), "the next floor opens with the figure below its stairwell")
 	var arrive_ticks = 0
 	while game.in_transition() and arrive_ticks < 400:

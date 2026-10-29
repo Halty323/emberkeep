@@ -36,9 +36,11 @@ iPhone/iPad: [unsigned iOS builds and sideloading](docs/IOS.md) are available th
 | Interact | Tap the interaction prompt | E / click the prompt | A |
 | Floor map | Tap the minimap | M | — |
 | Pause | Top-right pause button / Android Back | Escape / P | Start |
-| Journal (relics and paintings) | Journal button | Tab | Menu button via focus navigation |
+| Journal (relics and paintings) | Pause, then Journal | Tab | Menu button via focus navigation |
 
 The sticks float to the initial touch position, and the Item, Bomb and Dash buttons are hit-tested before a stick can capture the finger, so both sticks stay held while you tap actions. Items and bombs need a fresh press; holding a key never repeats them. Dash is a short hop (about three units) with a brief invulnerability window. Doors open after all enemies in a combat room are defeated; walk into a doorway to take that exit. Your little light steps through and fades, the view slides over to the next room and it walks back in; a room with foes seals the door behind it. The whole passage takes 1.5 s, and nothing else moves meanwhile.
+
+The play screen keeps out of the way: one small slab top left for health, coins, keys, bombs, wards, weapon and held item (relics as a row of gems beneath), the minimap and pause button top right, and the boss's name and health only while it fights. A floor's name is not shown all the time; it spells itself letter by letter across the screen as the floor opens, holds a moment, then fades. Screens wider than 16:9, such as tall phones and ultrawide monitors, show more of the dungeon instead of black bars: the left-hand HUD keeps to the left edge, the right-hand HUD and touch controls follow the right edge, and menus stay centred. Narrower screens such as 4:3 tablets keep the 16:9 framing.
 
 ## What is in the game
 
