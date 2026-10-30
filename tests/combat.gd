@@ -297,10 +297,12 @@ func test_residue() -> void:
 	check(fire_count.call() == 0 and residue.tiles.size() < wax, "fire burns the wax away")
 	clear_combat()
 	# Chill makes ice; ice keeps you sliding; it melts back to wax.
-	residue.add("wax", Vector3(2, 0, 0), 1.6)
-	residue.react(Vector3(2, 0, 0), 2.0, {"chill": 1.0})
+	# A wide patch: outside the physics callback a step moves the player by
+	# the last real frame's length, which varies from run to run.
+	residue.add("wax", Vector3(2, 0, 0), 3.2)
+	residue.react(Vector3(2, 0, 0), 3.6, {"chill": 1.0})
 	check(residue.kind_at(Vector3(2, 0, 0)) == "ice", "chill turns wax to ice")
-	game.player.place(Vector3(1.4, 0, 0))
+	game.player.place(Vector3(.2, 0, 0))
 	game.player.velocity = Vector3(4, 0, 0)
 	step(6)
 	var slide = game.player.velocity.length()

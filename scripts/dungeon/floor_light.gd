@@ -50,7 +50,8 @@ static func for_floor(height: float, theme: Dictionary, twist := "") -> Dictiona
 	var t = clampf((height - .5) * 2.0 if upper else height * 2.0, 0.0, 1.0)
 	var result := {}
 	for key in low:
-		result[key] = lerp(low[key], high[key], t)
+		# The bottom, middle and top are exactly the old floors' light.
+		result[key] = low[key] if t <= 0.0 else (high[key] if t >= 1.0 else lerp(low[key], high[key], t))
 	var tint: Dictionary = theme.get("light", {})
 	for key in tint:
 		result[key] = Color(tint[key])
