@@ -2,7 +2,7 @@
   "version": 1,
   "drop_tables": [
     {"id": "enemy_common", "rolls": [
-      {"coins": 1.35},
+      {"coins": 0.4},
       {"pickup": "half_heart", "chance": 0.10, "luck": 0.025},
       {"pickup": "bomb", "chance": 0.025},
       {"pickup": "key", "chance": 0.02},

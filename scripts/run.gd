@@ -10,6 +10,14 @@ const SAVE_PATH := "user://run.json"
 var rng = RandomNumberGenerator.new()
 var seed_value = 0
 var floor_number = 1
+# The climb: one floor theme per depth (content/floors.json), and the twist
+# each floor drew. Runs saved before themes existed climb the old tower.
+const CLIMB := "tower"
+const LEGACY_CLIMB := "legacy_tower"
+# A first floor draws a twist this often; every deeper floor draws one.
+const FIRST_TWIST_CHANCE := .35
+var floor_plan: Array = ["cellar", "halls", "hearth"]
+var floor_twists: Array = ["", "", ""]
 var rooms: Dictionary = {}
 var portals: Dictionary = {}
 var current_room = "0,0"
@@ -38,6 +46,10 @@ var instance_counter = 0
 var processed_events: Array = []
 # Paint Sprayer's red-blue-green position: gameplay state, saved with the run.
 var pigment = 0
+# Maximum health given to the dark store, in half-hearts: gone for the run.
+var blood_debt = 0
+# The dark store never takes the last heart.
+const LIFE_FLOOR := 2.0
 # Paintings this run has placed in guaranteed slots, so each floor offers a
 # different unseen work.
 var painting_slots: Array = []
@@ -51,7 +63,7 @@ var daily = false
 # Device preferences live in the Settings service, never in the profile.
 const PROFILE_VERSION := 2
 var profile = {"version": PROFILE_VERSION, "runs": 0, "wins": 0, "kills": 0, "best_floor": 0, "discovered": [],
-	"paintings": [], "unlocks": []}
+	"paintings": [], "unlocks": [], "floors": []}
 
 func _ready() -> void:
 	if FileAccess.file_exists(PROFILE_PATH):
@@ -66,11 +78,13 @@ func start_run(chosen_weapon: String, seed_input := 0, is_daily := false) -> voi
 	seed_value = seed_input if seed_input != 0 else int(Time.get_unix_time_from_system()) % 99999999
 	rng.seed = seed_value
 	floor_number = 1
+	plan_climb(CLIMB)
 	generator_version = FloorGenerator.VERSION
 	inventory = []
 	# Locked weapons can never start a run, whatever asked for them.
-	weapon_id = chosen_weapon if Collection.weapon_available(chosen_weapon) else "candle"
+	weapon_id = chosen_weapon if Collection.weapon_available(chosen_weapon) else Forge.id_for(seed_value, 0)
 	pigment = 0
+	blood_debt = 0
 	painting_slots = []
 	coins = 8
 	keys = 0
@@ -110,16 +124,21 @@ func rebuild_stats() -> void:
 	for modifier in modifiers:
 		for key in modifier.get("effects", {}):
 			stats[key] += float(modifier.effects[key])
-	stats.max_hp = maxf(2.0, stats.max_hp)
+	stats.max_hp = maxf(LIFE_FLOOR, stats.max_hp - blood_debt)
 	stats.damage = maxf(0.3, stats.damage)
 	stats.rate = clampf(stats.rate, 0.35, 5.0)
 	stats.speed = clampf(stats.speed, 0.55, 2.2)
 	stats.size = clampf(stats.size, 0.5, 3.0)
 
+## The weapon in hand: forged for a seed, or one of the catalog's.
+func weapon() -> Dictionary:
+	return Forge.lookup(weapon_id)
+
 func projectile_stats() -> Dictionary:
 	var result: Dictionary = stats.duplicate()
-	for key in Content.weapon_by_id[weapon_id].effects:
-		result[key] += float(Content.weapon_by_id[weapon_id].effects[key])
+	var held: Dictionary = weapon()
+	for key in held.effects:
+		result[key] = float(result.get(key, 0)) + float(held.effects[key])
 	return result
 
 func gain_item(id: String) -> void:
@@ -307,6 +326,77 @@ func local_cells(room: Dictionary) -> Array:
 	var anchor = room_anchor(room)
 	return room.get("cells", [[anchor.x, anchor.y]]).map(func(value): return FloorGenerator.vec(value) - anchor)
 
+## Which theme takes each floor, and which twist: from the seed alone, so a
+## seed always climbs the same tower. Each band takes a theme not yet used.
+func plan_climb(climb_id: String) -> void:
+	var climb: Dictionary = Content.record("climbs", climb_id)
+	var gen = RandomNumberGenerator.new()
+	gen.seed = Content.stable_hash("climb:%d" % seed_value)
+	floor_plan = []
+	if climb.has("fixed"):
+		floor_plan = climb.fixed.duplicate()
+	else:
+		for band in climb.bands:
+			var pool = Content.families.floors.filter(func(theme): return theme.band == band and theme.id not in floor_plan)
+			floor_plan.append(pool[gen.randi_range(0, pool.size() - 1)].id)
+	floor_twists = []
+	for i in floor_plan.size():
+		# The old fixed tower had no twists.
+		floor_twists.append("" if climb.has("fixed") else draw_twist(gen, i + 1, Content.record("floors", floor_plan[i])))
+
+func draw_twist(gen: RandomNumberGenerator, depth: int, theme: Dictionary) -> String:
+	if depth == 1 and gen.randf() >= FIRST_TWIST_CHANCE: return ""
+	var excluded: Array = floor_twists + theme.get("exclude_twists", [])
+	var pool = Content.families.twists.filter(func(twist): return depth >= twist.min_depth and twist.id not in excluded)
+	if pool.is_empty(): return ""
+	var total = 0.0
+	for twist in pool: total += twist.weight
+	var roll = gen.randf() * total
+	for twist in pool:
+		roll -= twist.weight
+		if roll <= 0: return twist.id
+	return pool.back().id
+
+## Whether the dark store can take this much maximum health and leave a heart.
+func can_pay_life(price: int) -> bool:
+	return active and stats.max_hp - price >= LIFE_FLOOR
+
+## Pays the dark store in maximum health, for the rest of the run.
+func pay_life(price: int) -> bool:
+	if not can_pay_life(price): return false
+	blood_debt += price
+	rebuild_stats()
+	hp = minf(hp, stats.max_hp)
+	changed.emit()
+	return true
+
+## Gilded floors pay out more, on top of the relics' bonus.
+func coin_bonus() -> float:
+	return float(stats.get("coin_bonus", 0)) + (.6 if has_twist("gilded") else 0.0)
+
+func theme_id() -> String:
+	return floor_plan[clampi(floor_number - 1, 0, floor_plan.size() - 1)]
+
+func theme() -> Dictionary:
+	return Content.record("floors", theme_id())
+
+func twist_id() -> String:
+	var index = floor_number - 1
+	return floor_twists[index] if index >= 0 and index < floor_twists.size() else ""
+
+func has_twist(id: String) -> bool:
+	return twist_id() == id
+
+func climb_length() -> int:
+	return maxi(1, floor_plan.size())
+
+func last_floor() -> bool:
+	return floor_number >= climb_length()
+
+## How far up the tower this floor is: 0 at the bottom, 1 at the top.
+func height() -> float:
+	return clampf(float(floor_number - 1) / maxf(1, climb_length() - 1), 0.0, 1.0)
+
 func generate_floor() -> void:
 	var floor_data: Dictionary
 	if generator_version == FloorGenerator.LEGACY_VERSION:
@@ -319,6 +409,8 @@ func generate_floor() -> void:
 	current_room = FloorGenerator.START_ID
 	entry = {"room": current_room, "position": [0.0, 2.0]}
 	profile.best_floor = maxi(profile.best_floor, floor_number)
+	# The journal remembers every floor theme ever reached.
+	if theme_id() not in profile.floors: profile.floors.append(theme_id())
 
 ## Fills this floor's painting mounts from a dedicated stream that depends on
 ## collection progress, never the other way round: topology, encounters and
@@ -396,11 +488,11 @@ func save_profile() -> void:
 
 func snapshot() -> Dictionary:
 	return {"version": SAVE_VERSION, "generator": generator_version, "content_revision": Content.revision,
-		"seed": seed_value, "floor": floor_number, "rooms": rooms, "portals": portals,
+		"seed": seed_value, "floor": floor_number, "floor_plan": floor_plan, "floor_twists": floor_twists, "rooms": rooms, "portals": portals,
 		"current_room": current_room, "entry": entry, "inventory": inventory, "weapon": weapon_id, "hp": hp,
 		"coins": coins, "keys": keys, "bombs": bombs, "wards": wards, "active": active_item, "cooldowns": cooldowns,
 		"modifiers": modifiers, "pending_bombs": pending_bombs, "instance_counter": instance_counter,
-		"events": processed_events, "pigment": pigment, "painting_slots": painting_slots, "kills": kills, "cleared": cleared, "elapsed": elapsed, "daily": daily,
+		"events": processed_events, "pigment": pigment, "blood_debt": blood_debt, "painting_slots": painting_slots, "kills": kills, "cleared": cleared, "elapsed": elapsed, "daily": daily,
 		"rng_state": str(rng.state)}
 
 ## Drop records name a pickup definition. Version 1 records used a bare kind;
@@ -455,7 +547,10 @@ func load_run() -> bool:
 	for key in ["seed", "floor", "rooms", "portals", "current_room", "entry", "inventory", "weapon", "hp", "coins", "kills", "cleared", "elapsed"]:
 		if not d.has(key):
 			return false
-	if not Content.weapon_by_id.has(d.weapon) or not d.rooms.has(d.current_room):
+	if not Forge.known(str(d.weapon)) or not d.rooms.has(d.current_room):
+		return false
+	var saved_plan: Array = d.get("floor_plan", Content.record("climbs", LEGACY_CLIMB).fixed)
+	if saved_plan.is_empty() or not saved_plan.all(func(id): return not Content.record("floors", str(id)).is_empty()):
 		return false
 	for portal in d.portals.values():
 		if not d.rooms.has(portal.a.room) or not d.rooms.has(portal.b.room):
@@ -465,6 +560,10 @@ func load_run() -> bool:
 			return false
 	seed_value = int(d.seed)
 	floor_number = int(d.floor)
+	floor_plan = saved_plan.map(func(id): return str(id))
+	floor_twists = d.get("floor_twists", []).map(func(id): return str(id))
+	floor_twists.resize(floor_plan.size())
+	floor_twists = floor_twists.map(func(id): return id if id is String and Content.FLOOR_TWISTS.has(id) else "")
 	normalize_drops(d.rooms)
 	normalize_seen(d.rooms)
 	if not d.get("active", {}).is_empty() and Content.record("actives", d.active.get("def", "")).is_empty():
@@ -488,6 +587,7 @@ func load_run() -> bool:
 	instance_counter = int(d.get("instance_counter", 0))
 	processed_events = d.get("events", [])
 	pigment = int(d.get("pigment", 0))
+	blood_debt = maxi(0, int(d.get("blood_debt", 0)))
 	painting_slots = d.get("painting_slots", [])
 	kills = int(d.kills)
 	cleared = int(d.cleared)

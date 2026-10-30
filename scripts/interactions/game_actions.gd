@@ -113,7 +113,7 @@ func interact(target_id: String, required_kind := "") -> Dictionary:
 	if InteractionRegistry.flat_distance(game.player.position, target.position) > target.radius + INTERACT_SLACK:
 		return result(false, "too far away")
 	match target.kind:
-		"treasure", "shop", "rest", "exit": return game.use_pedestal(target)
+		"treasure", "shop", "rest", "dark", "exit": return game.use_pedestal(target)
 		"chest": return open_chest(target_id.trim_prefix("chest:"))
 		"item": return take_item(target_id.trim_prefix("item:"))
 		"painting": return game.inspect_painting(target)

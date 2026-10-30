@@ -10,6 +10,9 @@ const BOUNDS := 5
 const MAX_ATTEMPTS := 10
 const EXTRA_PORTAL_CHANCE := .3
 const SPECIAL_ROLES := ["boss", "treasure", "shop", "rest"]
+# The dark store takes the next deepest room it can; floors made before it
+# existed (and the fallback layout) have none.
+const OPTIONAL_ROLES := ["dark"]
 const START_ID := "0,0"
 
 static func generate(seed_value: int, floor_number: int) -> Dictionary:
@@ -357,6 +360,12 @@ static func assign_roles(floor_data: Dictionary) -> bool:
 		if chosen == "":
 			return false
 		floor_data.rooms[chosen].type = role
+	for role in OPTIONAL_ROLES:
+		for id in order:
+			var room = floor_data.rooms[id]
+			if room.type == "combat" and role in Content.record("rooms", room.template).get("roles", []):
+				room.type = role
+				break
 	return true
 
 ## Structural validation used after every generation attempt and by tests.
@@ -397,6 +406,8 @@ static func validate(floor_data: Dictionary) -> PackedStringArray:
 			problems.append("room %s template does not allow role %s" % [room.id, room.type])
 	for role in ["start"] + SPECIAL_ROLES:
 		if counts.get(role, 0) != 1: problems.append("floor needs exactly one %s room" % role)
+	for role in OPTIONAL_ROLES:
+		if counts.get(role, 0) > 1: problems.append("floor has more than one %s room" % role)
 	# Floors from version 1 saves keep the layout they were made with.
 	var legacy_save = floor_data.get("generator", VERSION) == LEGACY_VERSION and not floor_data.get("fallback", false)
 	for room in floor_data.rooms.values():

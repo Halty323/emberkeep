@@ -5,7 +5,7 @@ extends RefCounted
 ## nearest, then id order. The current focus is kept until another target is
 ## clearly better, so prompts do not flicker between neighbours, and a
 ## decorative painting can never take the prompt from an exit or pedestal.
-const PRIORITY := {"exit": 100, "treasure": 90, "shop": 90, "rest": 90, "chest": 70, "item": 60, "painting": 40}
+const PRIORITY := {"exit": 100, "treasure": 90, "shop": 90, "dark": 90, "rest": 90, "chest": 70, "item": 60, "painting": 40}
 const HYSTERESIS := .35
 var targets: Dictionary = {}
 var focused := ""

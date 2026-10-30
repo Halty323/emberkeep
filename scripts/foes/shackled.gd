@@ -88,6 +88,6 @@ func on_death() -> void:
 		if key in data.get("credited", []): return
 		if not data.has("credited"): data.credited = []
 		data.credited.append(key)
-		var drops = Drops.roll("enemy_common", Run.rng, Run.stats.luck, Run.stats.coin_bonus)
+		var drops = Drops.roll("enemy_common", Run.rng, Run.stats.luck, Run.coin_bonus())
 		for i in drops.size():
 			game.spawn_pickup(Drops.scatter(drops.size(), i, global_position), drops[i].def)

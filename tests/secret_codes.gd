@@ -166,13 +166,14 @@ func test_paint_sprayer() -> void:
 	run.profile.unlocks.clear()
 	run.save_profile()
 	game.start_run("paint_sprayer", 140031, false)
-	check(run.weapon_id == "candle", "a locked Paint Sprayer cannot start a run before the code")
+	var fallback: String = run.weapon_id
+	check(fallback != "paint_sprayer", "a locked Paint Sprayer cannot start a run before the code")
 	game.pause_game()
 	var coins: int = run.coins
 	var inventory = run.inventory.duplicate()
 	var rooms = JSON.stringify(run.rooms)
 	check(not game.redeem_secret_code("PAINTSPRAY"), "partial sprayer code is rejected")
-	check(not collection.weapon_available("paint_sprayer") and run.weapon_id == "candle", "rejected codes leave the weapon locked and out of hand")
+	check(not collection.weapon_available("paint_sprayer") and run.weapon_id == fallback, "rejected codes leave the weapon locked and out of hand")
 	check(game.redeem_secret_code("  paintsprayer\n"), "sprayer secret accepts case differences and surrounding whitespace")
 	check(run.weapon_id == "paint_sprayer", "sprayer secret puts the weapon in hand")
 	check(collection.weapon_available("paint_sprayer") and run.profile.unlocks.count("paint_sprayer") == 1,

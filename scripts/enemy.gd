@@ -37,6 +37,9 @@ const KINDS := {"mote": [15, 2.0, .37, "bf8173"], "spitter": [19, 1.25, .4, "9ca
 	"charger": [25, 1.5, .44, "c68e65"], "splitter": [27, 1.65, .5, "9f8eb2"], "brute": [48, 1.15, .62, "968b78"],
 	"wisp": [9, 3.3, .26, "d1b6d6"]}
 const FLOOR_HEALTH := .3
+# Bosses grow more slowly with depth: a middle floor's boss may come second
+# or fourth in the climb.
+const BOSS_DEPTH := .16
 # Foes standing in a burning lantern's pool take this much more damage.
 const EXPOSED_DAMAGE := 1.25
 # Stable reward identity: "<room>:e<n>" for an encounter's foes, with
@@ -75,6 +78,7 @@ var can_merge = true
 var merge_time = 0.0
 var rng := RandomNumberGenerator.new()
 var halo: MeshInstance3D
+var restless = false
 
 func setup(owner_game: Node3D, type: String, id: int) -> void:
 	game = owner_game
@@ -84,9 +88,12 @@ func setup(owner_game: Node3D, type: String, id: int) -> void:
 	add_to_group("enemies")
 	var spec: Array = stats()
 	boss = is_boss()
-	max_hp = spec[0] * (1.0 if boss else 1.0 + (Run.floor_number - 1) * FLOOR_HEALTH)
+	max_hp = spec[0] * (1.0 + (Run.floor_number - 1) * (BOSS_DEPTH if boss else FLOOR_HEALTH))
+	# A swarming floor sends more foes, each a little frailer.
+	if Run.has_twist("swarming") and not boss: max_hp *= .8
 	hp = max_hp
-	speed = spec[1] * (1.0 + (Run.floor_number - 1) * .08)
+	restless = Run.has_twist("restless")
+	speed = spec[1] * (1.0 + (Run.floor_number - 1) * .08) * (1.15 if restless else 1.0)
 	radius = spec[2]
 	color = Color(spec[3])
 	collision_layer = 4
@@ -100,7 +107,7 @@ func setup(owner_game: Node3D, type: String, id: int) -> void:
 	visual = Node3D.new()
 	add_child(visual)
 	# Foes stay readable on the dark lower floors: a faint glow of their own.
-	var light = FloorLight.profile(Run.floor_number)
+	var light = FloorLight.current()
 	build_body(light)
 	eyes = Node3D.new()
 	visual.add_child(eyes)
@@ -171,9 +178,14 @@ func slow(duration: float, factor: float) -> void:
 	slow_time = maxf(slow_time, duration)
 	slow_factor = maxf(slow_factor if slow_time > 0 else 0.0, factor)
 
-## How fast this foe's own clocks run: Lampwright's light hurries them.
+## What the floor underfoot (water, moss, ink) takes from this foe's pace.
+func footing_drag() -> float:
+	return game.residue.slows(global_position) if game.residue else 1.0
+
+## How fast this foe's own clocks run: Lampwright's light hurries them, and
+## so does a restless floor.
 func tempo() -> float:
-	return 1.35 if aura_haste > 0 else 1.0
+	return (1.35 if aura_haste > 0 else 1.0) * (1.15 if restless else 1.0)
 
 func update_sim(delta: float) -> void:
 	if not alive:
@@ -236,6 +248,7 @@ func update_sim(delta: float) -> void:
 	var slow = maxf(.28, 1.0 - chill_power * .2) if chill_time > 0 else 1.0
 	if slow_time > 0:
 		slow *= 1.0 - slow_factor
+	slow *= footing_drag()
 	var wanted_velocity = move_direction * speed * slow * tempo()
 	# On ice a foe keeps its momentum and turns wide.
 	if game.residue and game.residue.kind_at(global_position) == "ice":
@@ -441,6 +454,10 @@ func allow_death() -> bool:
 
 func on_death() -> void:
 	pass
+
+## Lightning reaching this foe through water (ResidueField.shock).
+func shocked(damage: float) -> void:
+	take_hit(damage, Vector3.ZERO, false, false, "shot")
 
 ## The player dashed right through this foe.
 func dashed_through() -> void:

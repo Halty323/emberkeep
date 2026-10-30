@@ -42,6 +42,8 @@ func clear_combat(keep := true) -> void:
 ## A sealed single-cell room of the floor, emptied of its own foes.
 func arena(floor_number: int, kind := "combat", seed_value := 51234, needs_dark := false) -> String:
 	game.start_run("candle", seed_value, false)
+	# Floors 1-3 here are the old tower: the cellar, the halls and the hearth.
+	run.plan_climb("legacy_tower")
 	run.floor_number = floor_number
 	run.generate_floor()
 	for id in run.rooms:
@@ -112,12 +114,14 @@ func test_rosters() -> void:
 	var eligible := {1: 0, 2: 0, 3: 0}
 	var pairs = true
 	var capped = true
+	var climb = ["cellar", "halls", "hearth"]
 	for floor_number in [1, 2, 3]:
-		var roster: Array = Foes.ROSTERS[floor_number].map(func(entry): return entry[0])
+		var full: Array = Foes.roster_for(climb[floor_number - 1], floor_number, climb)
+		var roster: Array = full.map(func(entry): return entry[0])
 		for i in 300:
 			var gen = RandomNumberGenerator.new()
 			gen.seed = i * 7919 + floor_number
-			var plan: Array = Foes.compose(floor_number, 6, gen)
+			var plan: Array = Foes.compose(full, Foes.elite_chance(floor_number), 6, gen)
 			var taken := {}
 			for j in plan.size():
 				var entry: Dictionary = plan[j]
@@ -129,7 +133,7 @@ func test_rosters() -> void:
 					eligible[floor_number] += 1
 					if entry.elite != "": elites[floor_number] += 1
 				capped = capped and entry.kind in roster
-			for entry in Foes.ROSTERS[floor_number]:
+			for entry in full:
 				capped = capped and taken.get(entry[0], 0) <= entry[2] * (2 if entry[0] == "rootling" else 1)
 	for kind in ["snuffer", "drip", "shackled"]: check(kinds[1].has(kind), "the cellar brings the " + kind)
 	for kind in ["sporecap", "rootling", "lichen"]: check(kinds[2].has(kind), "the halls bring the " + kind)
@@ -145,8 +149,10 @@ func test_rosters() -> void:
 	a.seed = 99
 	var b = RandomNumberGenerator.new()
 	b.seed = 99
-	check(Foes.compose(3, 7, a) == Foes.compose(3, 7, b), "an encounter is the same from the same seed")
-	check(Foes.boss_kind(1) == "warden" and Foes.boss_kind(2) == "mosskeeper" and Foes.boss_kind(3) == "last_light", "each floor has its own boss")
+	var top: Array = Foes.roster_for("hearth", 3, climb)
+	check(Foes.compose(top, Foes.elite_chance(3), 7, a) == Foes.compose(top, Foes.elite_chance(3), 7, b), "an encounter is the same from the same seed")
+	check(Foes.boss_kind(catalog.record("floors", "cellar")) == "warden" and Foes.boss_kind(catalog.record("floors", "halls")) == "mosskeeper"
+		and Foes.boss_kind(catalog.record("floors", "hearth")) == "last_light", "each floor has its own boss")
 
 ## Lanterns can be relit and put out; light exposes foes, darkness hides them.
 func test_light() -> void:
@@ -547,7 +553,7 @@ func test_elites() -> void:
 func test_warden() -> void:
 	await arena(1, "boss")
 	var warden = game.get_boss()
-	check(warden != null and warden.kind == "warden" and Foes.BOSS_NAMES[warden.kind] == "THE HEARTH WARDEN", "the cellar's boss is the Hearth Warden")
+	check(warden != null and warden.kind == "warden" and Foes.boss_name(warden.kind) == "THE HEARTH WARDEN", "the cellar's boss is the Hearth Warden")
 	warden.summon = 99.0
 	warden.speed = 0.0
 	var aim: Vector3 = warden.swing_direction()
@@ -652,6 +658,7 @@ func test_last_light() -> void:
 ## A restarted fight is the same fight.
 func test_encounters() -> void:
 	game.start_run("candle", 61001, false)
+	run.plan_climb("legacy_tower")
 	run.floor_number = 3
 	run.generate_floor()
 	var id = ""

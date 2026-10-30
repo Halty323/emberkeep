@@ -50,6 +50,7 @@ func reconcile() -> Array:
 ## shops, rewards and any future random weapon effect. Loading a saved run
 ## never consults it, so a known save keeps its equipped weapon.
 func weapon_available(weapon_id: String) -> bool:
+	if Forge.is_forged(weapon_id): return Forge.known(weapon_id)
 	var weapon: Dictionary = Content.weapon_by_id.get(weapon_id, {})
 	if weapon.is_empty():
 		return false
@@ -57,3 +58,12 @@ func weapon_available(weapon_id: String) -> bool:
 
 func available_weapons() -> Array:
 	return Content.weapons.filter(func(weapon): return weapon_available(weapon.id))
+
+## What a run can start with: the weapons forged for its seed, then any
+## catalog reward the profile has earned. The classic catalog weapons stay
+## only for saves that already hold them.
+func starters(seed_value: int) -> Array:
+	var result: Array = Forge.starters(seed_value)
+	for weapon in Content.weapons:
+		if weapon.has("requires") and weapon_available(weapon.id): result.append(weapon)
+	return result

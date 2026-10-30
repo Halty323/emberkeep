@@ -12,15 +12,15 @@ var families: Dictionary = {}
 var by_id: Dictionary = {}
 var revision := ""
 var errors := PackedStringArray()
-const RARITY_COLORS = {"common": Color("c6d3bf"), "uncommon": Color("96d9ba"), "rare": Color("b9b2e9"), "mythic": Color("f1c579")}
+const RARITY_COLORS = {"common": Color("c6d3bf"), "uncommon": Color("96d9ba"), "rare": Color("b9b2e9"), "mythic": Color("f1c579"), "dark": Color("b98ae0")}
 const CATALOG_PATH := "res://assets/data.json"
 const FAMILY_DIR := "res://content/"
-const FAMILIES := ["rooms", "furniture", "pickups", "actives", "drop_tables", "effects", "paintings", "collections"]
+const FAMILIES := ["rooms", "furniture", "pickups", "actives", "drop_tables", "effects", "paintings", "collections", "floors"]
 const SOURCE_TYPES := {"commons": "file", "nga": "object", "met": "object", "aic": "object"}
 const EFFECT_CHANNELS := ["important", "atmosphere", "ambient"]
 const EFFECT_SPREADS := ["sphere", "up", "ring", "forward"]
 # Extra record lists that live in a family's file.
-const EXTRA_LISTS := {"furniture": ["layouts"]}
+const EXTRA_LISTS := {"furniture": ["layouts"], "floors": ["climbs", "twists"]}
 const PROP_RECIPES := ["pillar", "table", "chair", "bookcase", "bench", "cupboard", "crate", "barrel", "jar", "brazier",
 	"wall_shelf", "book_pile", "rug", "partition", "workbench", "cot", "painting_frame"]
 const PROP_PLACEMENTS := ["floor", "center", "companion", "wall", "cluster", "scatter", "mount"]
@@ -31,6 +31,14 @@ const PICKUP_VISUALS := ["coin", "heart", "ward", "key", "bomb", "battery"]
 const ACTIVE_HANDLERS := {"heal": ["amount"], "gale": ["radius", "push"], "ember_burst": ["count", "damage", "speed"],
 	"slow_field": ["duration", "slow", "boss_slow"], "modifier": ["duration", "effects"], "companions": ["count", "duration", "damage"],
 	"secret_hint": ["duration"], "invulnerable": ["duration"]}
+# A floor theme's place in the climb, the hazard it lays in its rooms, and
+# the twists a floor can draw. A climb lists bands (one theme each, never
+# repeated) or a fixed order of themes.
+const FLOOR_BANDS := ["first", "middle", "summit"]
+const FLOOR_HAZARDS := ["", "water", "wax", "frost", "vents", "pendulums"]
+const FLOOR_TWISTS := ["dim", "overgrown", "gilded", "flooded", "swarming", "restless", "windswept"]
+const FLOOR_LIGHT_KEYS := ["ambient_color", "key_color", "lamp_color", "background", "fog_color"]
+const FLOOR_LOOK_KEYS := ["wall", "cap", "base", "under", "motes"]
 # Drop kinds written by version 1 saves, resolved explicitly.
 const LEGACY_PICKUPS := {"coin": "copper_coin", "heart": "half_heart"}
 
@@ -116,6 +124,9 @@ func convert_record(family: String, raw) -> Dictionary:
 			record.weight = float(raw.get("weight", 1))
 			record.lights = raw.get("lights", []).map(func(value): return to_anchor(value))
 			record.pedestal = to_anchor(raw.get("pedestal", [0, 0, 0, 0]))
+		"floors":
+			if raw.get("roster") is Array:
+				record.roster = raw.roster.map(func(entry): return [str(entry[0]), float(entry[1]), int(entry[2])] if entry is Array and entry.size() == 3 else [])
 	return record
 
 func validate() -> PackedStringArray:
@@ -124,6 +135,10 @@ func validate() -> PackedStringArray:
 	for item in items:
 		for key in item.effects:
 			if not valid_stats.has(key): problems.append("relic %s uses unknown effect '%s'" % [item.id, key])
+		if not RARITY_COLORS.has(item.get("rarity", "")): problems.append("relic %s has unknown rarity '%s'" % [item.id, item.get("rarity")])
+		# Dark relics are bought with 2-5 half-hearts of maximum health; nothing else has a price of its own.
+		if item.get("rarity") == "dark" and (not is_number(item.get("cost")) or item.cost < 2 or item.cost > 5): problems.append("dark relic %s needs a cost of 2-5 half-hearts" % item.id)
+		elif item.get("rarity") != "dark" and item.has("cost"): problems.append("relic %s has a dark price but is not dark" % item.id)
 	for weapon in weapons:
 		for key in weapon.effects:
 			if not valid_stats.has(key): problems.append("weapon %s uses unknown effect '%s'" % [weapon.id, key])
@@ -151,6 +166,72 @@ func validate() -> PackedStringArray:
 		problems.append_array(validate_active(active))
 	for table in families.get("drop_tables", []):
 		problems.append_array(validate_drop_table(table))
+	for theme in families.get("floors", []):
+		problems.append_array(validate_floor(theme))
+	for climb in families.get("climbs", []):
+		problems.append_array(validate_climb(climb))
+	for twist in families.get("twists", []):
+		if twist.id not in FLOOR_TWISTS: problems.append("twist %s has no registered behaviour" % twist.id)
+		if str(twist.get("name", "")).is_empty() or str(twist.get("line", "")).is_empty(): problems.append("twist %s needs a name and a line" % twist.id)
+		if not is_number(twist.get("min_depth")) or twist.min_depth < 1: problems.append("twist %s needs a starting depth" % twist.id)
+		if not is_number(twist.get("weight")) or twist.weight <= 0: problems.append("twist %s needs a positive weight" % twist.id)
+	return problems
+
+## A floor theme names only registered foes, bosses and hazards, and carries
+## its words and colours whole.
+func validate_floor(theme: Dictionary) -> PackedStringArray:
+	var problems := PackedStringArray()
+	for key in ["name", "epigraph", "lore"]:
+		if str(theme.get(key, "")).strip_edges().is_empty(): problems.append("floor %s has no %s" % [theme.id, key])
+	if theme.get("band") not in FLOOR_BANDS: problems.append("floor %s has unknown band '%s'" % [theme.id, theme.get("band")])
+	var arrival = theme.get("arrival", [])
+	if not arrival is Array or arrival.size() != 2: problems.append("floor %s needs a two-line arrival" % theme.id)
+	var boss = theme.get("boss", {})
+	if not boss is Dictionary or boss.get("kind", "") not in Foes.BOSSES: problems.append("floor %s has unknown boss '%s'" % [theme.id, boss.get("kind", "") if boss is Dictionary else boss])
+	elif str(boss.get("name", "")).is_empty() or not boss.get("intro") is Array or boss.intro.size() != 2: problems.append("floor %s boss needs a name and a two-line introduction" % theme.id)
+	var roster = theme.get("roster", [])
+	if not roster is Array or roster.is_empty(): problems.append("floor %s has no roster" % theme.id)
+	else:
+		for entry in roster:
+			if entry.is_empty(): problems.append("floor %s has a malformed roster entry" % theme.id)
+			elif not Foes.known(entry[0]) or entry[0] in Foes.BOSSES: problems.append("floor %s roster names unknown foe '%s'" % [theme.id, entry[0]])
+			elif entry[1] <= 0 or entry[2] < 1: problems.append("floor %s roster gives %s no chance" % [theme.id, entry[0]])
+	if theme.get("hazard", "") not in FLOOR_HAZARDS: problems.append("floor %s has unknown hazard '%s'" % [theme.id, theme.get("hazard")])
+	var look = theme.get("look", {})
+	var floor_colors = look.get("floor", []) if look is Dictionary else []
+	if not floor_colors is Array or floor_colors.size() != 5 or not floor_colors.all(func(c): return Color.html_is_valid(str(c))):
+		problems.append("floor %s needs five floor colours" % theme.id)
+	for key in FLOOR_LOOK_KEYS:
+		if not look is Dictionary or not Color.html_is_valid(str(look.get(key, ""))): problems.append("floor %s has an invalid %s colour" % [theme.id, key])
+	if not look is Dictionary or not is_number(look.get("candles")) or look.candles < 0 or look.candles > 3: problems.append("floor %s has an impossible candle density" % theme.id)
+	var light = theme.get("light", {})
+	if not light is Dictionary: problems.append("floor %s has a malformed light" % theme.id)
+	else:
+		for key in light:
+			if key not in FLOOR_LIGHT_KEYS: problems.append("floor %s overrides unknown light '%s'" % [theme.id, key])
+			elif not Color.html_is_valid(str(light[key])): problems.append("floor %s has an invalid %s" % [theme.id, key])
+	for twist in theme.get("exclude_twists", []):
+		if twist not in FLOOR_TWISTS: problems.append("floor %s excludes unknown twist '%s'" % [theme.id, twist])
+	return problems
+
+## Every band of a climb must have enough themes for its places in it.
+func validate_climb(climb: Dictionary) -> PackedStringArray:
+	var problems := PackedStringArray()
+	if climb.has("fixed"):
+		if not climb.fixed is Array or climb.fixed.is_empty(): problems.append("climb %s has no floors" % climb.id)
+		else:
+			for id in climb.fixed:
+				if record("floors", id).is_empty(): problems.append("climb %s names missing floor '%s'" % [climb.id, id])
+		return problems
+	var bands = climb.get("bands", [])
+	if not bands is Array or bands.size() < 2: problems.append("climb %s needs at least two floors" % climb.id)
+	else:
+		for band in FLOOR_BANDS:
+			var needed = bands.count(band)
+			var available = families.get("floors", []).filter(func(theme): return theme.band == band).size()
+			if needed > available: problems.append("climb %s needs %d %s floors but %d exist" % [climb.id, needed, band, available])
+		for band in bands:
+			if band not in FLOOR_BANDS: problems.append("climb %s has unknown band '%s'" % [climb.id, band])
 	return problems
 
 static func is_number(value) -> bool:
@@ -337,7 +418,7 @@ func validate_template(template: Dictionary) -> PackedStringArray:
 		if not seen.has(anchor.cell): problems.append("room %s anchor lies outside its footprint" % template.id)
 	return problems
 
-const ROOM_ROLES := ["start", "combat", "treasure", "shop", "rest", "boss", "secret"]
+const ROOM_ROLES := ["start", "combat", "treasure", "shop", "rest", "boss", "secret", "dark"]
 
 static func to_cells(values: Array) -> Array:
 	var result: Array = []
@@ -362,7 +443,8 @@ static func stable_hash(text: String) -> int:
 
 func roll_items(rng: RandomNumberGenerator, count: int, owned: Array = [], premium := false, luck_value := 0.0) -> Array:
 	var result: Array = []
-	var pool: Array = items.duplicate()
+	# Dark relics are only ever sold in the dark store.
+	var pool: Array = items.filter(func(item): return item.rarity != "dark")
 	for unused in count:
 		var weights: Array[float] = []
 		var total = 0.0
@@ -394,4 +476,5 @@ func base_stats() -> Dictionary:
 		"thorns": 0.0, "coin_bonus": 0.0, "room_heal": 0.0,
 		"kill_haste": 0.0, "low_hp": 0.0, "execute": 0.0,
 		"knockback": 1.0, "backshot": 0.0, "side_shot": 0.0,
-		"returning": 0.0, "wave": 0.0, "radial": 0.0, "heal_each_room": 0.0, "paint": 0.0}
+		"returning": 0.0, "wave": 0.0, "radial": 0.0, "heal_each_room": 0.0, "paint": 0.0,
+		"accel": 0.0, "linger": 0.0, "grow": 0.0, "fork": 0.0, "kindled": 0.0}
