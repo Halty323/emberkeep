@@ -210,6 +210,20 @@ func validate_floor(theme: Dictionary) -> PackedStringArray:
 		for key in light:
 			if key not in FLOOR_LIGHT_KEYS: problems.append("floor %s overrides unknown light '%s'" % [theme.id, key])
 			elif not Color.html_is_valid(str(light[key])): problems.append("floor %s has an invalid %s" % [theme.id, key])
+	var grade = theme.get("grade", {})
+	if not grade is Dictionary: problems.append("floor %s has a malformed grade" % theme.id)
+	else:
+		for key in ["gain", "lift"]:
+			if grade.has(key) and not Color.html_is_valid(str(grade[key])): problems.append("floor %s has an invalid grade %s" % [theme.id, key])
+		if grade.has("saturation") and (not is_number(grade.saturation) or grade.saturation < 0 or grade.saturation > 2): problems.append("floor %s has an impossible saturation" % theme.id)
+	var surface = look.get("surface", {}) if look is Dictionary else {}
+	if not surface is Dictionary: problems.append("floor %s has a malformed surface" % theme.id)
+	else:
+		for key in surface:
+			if key not in Look.SURFACE_KEYS: problems.append("floor %s surface has unknown '%s'" % [theme.id, key])
+		if surface.get("pattern", "slabs") not in Look.PATTERNS: problems.append("floor %s surface has unknown pattern '%s'" % [theme.id, surface.get("pattern")])
+		for key in ["grout", "ember_color", "moss_color"]:
+			if surface.has(key) and not Color.html_is_valid(str(surface[key])): problems.append("floor %s surface has an invalid %s" % [theme.id, key])
 	for twist in theme.get("exclude_twists", []):
 		if twist not in FLOOR_TWISTS: problems.append("floor %s excludes unknown twist '%s'" % [theme.id, twist])
 	return problems

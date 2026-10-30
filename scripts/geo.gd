@@ -1,6 +1,10 @@
 class_name Geo
 extends RefCounted
 static var materials: Dictionary = {}
+# What real lights reach: ordinary geometry (layer 1) and the ground sheets
+# (layer 4, kept out of the water's mirrored view), never the unlit effects
+# layer 2.
+const LIT_LAYERS := 1 | 8
 # Identical primitives share one mesh resource; nothing mutates a mesh after
 # creation (cutaways scale nodes), so sharing is safe and saves uploads.
 static var meshes: Dictionary = {}
@@ -110,7 +114,7 @@ static func glow_box(parent: Node3D, position: Vector3, size: Vector3, color: Co
 static func light(parent: Node3D, position: Vector3, color: Color, energy: float, reach: float, shadows := false) -> OmniLight3D:
 	var light = OmniLight3D.new()
 	light.light_color = color
-	light.light_cull_mask = 1
+	light.light_cull_mask = LIT_LAYERS
 	light.light_energy = energy
 	light.omni_range = reach
 	light.omni_attenuation = 1.2
