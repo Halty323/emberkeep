@@ -62,7 +62,19 @@ items = [
 ('thousand_wicks','Thousand Wicks','Four extra embers and 25% faster fire.','mythic','MULTISHOT',{'shots':4,'rate':.25,'damage':-.25}),
 ('eternal_hearth','Eternal Hearth','Heal 1 in every cleared combat room and gain 4 hearts.','mythic','VITALITY',{'heal_each_room':1,'max_hp':4}),
 ('comet_heart','Comet Heart','Dash blasts, three orbitals, and faster dashes.','mythic','DASH',{'dash_nova':2,'dash_damage':16,'orbitals':3,'dash_cd':.35}),
+# Dark relics: sold only in the dark store, for 2-5 half-hearts of maximum health.
+('black_wick','Black Wick','60% more damage and 15% faster fire.','dark','POWER',{'damage':.6,'rate':.15}),
+('hollow_crown','Hollow Crown','Half of all shots strike critically, and crits hit harder.','dark','FORTUNE',{'crit':.45,'crit_damage':.6}),
+('widows_lantern','Widow\'s Lantern','Three extra embers and 20% faster fire, at no cost.','dark','MULTISHOT',{'shots':3,'rate':.2}),
+('grave_glass','Grave Glass','Shots pierce two foes and split on every hit.','dark','SPLIT',{'pierce':2,'split':2}),
+('dark_star','Dark Star','Seeking embers that burst like small suns.','dark','BLAST',{'homing':2.4,'explosion':2.0}),
+('starving_flame','Starving Flame','Kills feed you: much faster fire, and a chance to heal on every hit.','dark','TEMPO',{'kill_haste':.35,'lifesteal':.12}),
+('night_moth','Night Moth','Four embers orbit you; move 20% faster.','dark','ORBITAL',{'orbitals':4,'speed':.2}),
+('ash_mantle','Ash Mantle','Block two hits in every room; whatever hurts you burns.','dark','DEFENSE',{'shield':2,'thorns':6,'dash_cd':.3}),
 ]
+# What a dark relic costs in half-hearts of maximum health.
+item_extras = {'black_wick': {'cost': 5}, 'hollow_crown': {'cost': 4}, 'widows_lantern': {'cost': 5}, 'grave_glass': {'cost': 4},
+    'dark_star': {'cost': 4}, 'starving_flame': {'cost': 3}, 'night_moth': {'cost': 3}, 'ash_mantle': {'cost': 3}}
 weapons = [
 ('candle','Candlelight','A faithful little flame. Balanced and precise.','#ffc474',7,.25,15,1,.03,{'burn':.25}),
 ('scatter','Hearthscatter','A close-range fan of glowing pellets.','#f3ac86',3,.62,13,7,.7,{'knockback':1.2}),
@@ -85,7 +97,7 @@ weapon_extras = {
         {'name': 'green', 'color': '#4fb065', 'effects': {'poison': .5}},
     ]},
 }
-out={'version':1,'items':[{'id':i,'name':n,'description':d,'rarity':r,'tag':t,'effects':e} for i,n,d,r,t,e in items], 'weapons':[{'id':i,'name':n,'description':d,'color':c,'damage':dm,'cooldown':cd,'speed':sp,'count':ct,'spread':a,'effects':e, **weapon_extras.get(i, {})} for i,n,d,c,dm,cd,sp,ct,a,e in weapons]}
+out={'version':1,'items':[{'id':i,'name':n,'description':d,'rarity':r,'tag':t,'effects':e, **item_extras.get(i, {})} for i,n,d,r,t,e in items], 'weapons':[{'id':i,'name':n,'description':d,'color':c,'damage':dm,'cooldown':cd,'speed':sp,'count':ct,'spread':a,'effects':e, **weapon_extras.get(i, {})} for i,n,d,c,dm,cd,sp,ct,a,e in weapons]}
 p=Path(__file__).resolve().parents[1]/'assets'/'data.json'
 p.write_text(json.dumps(out,indent=2,ensure_ascii=False)+'\n')
 print(f'{len(items)} relics, {len(weapons)} weapons → {p}')

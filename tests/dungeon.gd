@@ -266,6 +266,7 @@ func test_scenes() -> void:
 	game.clear_room()
 	check(run.cleared == cleared_before + 1, "a four-cell room counts one clear")
 	# From the halls up every lantern burns, so the fill pool has eight to choose from.
+	run.plan_climb("legacy_tower")
 	run.floor_number = 2
 	game.enter_room(Vector3(9, 0, 7))
 	check(game.room.open and game.enemies.is_empty(), "re-entering a cleared large room never relocks it")
@@ -625,6 +626,7 @@ func test_stairs() -> void:
 	check(Vector2(game.player.position.x, game.player.position.z).distance_to(Vector2(float(run.entry.position[0]), float(run.entry.position[1]))) < .01,
 		"a reload resumes where the figure stepped off")
 	# The last stair leads out into the light: the run is won.
+	run.plan_climb("legacy_tower")
 	run.floor_number = 3
 	run.generate_floor()
 	run.current_room = boss_room_id()

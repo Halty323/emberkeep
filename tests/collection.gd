@@ -8,6 +8,7 @@ var catalog
 var collection
 var game
 var Library
+var Forge
 var unlock_signals = 0
 
 func _initialize() -> void:
@@ -24,6 +25,7 @@ func test_collection() -> void:
 	catalog = root.get_node("Content")
 	collection = root.get_node("Collection")
 	Library = load("res://scripts/progression/painting_library.gd")
+	Forge = load("res://scripts/items/forge.gd")
 	collection.unlocked.connect(func(_weapon): unlock_signals += 1)
 	test_catalog()
 	game = load("res://scenes/main.tscn").instantiate()
@@ -204,9 +206,9 @@ func test_weapon_gates_locked() -> void:
 		game.ui.cycle_weapon(1)
 	check("paint_sprayer" not in cycled, "starter cycling never reaches a locked weapon")
 	game.start_run("paint_sprayer", 777, false)
-	check(run.weapon_id == "candle", "a new run cannot start with a locked weapon")
+	check(run.weapon_id != "paint_sprayer" and Forge.is_forged(run.weapon_id), "a new run cannot start with a locked weapon")
 	game.start_run("paint_sprayer", run.daily_seed(), true)
-	check(run.weapon_id == "candle", "a daily run cannot start with a locked weapon")
+	check(run.weapon_id != "paint_sprayer" and Forge.is_forged(run.weapon_id), "a daily run cannot start with a locked weapon")
 	var offered := {}
 	for seed_value in range(500, 540):
 		game.start_run("candle", seed_value, false)

@@ -1,8 +1,9 @@
 class_name FloorLight
-## How much light reaches each floor of the tower. A run starts in the cellar,
-## a captive with nothing but their own little light, and every floor climbed
-## is brighter: more ambient and daylight, more lanterns still burning,
-## warmer glass. Floor 0 is the title room. Purely visual: no gameplay reads it.
+## How much light reaches each floor of the tower. A run starts at the
+## bottom, a captive with nothing but their own little light, and every floor
+## climbed is brighter: more ambient and daylight, more lanterns still
+## burning, warmer glass. Profile 0 is the title room; 1-3 are the bottom,
+## middle and top of the tower, which every floor blends between by height.
 ## Foes carry a faint glow of their own where it is darkest, to stay readable,
 ## and the outline of every open doorway glows, brightest where it is darkest,
 ## so every way out shows.
@@ -14,17 +15,17 @@ const PROFILES := {
 		"background": Color("111d26"), "fog_color": Color("142330"), "fog_density": .002,
 		"lamp": .6, "lamp_color": Color("ffbc71"), "shadow": 1.5, "glow": 1.0, "lit": 1.0, "vignette": .48,
 		"foe_body": 0.0, "foe_glow": .09, "doorway": .75},
-	# The Waking Cellar: a cold slit of moonlight, half the lanterns long dead.
+	# The bottom of the tower: a cold slit of moonlight, half the lanterns long dead.
 	1: {"ambient": .055, "ambient_color": Color("7b8ca6"), "key": .08, "key_color": Color("86a0c8"),
 		"background": Color("070b10"), "fog_color": Color("0a1118"), "fog_density": .006,
 		"lamp": .42, "lamp_color": Color("ff9a52"), "shadow": 1.0, "glow": .65, "lit": .5, "vignette": .64,
 		"foe_body": .38, "foe_glow": .42, "doorway": 1.0},
-	# The Mosslit Halls: about as lit as every floor used to be.
+	# Halfway up: about as lit as every floor used to be.
 	2: {"ambient": .12, "ambient_color": Color("9aaec2"), "key": .22, "key_color": Color("99b4cf"),
 		"background": Color("111d26"), "fog_color": Color("142330"), "fog_density": .002,
 		"lamp": .6, "lamp_color": Color("ffbc71"), "shadow": 1.5, "glow": 1.0, "lit": 1.0, "vignette": .48,
 		"foe_body": 0.0, "foe_glow": .09, "doorway": .75},
-	# The Last Hearth: warm daylight through high windows, every lantern lit.
+	# The top: warm daylight through high windows, every lantern lit.
 	3: {"ambient": .22, "ambient_color": Color("c7b9a2"), "key": .4, "key_color": Color("ffdcae"),
 		"background": Color("1b2834"), "fog_color": Color("2a3946"), "fog_density": .0025,
 		"lamp": .78, "lamp_color": Color("ffcd8c"), "shadow": 1.8, "glow": 1.25, "lit": 1.0, "vignette": .34,
@@ -33,6 +34,32 @@ const PROFILES := {
 
 static func profile(floor_number: int) -> Dictionary:
 	return PROFILES[clampi(floor_number, 0, 3)]
+
+## The light of the floor being played.
+static func current() -> Dictionary:
+	return for_floor(Run.height(), Run.theme(), Run.twist_id())
+
+## Brightness follows the height climbed, whatever the climb's length: the
+## bottom is the cellar's dark, halfway is the halls, the top is the hearth.
+## A theme then tints the colours, and a guttering floor loses half its
+## lanterns.
+static func for_floor(height: float, theme: Dictionary, twist := "") -> Dictionary:
+	var upper = height > .5
+	var low: Dictionary = PROFILES[2 if upper else 1]
+	var high: Dictionary = PROFILES[3 if upper else 2]
+	var t = clampf((height - .5) * 2.0 if upper else height * 2.0, 0.0, 1.0)
+	var result := {}
+	for key in low:
+		# The bottom, middle and top are exactly the old floors' light.
+		result[key] = low[key] if t <= 0.0 else (high[key] if t >= 1.0 else lerp(low[key], high[key], t))
+	var tint: Dictionary = theme.get("light", {})
+	for key in tint:
+		result[key] = Color(tint[key])
+	if twist == "dim":
+		result.lit *= .5
+		result.ambient *= .75
+		result.foe_glow = maxf(result.foe_glow, .3)
+	return result
 
 ## Floor-wide light: the environment, the directional key and the vignette.
 static func apply(light: Dictionary, environment: Environment, key_light: DirectionalLight3D, vignette: ShaderMaterial) -> void:

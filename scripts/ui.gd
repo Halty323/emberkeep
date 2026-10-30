@@ -27,8 +27,9 @@ const PAUSE_RECT := Rect2(1204, 16, 60, 56)
 const HUD_RECT := Rect2(16, 16, 292, 112)
 const WEAPON_LABEL := Vector2(30, 97)
 const JOURNAL_PAGE_SIZE := 6
+const FLOOR_PAGE_SIZE := 4
+const BAND_LABELS := {"first": "THE FIRST FLOOR", "middle": "THE MIDDLE FLOORS", "summit": "THE SUMMIT"}
 const FULL_MAP_AREA := Rect2(180, 150, 920, 420)
-const FLOOR_NAMES := ["The Waking Cellar", "The Mosslit Halls", "The Last Hearth"]
 # A floor's name spells itself across the screen, holds, then fades.
 const TITLE_DELAY := .35
 const TITLE_LETTER := .07
@@ -60,10 +61,14 @@ var previous_mode = "menu"
 var scale_value = 1.0
 var offset = Vector2.ZERO
 var starter_index = 0
+# The seed the menu forges its weapons from when no seed is typed: rolled
+# afresh whenever the title opens and after every run.
+var menu_seed = 0
 var selected_seed = ""
 var seed_field: LineEdit
 var offers: Array = []
 var shop = false
+var dark = false
 var toast_text = ""
 var toast_detail = ""
 var toast_color = GOLD
@@ -243,7 +248,9 @@ func show_screen(screen: String) -> void:
 		"painting": button("← Back", Rect2(812, 598, 360, 58), func(): close_painting())
 		"settings": build_settings()
 		"dead", "won":
-			button("One more little light", Rect2(430, 457, 420, 62), func(): game.start_run(starter_weapon().id, 0, false), true)
+			button("One more little light", Rect2(430, 457, 420, 62), func():
+				reforge()
+				game.start_run(starter_weapon().id, menu_seed, false), true)
 			button("Return to title", Rect2(430, 535, 420, 58), func(): game.return_to_title())
 	sync_lighting()
 	update_surface_visibility()
@@ -265,7 +272,11 @@ func journal_rect(slot: int) -> Rect2:
 	return Rect2(64 + (slot % 2) * 588, 212 + (slot / 2) * 126, 564, 110)
 
 func journal_page_count() -> int:
+	if journal_tab == "floors": return maxi(1, ceili(float(Content.families.floors.size()) / FLOOR_PAGE_SIZE))
 	return maxi(1, ceili(float(Content.items.size()) / JOURNAL_PAGE_SIZE))
+
+func floor_rect(slot: int) -> Rect2:
+	return Rect2(64 + (slot % 2) * 588, 212 + (slot / 2) * 206, 564, 190)
 
 func change_journal_page(step: int) -> void:
 	journal_page = clampi(journal_page + step, 0, journal_page_count() - 1)
@@ -289,6 +300,11 @@ func build_surfaces() -> void:
 			for i in offers.size():
 				make_surface(reward_rect(i), PANEL, offer_info(offers[i]).color)
 		"painting": make_surface(Rect2(80, 40, 1120, 640))
+		"journal" when journal_tab == "floors":
+			for slot in FLOOR_PAGE_SIZE:
+				var index = journal_page * FLOOR_PAGE_SIZE + slot
+				if index >= Content.families.floors.size(): break
+				make_surface(floor_rect(slot), PANEL, GOLD if Content.families.floors[index].id in Run.profile.floors else EDGE)
 		"journal" when journal_tab == "paintings":
 			var required = gallery_ids()
 			for i in required.size():
@@ -386,7 +402,8 @@ func build_menu() -> void:
 	seed_field = LineEdit.new()
 	seed_field.position = Vector2(64, 390)
 	seed_field.size = Vector2(190, 52)
-	seed_field.placeholder_text = "Random seed"
+	if menu_seed == 0: reforge()
+	seed_field.placeholder_text = "Seed %d" % menu_seed
 	seed_field.text = selected_seed
 	seed_field.max_length = 10
 	seed_field.add_theme_font_override("font", body)
@@ -394,22 +411,30 @@ func build_menu() -> void:
 	seed_field.add_theme_color_override("font_color", MUTED)
 	seed_field.add_theme_stylebox_override("normal", style(Color(.08, .11, .12, .7), EDGE))
 	seed_field.add_theme_stylebox_override("focus", style(Color(.1, .13, .14, .9), GOLD))
-	seed_field.text_changed.connect(func(value): selected_seed = value)
+	seed_field.text_changed.connect(func(value):
+		selected_seed = value
+		queue_redraw())
 	content.add_child(seed_field)
 	button("‹", Rect2(64, 278, 56, 56), func(): cycle_weapon(-1))
 	button("›", Rect2(426, 278, 56, 56), func(): cycle_weapon(1))
-	button("Begin a run   →", Rect2(64, 458, 418, 60), func(): game.start_run(starter_weapon().id, seed_field.text.to_int(), false), true)
+	button("New weapons ↻", Rect2(270, 388, 212, 56), func():
+		reforge()
+		seed_field.text = ""
+		seed_field.placeholder_text = "Seed %d" % menu_seed
+		Audio.play_sound("coin", .9)
+		queue_redraw())
+	button("Begin a run   →", Rect2(64, 458, 418, 60), func(): game.start_run(starter_weapon().id, chosen_seed(), false), true)
 	if Run.has_save():
 		button("Continue saved run", Rect2(64, 530, 418, 56), func(): game.continue_run())
-		button("Today’s seed", Rect2(64, 598, 201, 54), func(): game.start_run(starter_weapon().id, Run.daily_seed(), true))
+		button("Today’s seed", Rect2(64, 598, 201, 54), func(): game.start_run(starter_weapon(Run.daily_seed()).id, Run.daily_seed(), true))
 		button("Journal", Rect2(281, 598, 201, 54), func(): open_journal("menu"))
 	else:
-		button("Today’s seed", Rect2(64, 536, 201, 56), func(): game.start_run(starter_weapon().id, Run.daily_seed(), true))
+		button("Today’s seed", Rect2(64, 536, 201, 56), func(): game.start_run(starter_weapon(Run.daily_seed()).id, Run.daily_seed(), true))
 		button("Journal", Rect2(281, 536, 201, 56), func(): open_journal("menu"))
 	button("Settings", moved(Rect2(1080, 32, 154, 56), widen()), func(): open_settings("menu"))
 
 func cycle_weapon(step: int) -> void:
-	starter_index = posmod(starter_index + step, Collection.available_weapons().size())
+	starter_index = posmod(starter_index + step, Collection.starters(chosen_seed()).size())
 	Audio.play_sound("coin", .75)
 	queue_redraw()
 
@@ -417,9 +442,11 @@ func cycle_weapon(step: int) -> void:
 func offer_info(offer: Dictionary) -> Dictionary:
 	match offer.get("kind", "item"):
 		"weapon":
-			var weapon: Dictionary = Content.weapon_by_id[offer.id]
+			var weapon: Dictionary = Forge.lookup(offer.id)
+			var forged: bool = weapon.get("forged", false)
+			var tag = "%s · %s" % [str(weapon.element).to_upper(), str(weapon.pattern).to_upper()] if forged else "NEW FIGHTING STYLE"
 			return {"name": weapon.name, "description": weapon.description, "color": Color(weapon.color),
-				"label": "WEAPON", "tag": "NEW FIGHTING STYLE", "take": "Equip weapon", "buy": "%d coins · equip"}
+				"label": "DARK-FORGED WEAPON" if int(weapon.get("tier", 0)) > 0 else "WEAPON", "tag": tag, "take": "Equip weapon", "buy": "%d coins · equip"}
 		"active":
 			var active: Dictionary = Content.record("actives", offer.id)
 			return {"name": active.name, "description": active.description, "color": Color(active.color),
@@ -434,8 +461,9 @@ func build_rewards() -> void:
 		var info = offer_info(offer)
 		var rect = reward_rect(i)
 		var price = int(offer.get("price", 0))
-		var affordable = not shop or Run.coins >= price
+		var affordable = (not shop or Run.coins >= price) and (not dark or (Run.can_pay_life(price) and not offer.get("sold", false)))
 		var label: String = info.take if not shop else info.buy % price
+		if dark: label = "Taken" if offer.get("sold", false) else "Give %s" % life_text(price)
 		var control = button(label, Rect2(rect.position.x + 24, 478, REWARD_WIDTH - 48, 60), func(): game.choose_offer(i), affordable)
 		control.disabled = not affordable
 		if not affordable: control.get_meta("surface").modulate = Color(.7, .7, .65)
@@ -451,7 +479,8 @@ func build_journal() -> void:
 	button("← Back", Rect2(64, 36, 144, 56), func(): close_subscreen())
 	button("Relics", Rect2(232, 36, 150, 56), func(): set_journal_tab("relics"), journal_tab == "relics")
 	button("Paintings", Rect2(394, 36, 190, 56), func(): set_journal_tab("paintings"), journal_tab == "paintings")
-	if journal_tab == "relics":
+	button("Floors", Rect2(596, 36, 160, 56), func(): set_journal_tab("floors"), journal_tab == "floors")
+	if journal_tab in ["relics", "floors"]:
 		button("←", Rect2(1044, 626, 76, 58), func(): change_journal_page(-1))
 		button("→", Rect2(1136, 626, 76, 58), func(): change_journal_page(1))
 		return
@@ -472,6 +501,7 @@ func build_journal() -> void:
 
 func set_journal_tab(tab: String) -> void:
 	journal_tab = tab
+	journal_page = 0
 	show_screen("journal")
 
 func gallery_ids() -> Array:
@@ -480,8 +510,19 @@ func gallery_ids() -> Array:
 func gallery_rect(index: int) -> Rect2:
 	return Rect2(64 + (index % 6) * 196, 214 + (index / 6) * 206, 180, 192)
 
-func starter_weapon() -> Dictionary:
-	var arsenal = Collection.available_weapons()
+## The run's seed: the one typed in, or the menu's own.
+func chosen_seed() -> int:
+	var typed = selected_seed.strip_edges().to_int()
+	return typed if typed != 0 else menu_seed
+
+func reforge() -> void:
+	menu_seed = 1 + randi() % 99999998
+	selected_seed = ""
+
+## The weapon picked from a seed's starters (the menu's seed by default).
+func starter_weapon(seed_value := 0) -> Dictionary:
+	if menu_seed == 0: reforge()
+	var arsenal = Collection.starters(seed_value if seed_value != 0 else chosen_seed())
 	return arsenal[posmod(starter_index, arsenal.size())]
 
 ## The full-composition viewer: image, title, artist and date, medium, the
@@ -771,7 +812,11 @@ func _draw() -> void:
 			hearth_emblem(Vector2(640, 76), 11)
 			centered("Make yourself at home", 640, 134, 32, INK, heading)
 			draw_multiline_string(body, Vector2(340, 516), SETTINGS_NOTES[settings_page], HORIZONTAL_ALIGNMENT_CENTER, 600, 17, 2, MUTED)
-		"journal": draw_journal() if journal_tab == "relics" else draw_gallery()
+		"journal":
+			match journal_tab:
+				"relics": draw_journal()
+				"floors": draw_floors()
+				_: draw_gallery()
 		"painting": draw_painting()
 		"map": draw_full_map()
 		"dead", "won": draw_end()
@@ -811,14 +856,13 @@ func draw_menu() -> void:
 	var weapon: Dictionary = starter_weapon()
 	centered(weapon.name, 273, 314, 23, Color(weapon.color), heading)
 	draw_multiline_string(body, Vector2(65, 357), weapon.description, HORIZONTAL_ALIGNMENT_LEFT, 418, 17, 2, MUTED)
-	text("Optional seed", Vector2(274, 423), 18, MUTED)
 	if not Run.has_save():
 		text("%d runs  ·  %d victories" % [Run.profile.runs, Run.profile.wins], Vector2(66, 632), 17, MUTED)
 	text("%d RELICS · %d PAINTINGS TO DISCOVER" % [Content.items.size(), gallery_ids().size()], Vector2(66, 671), 14, GOLD, bold)
 	anchor(widen())
 	hearth_emblem(Vector2(798, 566), 10)
 	text("A warm place. A wild little dungeon.", Vector2(826, 574), 21, GOLD, heading)
-	text("%d stackable relics  ·  %d weapons  ·  3 floors" % [Content.items.size(), Collection.available_weapons().size()], Vector2(789, 617), 18, INK)
+	text("%d stackable relics  ·  new weapons every seed  ·  %d floors" % [Content.items.size(), Content.record("climbs", Run.CLIMB).bands.size()], Vector2(789, 617), 18, INK)
 	text("Strange combinations. One more little light.", Vector2(789, 650), 17, MUTED)
 
 func draw_hud() -> void:
@@ -855,7 +899,7 @@ func draw_hud_left() -> void:
 	text("%d" % Run.wards, Vector2(218, 71), 18, Color("b7ddc0") if Run.wards > 0 else MUTED, bold)
 	if game.player and game.player.shield > 0:
 		right_text("%d guard" % game.player.shield, Vector2(HUD_RECT.end.x - 14, 71), 14, Color("b7ddc0"), bold)
-	text(Content.weapon_by_id[Run.weapon_id].name, WEAPON_LABEL, 16, INK)
+	text(Run.weapon().name, WEAPON_LABEL, 16, INK)
 	draw_active_line()
 	for i in mini(Run.inventory.size(), 12):
 		var item: Dictionary = Content.item_by_id[Run.inventory[i]]
@@ -888,7 +932,7 @@ func draw_kindle(at: Vector2) -> void:
 func draw_hud_middle() -> void:
 	var boss_enemy = game.get_boss()
 	if boss_enemy:
-		centered(Foes.BOSS_NAMES.get(boss_enemy.kind, "THE HEARTH WARDEN"), 640, 40, 15, Color("efbd9f"), bold)
+		centered(Foes.boss_name(boss_enemy.kind), 640, 40, 15, Color("efbd9f"), bold)
 		draw_rect(Rect2(486, 50, 308, 6), Color("252b27"))
 		draw_rect(Rect2(486, 50, 308 * boss_enemy.health_fraction(), 6), Color("d79275"))
 	if game.room and not game.room.open:
@@ -926,13 +970,16 @@ func announce_floor() -> void:
 	floor_title_start = elapsed_ui
 
 func floor_title_length() -> float:
-	var letters = FLOOR_NAMES[mini(2, Run.floor_number - 1)].length()
-	return TITLE_DELAY + letters * TITLE_LETTER + .3 + TITLE_HOLD + TITLE_FADE
+	var letters = str(Run.theme().name).length()
+	# A little longer than the name alone, to read the epigraph under it.
+	return TITLE_DELAY + letters * TITLE_LETTER + .3 + TITLE_HOLD + .9 + TITLE_FADE
 
 func draw_floor_title() -> void:
 	var age = elapsed_ui - floor_title_start
 	if age < 0 or age > floor_title_length(): return
-	var name_text: String = FLOOR_NAMES[mini(2, Run.floor_number - 1)].to_upper()
+	var theme: Dictionary = Run.theme()
+	var twist: Dictionary = Content.record("twists", Run.twist_id())
+	var name_text: String = str(theme.name).to_upper()
 	var fade = 1.0 - clampf((age - (floor_title_length() - TITLE_FADE)) / TITLE_FADE, 0.0, 1.0)
 	var size_value = 58
 	# Spread the letters over most of the screen's width, whatever its shape.
@@ -947,7 +994,9 @@ func draw_floor_title() -> void:
 	var x = (view_width - (natural + gap * (name_text.length() - 1))) / 2.0
 	var baseline = 268.0
 	var caption = clampf(age / TITLE_DELAY, 0.0, 1.0) * fade
-	centered("FLOOR %d" % Run.floor_number, view_width / 2.0, baseline - 74, 16, Color(GOLD, caption), bold)
+	var floor_caption = "FLOOR %d OF %d" % [Run.floor_number, Run.climb_length()]
+	if not twist.is_empty(): floor_caption += "  ·  " + str(twist.name).to_upper()
+	centered(floor_caption, view_width / 2.0, baseline - 74, 16, Color(GOLD, caption), bold)
 	var shown = 0.0
 	for i in name_text.length():
 		var appear = clampf((age - TITLE_DELAY - i * TITLE_LETTER) / .3, 0.0, 1.0)
@@ -961,6 +1010,11 @@ func draw_floor_title() -> void:
 	if reach > 0:
 		var middle = view_width / 2.0
 		draw_line(Vector2(middle - reach, baseline + 24), Vector2(middle + reach, baseline + 24), Color(GOLD, .55 * fade), 1.5, true)
+	# Once the name is spelled, the floor's epigraph and its twist settle in.
+	var words = clampf((age - TITLE_DELAY - name_text.length() * TITLE_LETTER - .2) / .5, 0.0, 1.0) * fade
+	if words > 0:
+		centered(str(theme.epigraph), view_width / 2.0, baseline + 62, 19, Color(INK, words * .85), body)
+		if not twist.is_empty(): centered(str(twist.line), view_width / 2.0, baseline + 92, 16, Color(GOLD, words * .8), body)
 
 func resource_icon(kind: String, at: Vector2) -> void:
 	match kind:
@@ -1052,6 +1106,7 @@ func map_color(id: String) -> Color:
 	if id == Run.current_room: return INK
 	if room.type == "treasure": return GOLD
 	if room.type == "shop": return Color("afcfaa")
+	if room.type == "dark": return Color("b98ae0")
 	if room.type == "boss": return Color("da9b80")
 	if room.get("secret", false): return Color("b9a2c9")
 	return Color("9b9e82") if room.cleared else Color("626957")
@@ -1207,13 +1262,26 @@ func draw_full_map() -> void:
 	var cell_size = minf(48.0, minf(FULL_MAP_AREA.size.x / (span.x + 1), FULL_MAP_AREA.size.y / (span.y + 1)))
 	draw_floor_map(FULL_MAP_AREA, (low + high) / 2.0, cell_size)
 	var main_rooms = Run.rooms.values().filter(func(room): return not room.get("secret", false))
-	centered("Floor %d  ·  %d of %d rooms visited  ·  Outlined: you are here" % [Run.floor_number,
-		main_rooms.filter(func(room): return room.visited).size(), main_rooms.size()], 640, 578, 17, MUTED)
+	var twist_name = str(Content.record("twists", Run.twist_id()).get("name", ""))
+	centered("%s  ·  Floor %d of %d%s  ·  %d of %d rooms visited  ·  Outlined: you are here" % [Run.theme().name, Run.floor_number, Run.climb_length(),
+		"  ·  " + twist_name if twist_name != "" else "", main_rooms.filter(func(room): return room.visited).size(), main_rooms.size()], 640, 578, 17, MUTED)
+
+## Half-hearts of maximum health, said in hearts.
+static func life_text(half_hearts: int) -> String:
+	var whole = half_hearts / 2
+	var half = "½" if half_hearts % 2 == 1 else ""
+	if half_hearts <= 0: return "nothing"
+	if whole == 0: return "½ heart"
+	return "%d%s heart%s" % [whole, half, "" if whole == 1 and half == "" else "s"]
 
 func draw_rewards() -> void:
 	hearth_emblem(Vector2(640, 61), 12)
-	centered("The candle merchant" if shop else "A small kindness", 640, 123, 38, INK, heading)
-	centered("A good find is worth a few coins. You have %d." % Run.coins if shop else "Choose one. Let it change the way you play.", 640, 165, 20, MUTED)
+	if dark:
+		centered("The dark merchant", 640, 123, 38, Color("d8c0f0"), heading)
+		centered("It takes maximum health, for the rest of the run. You have %s to give." % life_text(maxi(0, int(Run.stats.max_hp - Run.LIFE_FLOOR))), 640, 165, 20, MUTED)
+	else:
+		centered("The candle merchant" if shop else "A small kindness", 640, 123, 38, INK, heading)
+		centered("A good find is worth a few coins. You have %d." % Run.coins if shop else "Choose one. Let it change the way you play.", 640, 165, 20, MUTED)
 	for i in offers.size():
 		var item = offer_info(offers[i])
 		var color: Color = item.color
@@ -1230,11 +1298,11 @@ func draw_rewards() -> void:
 		divider(Vector2(x + 28, 379), Vector2(x + REWARD_WIDTH - 28, 379))
 		draw_multiline_string(body, Vector2(x + 26, 409), item.description, HORIZONTAL_ALIGNMENT_CENTER, REWARD_WIDTH - 52, 18, 3, MUTED)
 		centered(item.tag, middle, 465, 13, color, bold)
-	centered("Relics stack. Find something beautifully strange.", 640, 692, 17, MUTED)
+	centered("What you give stays given until the run ends." if dark else "Relics stack. Find something beautifully strange.", 640, 692, 17, MUTED)
 
 func draw_journal() -> void:
 	text("The things we carry", Vector2(64, 146), 40, INK, heading)
-	text("60 relics to find. Every effect stacks with your weapon and other relics.", Vector2(66, 184), 19, MUTED)
+	text("%d relics to find. Every effect stacks with your weapon and other relics." % Content.items.size(), Vector2(66, 184), 19, MUTED)
 	var start = journal_page * JOURNAL_PAGE_SIZE
 	for slot in JOURNAL_PAGE_SIZE:
 		var index = start + slot
@@ -1250,8 +1318,31 @@ func draw_journal() -> void:
 		text(item.name, Vector2(x + 57, y + 41), 21, color if owned else INK, bold)
 		if owned: text("×%d" % Run.inventory.count(item.id), Vector2(x + 504, y + 41), 18, GOLD)
 		draw_multiline_string(body, Vector2(x + 27, y + 73), item.description, HORIZONTAL_ALIGNMENT_LEFT, 510, 18, 2, MUTED)
-	text("%d / 60 found  ·  Filled diamonds are discovered relics" % Run.profile.discovered.size(), Vector2(66, 664), 17, MUTED)
+	text("%d / %d found  ·  Filled diamonds are discovered relics" % [Run.profile.discovered.size(), Content.items.size()], Vector2(66, 664), 17, MUTED)
 	centered("%d / %d" % [journal_page + 1, journal_page_count()], 976, 664, 20, GOLD)
+
+## Every floor theme of the tower, its words revealed once reached.
+func draw_floors() -> void:
+	text("The tower we climb", Vector2(64, 146), 40, INK, heading)
+	var themes: Array = Content.families.floors
+	var reached = themes.filter(func(theme): return theme.id in Run.profile.floors).size()
+	text("%d / %d floors reached  ·  A run climbs %d of them, from the dark below to the hearth" % [reached, themes.size(), Content.record("climbs", Run.CLIMB).bands.size()], Vector2(66, 184), 19, MUTED)
+	for slot in FLOOR_PAGE_SIZE:
+		var index = journal_page * FLOOR_PAGE_SIZE + slot
+		if index >= themes.size(): break
+		var theme: Dictionary = themes[index]
+		var rect = floor_rect(slot)
+		var x = rect.position.x
+		var y = rect.position.y
+		var known: bool = theme.id in Run.profile.floors
+		text(theme.name if known else "An unknown floor", Vector2(x + 26, y + 38), 21, GOLD if known else MUTED, bold)
+		right_text(BAND_LABELS.get(theme.band, ""), Vector2(x + 540, y + 36), 12, Color(GOLD, .8), bold)
+		if not known:
+			draw_multiline_string(body, Vector2(x + 26, y + 72), "Not yet reached. Somewhere in the tower, %s." % BAND_LABELS.get(theme.band, "").to_lower(), HORIZONTAL_ALIGNMENT_LEFT, 512, 16, 2, MUTED)
+			continue
+		draw_multiline_string(body, Vector2(x + 26, y + 66), theme.epigraph, HORIZONTAL_ALIGNMENT_LEFT, 512, 17, 2, INK)
+		draw_multiline_string(body, Vector2(x + 26, y + 112), theme.lore, HORIZONTAL_ALIGNMENT_LEFT, 512, 14, 3, MUTED)
+		text("Kept by " + str(theme.boss.name).capitalize(), Vector2(x + 26, y + 176), 13, Color("efbd9f"), bold)
 
 func draw_gallery() -> void:
 	text("The gallery we keep", Vector2(64, 146), 40, INK, heading)
@@ -1313,6 +1404,6 @@ func draw_end() -> void:
 	hearth_emblem(Vector2(640, 156), 22)
 	centered("The hearth is yours." if mode == "won" else "A light goes out.", 640, 240, 38, INK, heading)
 	centered("You carried a little warmth all the way home." if mode == "won" else "There is always another little spark.", 640, 284, 19, MUTED)
-	centered("Floor %d  ·  %d rooms  ·  %d foes" % [mini(Run.floor_number, 3), Run.cleared, Run.kills], 640, 343, 22, GOLD)
+	centered("Floor %d of %d  ·  %d rooms  ·  %d foes" % [mini(Run.floor_number, Run.climb_length()), Run.climb_length(), Run.cleared, Run.kills], 640, 343, 22, GOLD)
 	centered("%d relics  ·  %d:%02d  ·  seed %d" % [Run.inventory.size(), int(Run.elapsed) / 60, int(Run.elapsed) % 60, Run.seed_value], 640, 383, 18, MUTED)
 	centered("Your next combination is still out there.", 640, 425, 17, MUTED)

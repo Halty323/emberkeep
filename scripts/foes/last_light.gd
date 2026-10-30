@@ -22,7 +22,7 @@ func is_boss() -> bool:
 	return true
 
 func stats() -> Array:
-	return [340, 2.2, .8, "4a3a6e"]
+	return [300, 2.2, .8, "4a3a6e"]
 
 func eye_height() -> float:
 	return 1.5
@@ -82,13 +82,13 @@ func behave(delta: float, distance: float, direction: Vector3) -> Vector3:
 
 ## How often it fires: a slowed copy of the player's own rhythm.
 func cadence() -> float:
-	var weapon: Dictionary = Content.weapon_by_id[Run.weapon_id]
+	var weapon: Dictionary = Run.weapon()
 	var shooting: Dictionary = Run.projectile_stats()
 	return clampf(float(weapon.cooldown) / maxf(.5, float(shooting.rate)) * 2.4 * (1.0 - .1 * radiance), .4, 2.2)
 
 ## The player's weapon turned around: same count, spread and flight.
 func mirror_volley(direction: Vector3) -> void:
-	var weapon: Dictionary = Content.weapon_by_id[Run.weapon_id]
+	var weapon: Dictionary = Run.weapon()
 	var shooting: Dictionary = Run.projectile_stats()
 	var count = mini(int(weapon.count + shooting.shots), 9)
 	var spread: float = weapon.spread

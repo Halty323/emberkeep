@@ -33,6 +33,14 @@ var glow_light: OmniLight3D
 var glow_halo: MeshInstance3D
 var last_valid = Vector3.ZERO
 var fade_copies: Dictionary = {}
+# A shove from outside (a bellows' gust, a boss's sweep), fading quickly.
+var push := Vector3.ZERO
+# A forged spiral turns a little with every volley; a burst weapon fires the
+# rest of its volleys on its own clock.
+var spin_angle = 0.0
+var burst_left = 0
+var burst_timer = 0.0
+var burst_shot: Dictionary = {}
 
 func setup(owner_game: Node3D) -> void:
 	game = owner_game
@@ -163,6 +171,12 @@ func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting:
 	refresh_shelter()
 	dash_cooldown = maxf(0, dash_cooldown - delta)
 	fire_cooldown -= delta
+	if burst_left > 0:
+		burst_timer -= delta
+		if burst_timer <= 0:
+			burst_left -= 1
+			burst_timer = float(burst_shot.gap)
+			volley(burst_shot.weapon, burst_shot.stats, burst_shot.damage, burst_shot.tint)
 	haste_time = maxf(0, haste_time - delta)
 	recoil = move_toward(recoil, 0.0, delta * 3.0)
 	if aim_input.length_squared() > .01:
@@ -176,6 +190,8 @@ func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting:
 		for shot in game.shots.duplicate():
 			if is_instance_valid(shot) and shot.alive and not shot.friendly and shot.global_position.distance_to(chest) < GRAZE_RADIUS:
 				game.catch_spark(shot)
+	# A shove moves the player this tick without becoming their own speed.
+	var shove = Vector3.ZERO
 	if dash_time > 0:
 		dash_time -= delta
 		velocity = dash_direction * DASH_SPEED
@@ -201,10 +217,14 @@ func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting:
 			leaving_dash = false
 		var target = direction * top_speed
 		velocity = velocity.move_toward(target, delta * (4.5 if slippery else 47.0))
+		shove = push
+		push = push.move_toward(Vector3.ZERO, delta * 14.0)
 	var geometry: RoomGeometry = game.room.geometry
 	if geometry.contains(Vector2(position.x, position.z), ROOM_MARGIN):
 		last_valid = position
+	velocity += shove
 	move_and_slide()
+	velocity -= shove
 	var kept = geometry.recover(Vector2(last_valid.x, last_valid.z), Vector2(position.x, position.z), ROOM_MARGIN)
 	position = Vector3(kept.x, 0, kept.y)
 	var stride = floori(walk_time / PI)
@@ -228,7 +248,7 @@ func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting:
 				enemy.take_hit(5 * Run.stats.damage, Vector3.ZERO, false)
 
 func fire() -> void:
-	var weapon: Dictionary = Content.weapon_by_id[Run.weapon_id]
+	var weapon: Dictionary = Run.weapon()
 	var stats = Run.projectile_stats()
 	var tint = Color(weapon.color)
 	# Pigment is gameplay state: each burst takes the next colour in turn.
@@ -244,15 +264,15 @@ func fire() -> void:
 	# At full kindle every ember carries flame.
 	if game.kindle_level() >= 3:
 		stats.burn = float(stats.get("burn", 0)) + .6
+	# A kindled weapon burns hotter still with every kindle level.
+	damage *= 1.0 + float(stats.get("kindled", 0)) * .12 * game.kindle_level()
+	if weapon.has("trail"): stats["trail_kind"] = weapon.trail
 	release_sparks(damage, stats)
-	var count = mini(int(weapon.count + stats.shots), 15)
-	var spread: float = weapon.spread
-	if count > int(weapon.count) and stats.radial <= 0:
-		spread += (count - int(weapon.count)) * .115
-	for i in count:
-		var angle = TAU * float(i) / count if stats.radial > 0 else (float(i) / maxf(1, count - 1) - .5) * spread
-		var direction = aim_direction.rotated(Vector3.UP, angle)
-		game.spawn_shot(global_position + Vector3(0, .65, 0) + direction * .5, direction, damage, float(weapon.speed) * stats.shot_speed, stats, tint, true)
+	var count = volley(weapon, stats, damage, tint)
+	if int(weapon.get("burst", 1)) > 1:
+		burst_left = int(weapon.burst) - 1
+		burst_timer = float(weapon.burst_gap)
+		burst_shot = {"weapon": weapon, "stats": stats, "damage": damage, "tint": tint, "gap": weapon.burst_gap}
 	if stats.backshot > 0:
 		game.spawn_shot(global_position + Vector3(0, .65, 0), -aim_direction, damage, weapon.speed * stats.shot_speed, stats, tint, true)
 	if stats.side_shot > 0:
@@ -263,6 +283,25 @@ func fire() -> void:
 	fire_cooldown = maxf(.07, weapon.cooldown / (stats.rate + (stats.kill_haste if haste_time > 0 else 0)))
 	recoil = .17
 	Audio.play_sound("shoot", 1.0 + float(count) * .015)
+
+## One volley of the weapon's pattern; returns how many shots left.
+func volley(weapon: Dictionary, stats: Dictionary, damage: float, tint: Color) -> int:
+	var count = mini(int(weapon.count + stats.shots), 15)
+	var spread: float = weapon.spread
+	if count > int(weapon.count) and stats.radial <= 0:
+		spread += (count - int(weapon.count)) * .115
+	var origin = global_position + Vector3(0, .65, 0)
+	var speed_value = float(weapon.speed) * stats.shot_speed
+	var turn = spin_angle
+	spin_angle += float(weapon.get("spin", 0))
+	for i in count:
+		var angle = TAU * float(i) / count + turn if stats.radial > 0 else (float(i) / maxf(1, count - 1) - .5) * spread
+		var direction = aim_direction.rotated(Vector3.UP, angle)
+		var at = origin + direction * .5
+		# Twin shots fly side by side rather than apart.
+		if weapon.has("twin"): at += aim_direction.cross(Vector3.UP) * (float(i) / maxf(1, count - 1) - .5) * float(weapon.twin) * 2.0
+		game.spawn_shot(at, direction, damage, speed_value, stats, tint, true)
+	return count
 
 ## Caught sparks leave with the next shot as homing embers.
 func release_sparks(damage: float, stats: Dictionary) -> void:

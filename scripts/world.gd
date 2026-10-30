@@ -26,6 +26,9 @@ var lanterns: Array = []
 var extra_lights: Array = []
 var lanterns_changed = false
 const LANTERN_POOL := 4.4
+# This floor theme's stone, walls and motes (content/floors.json); empty in
+# the title room, which keeps the default stone.
+var look: Dictionary = {}
 var lamp_assignment: Array[int] = []
 var shadow_lamps: Array[SpotLight3D] = []
 # This floor's light (FloorLight): lantern warmth, glow and how many still burn.
@@ -54,7 +57,9 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 	game = owner_game
 	data = room
 	decor_rng.seed = int(room.get("seed", 53))
-	light = FloorLight.profile(0 if preview else Run.floor_number)
+	light = FloorLight.profile(0) if preview else FloorLight.current()
+	# Each floor theme has its own stone, walls and drifting motes.
+	look = {} if preview else Run.theme().get("look", {})
 	effects = EffectsPool.new()
 	add_child(effects)
 	geometry = RoomGeometry.new(Run.local_cells(room) if room.has("cells") else [Vector2i.ZERO])
@@ -68,12 +73,14 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 	var burning: Array = FloorLight.lit_lanterns(points.size(), light, int(room.get("seed", 53)))
 	# A room remembers lanterns relit or put out once its fight was over.
 	if room.has("lit") and not preview: burning = room.lit.map(func(i): return int(i))
+	# The dark store keeps its lanterns dead: only the altar's flame burns.
+	elif room.get("type", "") == "dark": burning = []
 	for i in points.size():
 		make_lantern(Vector3(float(points[i][0]), 0, float(points[i][1])), i in burning)
 	make_fill_lights()
 	var room_type: String = room.get("type", "combat")
-	if room_type in ["start", "treasure", "rest", "shop"] or preview:
-		Geo.box(self, pedestal + Vector3(0, -.003, 0), Vector3(6.2, .03, 4.6), Color("514450") if room_type == "shop" else Color("5d4c3e"))
+	if room_type in ["start", "treasure", "rest", "shop", "dark"] or preview:
+		Geo.box(self, pedestal + Vector3(0, -.003, 0), Vector3(6.2, .03, 4.6), {"shop": Color("514450"), "dark": Color("2a1a26")}.get(room_type, Color("5d4c3e")))
 		Geo.ring(self, pedestal + Vector3(0, .035, 0), 1.65, Color("9e875c"), .025)
 		Geo.ring(self, pedestal + Vector3(0, .035, 0), 1.45, Color("7c7359"), .018)
 	var records: Array = room.get("props", [])
@@ -121,7 +128,8 @@ func build_floor() -> void:
 	# mesh receiving every distant lantern's lighting pass.
 	for cell in geometry.cells:
 		var center = RoomGeometry.cell_center(cell)
-		for color_index in PALETTE.size():
+		var palette: Array = look.get("floor", []).map(func(hex): return Color(hex)) if look.has("floor") else PALETTE
+		for color_index in palette.size():
 			var points: Array[Vector3] = []
 			for x in range(int(center.x) - 9, int(center.x) + 9):
 				for z in range(int(center.y) - 7, int(center.y) + 7):
@@ -135,11 +143,11 @@ func build_floor() -> void:
 				mm.set_instance_transform(i, Transform3D(Basis.IDENTITY, points[i]))
 			var mesh = MultiMeshInstance3D.new()
 			mesh.multimesh = mm
-			mesh.material_override = Geo.material(PALETTE[color_index])
+			mesh.material_override = Geo.material(palette[color_index])
 			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(mesh)
-		Geo.box(self, Vector3(center.x, -.55, center.y), Vector3(18.6, .7, 14.6), Color("242d31"))
-		Geo.box(self, Vector3(center.x, -.96, center.y), Vector3(17.9, .25, 13.9), Color("19232b"))
+		Geo.box(self, Vector3(center.x, -.55, center.y), Vector3(18.6, .7, 14.6), Color(look.get("base", "242d31")))
+		Geo.box(self, Vector3(center.x, -.96, center.y), Vector3(17.9, .25, 13.9), Color(look.get("under", "19232b")))
 
 func build_walls() -> void:
 	for segment in geometry.wall_segments():
@@ -244,8 +252,8 @@ func make_gate(socket: Dictionary) -> void:
 	gates.append(gate)
 
 func make_wall(at: Vector3, dimensions: Vector3, front_side := Vector2i.ZERO, line := 0.0, from := 0.0, to := 0.0) -> Dictionary:
-	var body = Geo.box(self, at, dimensions, Color("394148"))
-	var cap = Geo.box(self, at + Vector3(0, dimensions.y / 2 + .035, 0), Vector3(dimensions.x + .06, .09, dimensions.z + .06), Color("656358"))
+	var body = Geo.box(self, at, dimensions, Color(look.get("wall", "394148")))
+	var cap = Geo.box(self, at + Vector3(0, dimensions.y / 2 + .035, 0), Vector3(dimensions.x + .06, .09, dimensions.z + .06), Color(look.get("cap", "656358")))
 	var collider = Geo.collider(self, at, dimensions + Vector3(0, 2, 0))
 	var entry = {"body": body, "cap": cap, "collider": collider}
 	if front_side != Vector2i.ZERO:
@@ -253,7 +261,7 @@ func make_wall(at: Vector3, dimensions: Vector3, front_side := Vector2i.ZERO, li
 		# This avoids transparent wall passes and moving shadow-map casters.
 		body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		cap.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		var caster = Geo.box(self, at, dimensions, Color("394148"))
+		var caster = Geo.box(self, at, dimensions, Color(look.get("wall", "394148")))
 		caster.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 		entry.merge({"shadow_caster": caster, "side": front_side, "height": dimensions.y,
 			"line": line, "from": from, "to": to})
@@ -525,7 +533,7 @@ func make_candles() -> void:
 	for i in maxi(rear.size(), front.size()):
 		if i < rear.size(): ordered.append(rear[i])
 		if i < front.size(): ordered.append(front[i])
-	for i in 5 * ordered.size():
+	for i in roundi(5 * ordered.size() * float(look.get("candles", 1.0))):
 		var edge: Dictionary = ordered[i % ordered.size()]
 		var center = RoomGeometry.cell_center(edge.cell)
 		var p = Vector3(decor_rng.randf_range(-6.5, 6.5), 0, edge.dir.y * 6.2)
@@ -552,7 +560,7 @@ func make_embers() -> void:
 		var floor_point = geometry.random_point(decor_rng, .2)
 		ember_origins.append(Vector3(floor_point.x, decor_rng.randf_range(.1, 4.0), floor_point.y))
 	ember_mesh.multimesh = mm
-	ember_mesh.material_override = Geo.material(Color("efbc78"), 1.2)
+	ember_mesh.material_override = Geo.material(Color(look.get("motes", "efbc78")), 1.2)
 	ember_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(ember_mesh)
 

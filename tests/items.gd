@@ -125,7 +125,7 @@ func test_drop_tables() -> void:
 	for i in 200:
 		for drop in DropTables.roll("enemy_common", a):
 			if drop.has("def"): total += int(catalog.record("pickups", drop.def).value) if catalog.record("pickups", drop.def).kind == "coin" else 0
-	check(total > 200 and total < 400, "enemy coin drops keep their expected value (%d over 200 kills)" % total)
+	check(total > 45 and total < 125, "enemy coin drops keep their expected value (%d over 200 kills)" % total)
 
 func test_pickups() -> void:
 	game.start_run("candle", 51001, false)

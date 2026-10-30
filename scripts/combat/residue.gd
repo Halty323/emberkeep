@@ -1,11 +1,14 @@
 class_name ResidueField
 extends Node3D
 ## What a fight leaves on the floor, and how it reacts. Tiles of wax, ice,
-## fire, moss and glass sit on a fine grid over the room; spore clouds float
-## above it. Burn ignites wax and moss (fire spreads along them), melts ice
-## and sets spores off; chill turns wax to ice and puts fire out; poison
-## spreads through a cloud; glass splits a shot crossing it. Lives for one
-## fight: nothing here is saved.
+## fire, moss, glass, water and ink sit on a fine grid over the room; spore
+## and steam clouds float above it. Burn ignites wax and moss (fire spreads
+## along them), melts ice back to what it was, boils water into steam, burns
+## ink away and sets spores off; chill turns wax and water to ice and puts
+## fire out; poison spreads through a spore cloud; glass splits a shot
+## crossing it; lightning runs through a whole pool of water. A floor theme
+## lays some of it down for good (FloorHazards). Lives for one visit: nothing
+## here is saved, and a room lays the same floor again from its seed.
 const TILE := .8
 const FIRE_LIFE := 3.2
 const ICE_LIFE := 9.0
@@ -17,7 +20,12 @@ const CLOUD_BLAST := 22.0
 # shimmer, roughness and height above the floor.
 const LOOKS := {"wax": [Color(.86, .78, .6, .9), .12, 0.0, .45, .025], "ice": [Color(.7, .87, .97, .82), .35, 0.0, .15, .03],
 	"fire": [Color(1.0, .55, .2, .95), 1.6, 1.0, .9, .035], "moss": [Color(.42, .62, .33, .92), .08, 0.0, .9, .028],
-	"glass": [Color(.82, .94, 1.0, .62), .4, 0.0, .1, .032]}
+	"glass": [Color(.82, .94, 1.0, .62), .4, 0.0, .1, .032], "water": [Color(.2, .4, .5, .72), .18, 0.0, .05, .022],
+	"ink": [Color(.1, .08, .14, .88), .05, 0.0, .3, .026]}
+const STEAM_LIFE := 3.5
+# How much each kind slows whoever wades through it.
+const DRAG := {"moss": .75, "water": .8, "ink": .6}
+const SHOCK_REACH := 400
 var game: Node3D
 var geometry: RoomGeometry
 # Vector2i tile -> {"kind", "age", "life", "spread", "under"}.
@@ -84,20 +92,36 @@ func tiles_in(at: Vector3, radius: float) -> Array:
 				result.append(tile)
 	return result
 
-## Lays a kind over a patch. Fire only takes where something can burn.
-func add(kind: String, at: Vector3, radius: float) -> void:
+## Every tile of this room's floor.
+func floor_tiles() -> Array:
+	var result: Array = []
+	for x in range(grid_origin.x, grid_origin.x + grid_size.x):
+		for y in range(grid_origin.y, grid_origin.y + grid_size.y):
+			var c = center(Vector2i(x, y))
+			if geometry.contains(Vector2(c.x, c.z), .2): result.append(Vector2i(x, y))
+	return result
+
+## Lays a kind over a patch. Fire only takes where something can burn. A
+## lasting patch (a floor's own hazard) never melts or burns out by itself.
+func add(kind: String, at: Vector3, radius: float, lasting := false) -> void:
 	for tile in tiles_in(at, radius):
 		var current: String = tiles.get(tile, {}).get("kind", "")
 		if kind == "fire" and current not in ["wax", "moss"]: continue
 		if current == "fire" and kind != "fire": continue
-		set_tile(tile, kind)
+		set_tile(tile, kind, lasting)
 
-func set_tile(tile: Vector2i, kind: String) -> void:
+## Fire that takes on bare stone too, for a little while: a vent's breath.
+func scorch(at: Vector3, radius: float) -> void:
+	for tile in tiles_in(at, radius):
+		if tiles.get(tile, {}).get("kind", "") == "water": continue
+		set_tile(tile, "fire")
+
+func set_tile(tile: Vector2i, kind: String, lasting := false) -> void:
 	var previous: String = tiles.get(tile, {}).get("kind", "")
 	if kind == "":
 		tiles.erase(tile)
 	else:
-		var life = {"fire": FIRE_LIFE, "ice": ICE_LIFE}.get(kind, -1.0)
+		var life = -1.0 if lasting else {"fire": FIRE_LIFE, "ice": ICE_LIFE}.get(kind, -1.0)
 		tiles[tile] = {"kind": kind, "age": 0.0, "life": life, "spread": SPREAD_DELAY, "under": previous if kind in ["fire", "ice"] else ""}
 	dirty[previous] = true
 	dirty[kind] = true
@@ -113,25 +137,44 @@ func react(at: Vector3, radius: float, stats: Dictionary) -> void:
 		if cloud >= 0: poison_cloud(cloud)
 
 func ignite(at: Vector3, radius: float) -> void:
+	var boiled = false
 	for tile in tiles_in(at, radius):
 		var current: String = tiles.get(tile, {}).get("kind", "")
 		if current in ["wax", "moss"]: set_tile(tile, "fire")
-		elif current == "ice": set_tile(tile, "wax")
+		elif current == "ice": set_tile(tile, tiles[tile].under)
+		elif current == "ink": set_tile(tile, "")
+		elif current == "water": boiled = true
+	if boiled and cloud_at(at) < 0: add_cloud(at, maxf(1.2, radius * 1.4), "steam")
 	for i in range(clouds.size() - 1, -1, -1):
-		if Vector2(clouds[i].at.x - at.x, clouds[i].at.z - at.z).length() < clouds[i].radius + radius * .5:
+		if clouds[i].kind == "spores" and Vector2(clouds[i].at.x - at.x, clouds[i].at.z - at.z).length() < clouds[i].radius + radius * .5:
 			explode_cloud(i)
 
 func freeze(at: Vector3, radius: float) -> void:
 	for tile in tiles_in(at, radius):
 		var current: String = tiles.get(tile, {}).get("kind", "")
-		if current == "wax": set_tile(tile, "ice")
+		if current in ["wax", "water"]: set_tile(tile, "ice")
 		elif current == "fire": set_tile(tile, "wax" if tiles[tile].under == "wax" else "")
 
 func slows(at: Vector3) -> float:
-	var factor = 1.0
-	if kind_at(at) == "moss": factor *= .75
-	if cloud_at(at) >= 0: factor *= .8
+	var factor: float = DRAG.get(kind_at(at), 1.0)
+	var cloud = cloud_at(at)
+	if cloud >= 0 and clouds[cloud].kind == "spores": factor *= .8
 	return factor
+
+## Lightning striking a foe in water runs through the whole pool: every foe
+## standing in the same water takes a share. Returns how many it reached.
+func shock(at: Vector3, damage: float, struck: Dictionary = {}) -> int:
+	if kind_at(at) != "water": return 0
+	var pool := {}
+	for tile in moss_linked(at, .5, ["water"]).slice(0, SHOCK_REACH): pool[tile] = true
+	var reached = 0
+	for enemy in game.enemies.duplicate():
+		if not is_instance_valid(enemy) or not enemy.alive or struck.has(enemy.entity_id): continue
+		if not pool.has(key(enemy.global_position)): continue
+		Effects.beam(game, at + Vector3.UP * .1, enemy.global_position + Vector3.UP * .4, Color("c4e2ff"))
+		enemy.shocked(damage)
+		reached += 1
+	return reached
 
 ## Whether a segment crosses glass; the first crossing splits a shot.
 func crosses_glass(from: Vector3, to: Vector3) -> bool:
@@ -156,22 +199,26 @@ func moss_linked(at: Vector3, reach: float, kinds := ["moss"]) -> Array:
 			queue.append(next)
 	return queue
 
-func add_cloud(at: Vector3, radius: float) -> void:
+## A cloud of spores (poison spreads through it, fire sets it off) or of
+## steam (it only hides what is inside, and soon thins away).
+func add_cloud(at: Vector3, radius: float, kind := "spores") -> void:
 	if clouds.size() >= MAX_CLOUDS: remove_cloud(0)
 	var view = Node3D.new()
 	add_child(view)
 	view.position = Vector3(at.x, 0, at.z)
 	for i in 3:
 		var puff = Geo.sphere(view, Vector3(cos(i * 2.1) * radius * .35, .7 + i * .15, sin(i * 2.1) * radius * .35), radius * (.62 - i * .08), Color(.62, .7, .5))
-		puff.material_override = cloud_material(false)
+		puff.material_override = cloud_material(false, kind)
 		puff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	clouds.append({"at": Vector3(at.x, 0, at.z), "radius": radius, "age": 0.0, "poisoned": false, "view": view})
+	clouds.append({"at": Vector3(at.x, 0, at.z), "radius": radius, "age": 0.0, "poisoned": false, "view": view, "kind": kind,
+		"life": STEAM_LIFE if kind == "steam" else CLOUD_LIFE})
 
-static func cloud_material(poisoned: bool) -> StandardMaterial3D:
+static func cloud_material(poisoned: bool, kind := "spores") -> StandardMaterial3D:
 	var mat = StandardMaterial3D.new()
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_color = Color(.48, .78, .36, .34) if poisoned else Color(.62, .66, .5, .3)
+	if kind == "steam": mat.albedo_color = Color(.86, .9, .94, .3)
+	else: mat.albedo_color = Color(.48, .78, .36, .34) if poisoned else Color(.62, .66, .5, .3)
 	return mat
 
 func cloud_at(at: Vector3) -> int:
@@ -185,7 +232,7 @@ func remove_cloud(index: int) -> void:
 
 func poison_cloud(index: int) -> void:
 	var cloud: Dictionary = clouds[index]
-	if not cloud.poisoned:
+	if cloud.kind == "spores" and not cloud.poisoned:
 		cloud.poisoned = true
 		cloud.age = minf(cloud.age, CLOUD_LIFE * .4)
 		for puff in cloud.view.get_children(): puff.material_override = cloud_material(true)
@@ -228,9 +275,10 @@ func update_sim(delta: float) -> void:
 	for i in range(clouds.size() - 1, -1, -1):
 		var cloud: Dictionary = clouds[i]
 		cloud.age += delta
-		if cloud.age >= CLOUD_LIFE:
+		if cloud.age >= cloud.life:
 			remove_cloud(i)
 			continue
+		if cloud.kind != "spores": continue
 		if kind_at(cloud.at) == "fire":
 			explode_cloud(i)
 			continue
@@ -243,8 +291,11 @@ func update_sim(delta: float) -> void:
 				elif enemy.poison_time > 0: poison_cloud(i)
 	if touch:
 		for enemy in game.enemies:
-			if is_instance_valid(enemy) and enemy.alive and enemy.targetable and kind_at(enemy.global_position) == "fire":
-				enemy.apply_status({"burn": 1.2})
+			if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable: continue
+			var under = kind_at(enemy.global_position)
+			if under == "fire": enemy.apply_status({"burn": 1.2})
+			# Water puts a burning foe out.
+			elif under == "water": enemy.burn_time = 0.0
 		if kind_at(game.player.global_position) == "fire":
 			game.player.hurt(1.0, game.player.global_position)
 	for kind in dirty.keys():

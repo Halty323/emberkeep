@@ -49,6 +49,7 @@ var well_spot := Vector3.ZERO
 var light_veil: ColorRect
 var entity_counter = 10
 var chosen_reward_shop = false
+var chosen_reward_dark = false
 var snapshot_timer = 0.0
 var vignette: ShaderMaterial
 var actions: GameActions
@@ -64,6 +65,9 @@ const MAX_SHOTS := 200
 const HOSTILE_SHOT_RESERVE := 50
 # What a fight leaves on the floor; one per room, rebuilt on entry.
 var residue: ResidueField
+var hazards: FloorHazards
+# A windswept floor's draught: every shot in flight drifts with it.
+var wind := Vector3.ZERO
 # Combat state that outlives a room. Sparks are hostile embers caught by a
 # grazing dash, released with the next shot. Kindle grows with quick kills
 # and gutters with a hit. Noise is what sound-hunting foes follow.
@@ -284,9 +288,11 @@ func _physics_process(delta: float) -> void:
 		if is_instance_valid(shot) and is_playing(): shot.update_sim(delta)
 	shots = shots.filter(func(s): return is_instance_valid(s) and s.alive)
 	if residue: residue.update_sim(delta)
+	if hazards: hazards.update_sim(delta)
 	# A streak cools once kills stop coming.
 	kindle_quiet += delta
-	if kindle_quiet > KINDLE_FADE_AFTER: kindle_heat = maxf(0.0, kindle_heat - delta)
+	# A draught takes the heat away faster.
+	if kindle_quiet > KINDLE_FADE_AFTER: kindle_heat = maxf(0.0, kindle_heat - delta * (1.8 if Run.has_twist("windswept") else 1.0))
 	sync_companions()
 	for companion in companions:
 		companion.update_sim(delta)
@@ -393,7 +399,7 @@ func advance_climb() -> void:
 
 ## The top of the last floor is the end of the run; otherwise the next floor.
 func reach_next_floor() -> void:
-	if Run.floor_number >= 3:
+	if Run.last_floor():
 		transition = {}
 		light_veil.color.a = 0.0
 		end_run(true)
@@ -595,6 +601,7 @@ func clean_room(keep_view := false) -> void:
 	if is_instance_valid(previous_view): previous_view.queue_free()
 	previous_view = null
 	residue = null
+	hazards = null
 	if not keep_view:
 		transition = {}
 		if light_veil: light_veil.color.a = 0.0
@@ -647,7 +654,8 @@ func start_run(weapon: String, seed_input: int, is_daily: bool) -> void:
 	reset_combat()
 	enter_room(Vector3(0, 0, 2.0))
 	ui.show_screen("play")
-	ui.notify("You wake in the cellar", "Clear rooms, find relics, climb to the light.")
+	var arrival: Array = Run.theme().arrival
+	ui.notify(arrival[0], arrival[1])
 	ui.announce_floor()
 
 func continue_run() -> void:
@@ -679,6 +687,13 @@ func enter_room(spawn: Vector3, keep_view := false) -> void:
 	residue = ResidueField.new()
 	scene_root.add_child(residue)
 	residue.setup(self, room.geometry)
+	hazards = FloorHazards.new()
+	scene_root.add_child(hazards)
+	hazards.setup(self, data, room.geometry, residue, room.pedestal)
+	wind = Vector3.ZERO
+	if Run.has_twist("windswept"):
+		var bearing = float(Content.stable_hash("wind:%d:%d" % [Run.seed_value, Run.floor_number]) % 628) / 100.0
+		wind = Vector3(cos(bearing), 0, sin(bearing)) * 2.4
 	noises.clear()
 	# A saved or requested spawn can be outside a rotated L: validate it.
 	var safe = room.geometry.safe_point(Vector2(spawn.x, spawn.z), .5, room.blocked_at)
@@ -700,8 +715,11 @@ func enter_room(spawn: Vector3, keep_view := false) -> void:
 			spawn_enemy(room.pedestal + Vector3(0, 0, -2.5), "boss", "%s:boss" % data.id)
 		else:
 			var cells: int = room.geometry.cells.size()
-			var count = roundi((3 + Run.floor_number + mini(int(data.depth) / 3, 2)) * (1.0 + .45 * (cells - 1)))
-			var plan: Array = Foes.compose(Run.floor_number, count, gen)
+			var count = roundi((3 + mini(Run.floor_number, 4) + mini(int(data.depth) / 3, 2)) * (1.0 + .45 * (cells - 1)))
+			if Run.has_twist("swarming"): count = roundi(count * 1.35)
+			var roster = Foes.roster_for(Run.theme_id(), Run.floor_number, Run.floor_plan)
+			var chance = Foes.elite_chance(Run.floor_number) + (.2 if Run.has_twist("gilded") else 0.0)
+			var plan: Array = Foes.compose(roster, chance, count, gen)
 			var spawned: Array = []
 			for i in plan.size():
 				var center = RoomGeometry.cell_center(room.geometry.cells[i % cells])
@@ -730,7 +748,7 @@ func enter_room(spawn: Vector3, keep_view := false) -> void:
 		# offers were generated. The room seed makes regeneration repeatable.
 		if data.type == "boss" and not data.claimed and not data.has("offers"):
 			ensure_offers(true)
-		if not data.claimed and data.type in ["treasure", "shop", "rest"]:
+		if not data.claimed and data.type in ["treasure", "shop", "rest", "dark"]:
 			make_marker(data.type, room.pedestal)
 		elif data.cleared and not data.claimed and data.has("offers"):
 			make_marker("treasure", room.pedestal)
@@ -758,17 +776,14 @@ func enter_room(spawn: Vector3, keep_view := false) -> void:
 		if bomb.room == Run.current_room: spawn_bomb_view(bomb)
 	sync_companions()
 	if data.type == "boss" and not data.cleared:
-		var introductions = {"warden": ["The Hearth Warden listens", "It hunts by sound. Only in its lantern's light can it be hurt."],
-			"mosskeeper": ["The Mosskeeper takes root", "Missed shots feed its moss; fire burns it through its roots."],
-			"last_light": ["The Last Light holds your glow", "It fires your own weapon. Relight what it drains."]}
-		var line: Array = introductions[Foes.boss_kind(Run.floor_number)]
+		var line: Array = Run.theme().boss.intro
 		ui.notify(line[0], line[1], Color("e0a18b"))
 	apply_floor_light()
 	update_camera(0.0, true)
 
 ## The tower brightens floor by floor; the title keeps its own warm light.
 func apply_floor_light() -> void:
-	FloorLight.apply(FloorLight.profile(0 if in_menu else Run.floor_number), room_environment.environment, key_light, vignette)
+	FloorLight.apply(FloorLight.profile(0) if in_menu else FloorLight.current(), room_environment.environment, key_light, vignette)
 
 ## Each doorway trigger names one specific portal; the transition itself is
 ## scheduled for the end of the physics tick.
@@ -791,8 +806,8 @@ func travel(portal_id: String, keep_view := false) -> void:
 	enter_room(Vector3(point.x, 0, point.y), keep_view)
 
 func spawn_enemy(at: Vector3, kind: String, source := "") -> DungeonEnemy:
-	# Each floor has its own boss.
-	if kind == "boss": kind = Foes.boss_kind(Run.floor_number)
+	# Each floor theme has its own boss.
+	if kind == "boss": kind = Foes.boss_kind(Run.theme())
 	var enemy: DungeonEnemy = Foes.create(kind)
 	scene_root.add_child(enemy)
 	entity_counter += 1
@@ -855,7 +870,7 @@ func on_enemy_killed(enemy: DungeonEnemy) -> void:
 	if not data.has("credited"): data.credited = []
 	data.credited.append(enemy.source)
 	Run.kills += 1
-	var drops = Drops.roll("boss" if enemy.boss else "enemy_common", Run.rng, Run.stats.luck, Run.stats.coin_bonus)
+	var drops = Drops.roll("boss" if enemy.boss else "enemy_common", Run.rng, Run.stats.luck, Run.coin_bonus())
 	for i in drops.size():
 		var at = Drops.scatter(drops.size(), i, enemy.global_position)
 		spawn_pickup(at, drops[i].def)
@@ -918,7 +933,7 @@ func stairs_ready(announce: bool) -> void:
 	room.add_obstacle("stairs", Vector2(stairs.position.x, stairs.position.z), Staircase.OUTER)
 	interactions.register("stairs", "exit", stairs.approach_point(), 2.1, "", stairs)
 	if announce:
-		if Run.floor_number >= 3: ui.notify("The last stair", "It climbs out into the light.", Color("f3dfb8"))
+		if Run.last_floor(): ui.notify("The last stair", "It climbs out into the light.", Color("f3dfb8"))
 		else: ui.notify("A stair winds upward", "Climb it toward the light above.", Color("f3dfb8"))
 
 ## While the stair builds, nobody stands where it will be solid.
@@ -962,9 +977,8 @@ func ensure_offers(premium := false) -> void:
 		var price: int = {"common": 8, "uncommon": 12, "rare": 17, "mythic": 24}[item.rarity]
 		offers.append({"kind": "item", "id": item.id, "price": price})
 	if gen.randf() < .5 or data.type == "shop":
-		var arsenal = Collection.available_weapons()
-		var weapon: Dictionary = arsenal[gen.randi_range(0, arsenal.size() - 1)]
-		offers[2] = {"kind": "weapon", "id": weapon.id, "price": 14}
+		# Every weapon on offer is forged here, for this room alone.
+		offers[2] = {"kind": "weapon", "id": Forge.id_for(Content.stable_hash("shop:%d:%s" % [Run.seed_value, data.id]), gen.randi_range(0, 99)), "price": 14}
 	if gen.randf() < (.6 if data.type == "shop" else .3):
 		var pool = Content.families.actives.filter(func(active): return active.id != Run.active_item.get("def", ""))
 		offers[1] = {"kind": "active", "id": pool[gen.randi_range(0, pool.size() - 1)].id, "price": 15}
@@ -982,6 +996,14 @@ func make_marker(kind: String, at := Vector3.ZERO) -> void:
 		Geo.ring(marker, Vector3(0, .09, 0), 1.05, Color("a3d5c2"), .09)
 		Geo.halo(marker, Vector3(0, .02, 0), 5.0, Color(.35, .8, .6, .32))
 		Geo.light(marker, Vector3(0, .6, 0), Color("a7d8bd"), .65, 3.5)
+	elif kind == "dark":
+		Geo.box(marker, Vector3(0, .35, 0), Vector3(1.1, .7, .8), Color("1e1a22"))
+		Geo.box(marker, Vector3(0, .74, 0), Vector3(1.3, .08, 1.0), Color("3a2a3e"))
+		var flame = Geo.sphere(marker, Vector3(0, 1.05, 0), .2, Color("b98ae0"), 2.4)
+		flame.scale = Vector3(.8, 1.5, .8)
+		marker_visual = flame
+		Geo.halo(marker, Vector3(0, .03, 0), 4.5, Color(.55, .3, .8, .3))
+		Geo.light(marker, Vector3(0, 1.4, 0), Color("b98ae0"), .9, 5.0)
 	elif kind == "rest":
 		Geo.cylinder(marker, Vector3(0, .2, 0), .65, .4, Color("86775f"))
 		Geo.sphere(marker, Vector3(0, .75, 0), .25, Color("ffd28d"), 1.8)
@@ -1006,8 +1028,9 @@ func prompt_for(target: Dictionary) -> String:
 	match target.kind:
 		"treasure": return "Choose a little treasure"
 		"shop": return "Browse the merchant’s wares"
+		"dark": return "Bargain with the dark · pay in life"
 		"rest": return "Warm your hands · heal 3"
-		"exit": return "Carry the light home" if Run.floor_number == 3 else "Climb to the next floor"
+		"exit": return "Carry the light home" if Run.last_floor() else "Climb to the next floor"
 		"chest":
 			var chest = GameActions.find_record(Run.rooms[Run.current_room].get("chests", []), target.id.trim_prefix("chest:"))
 			if not chest.get("locked", false): return "Open the chest"
@@ -1052,11 +1075,14 @@ func interact() -> void:
 func use_pedestal(target: Dictionary) -> Dictionary:
 	var data: Dictionary = Run.rooms[Run.current_room]
 	match target.kind:
-		"treasure", "shop":
-			ensure_offers(data.type == "treasure")
+		"treasure", "shop", "dark":
+			if target.kind == "dark": ensure_dark_offers()
+			else: ensure_offers(data.type == "treasure")
 			chosen_reward_shop = target.kind == "shop"
+			chosen_reward_dark = target.kind == "dark"
 			ui.offers = data.offers
 			ui.shop = chosen_reward_shop
+			ui.dark = chosen_reward_dark
 			paused = true
 			ui.show_screen("reward")
 		"rest":
@@ -1100,16 +1126,25 @@ func choose_offer(index: int) -> void:
 	var data: Dictionary = Run.rooms[Run.current_room]
 	if data.claimed or index < 0 or index >= data.offers.size(): return
 	var offer: Dictionary = data.offers[index]
-	if chosen_reward_shop:
+	if chosen_reward_dark:
+		# Each bargain once; each costs maximum health for the rest of the run.
+		if offer.get("sold", false) or not Run.pay_life(int(offer.price)):
+			Audio.play_sound("hurt", 1.5)
+			if not offer.get("sold", false): ui.notify("Too little life left to give", "The dark never takes your last heart.", Color("b98ae0"))
+			return
+		offer["sold"] = true
+		game_shake_dark()
+	elif chosen_reward_shop:
 		if Run.coins < int(offer.price):
 			Audio.play_sound("hurt", 1.5)
 			return
 		Run.coins -= int(offer.price)
-	data.claimed = true
+	if not chosen_reward_dark or data.offers.all(func(entry): return entry.get("sold", false)):
+		data.claimed = true
 	if offer.kind == "weapon":
 		Run.weapon_id = offer.id
 		Run.changed.emit()
-		ui.notify(Content.weapon_by_id[offer.id].name, "A new way to carry the light.")
+		ui.notify(Forge.lookup(offer.id).name, "A new way to carry the light.")
 		Audio.play_sound("item")
 	elif offer.kind == "active":
 		# The new item goes into the slot; the one in hand is set beside the
@@ -1120,9 +1155,43 @@ func choose_offer(index: int) -> void:
 		actions.take_item(item_id)
 	else:
 		Run.gain_item(offer.id)
-	remove_marker()
+	if data.claimed: remove_marker()
 	Run.save_run()
-	close_reward()
+	if chosen_reward_dark and not data.claimed:
+		ui.offers = data.offers
+		ui.show_screen("reward")
+	else:
+		close_reward()
+
+func game_shake_dark() -> void:
+	shake = maxf(shake, .12)
+	Effects.burst(scene_root, player.global_position + Vector3.UP * .8, Color("b98ae0"), 12, 1.4)
+
+## The dark store's bargains: a dark relic, a dark-forged weapon or a
+## precious relic, and something small. Prices are half-hearts of maximum
+## health, 2 to 5 by how much each is worth.
+func ensure_dark_offers() -> void:
+	var data: Dictionary = Run.rooms[Run.current_room]
+	if data.has("offers"): return
+	var gen = RandomNumberGenerator.new()
+	gen.seed = int(data.seed) + 6661
+	var dark: Array = Content.items.filter(func(item): return item.rarity == "dark")
+	var relic: Dictionary = dark[gen.randi_range(0, dark.size() - 1)]
+	var offers: Array = [{"kind": "item", "id": relic.id, "price": int(relic.cost)}]
+	if gen.randf() < .55:
+		offers.append({"kind": "weapon", "id": Forge.id_for(Content.stable_hash("dark:%d:%s" % [Run.seed_value, data.id]), gen.randi_range(0, 99), 1), "price": 4})
+	else:
+		var precious: Dictionary = Content.roll_items(gen, 1, Run.inventory, true, Run.stats.luck)[0]
+		offers.append({"kind": "item", "id": precious.id, "price": {"common": 2, "uncommon": 2, "rare": 3, "mythic": 4}[precious.rarity]})
+	if gen.randf() < .5:
+		var pool = Content.families.actives.filter(func(active): return active.id != Run.active_item.get("def", ""))
+		offers.append({"kind": "active", "id": pool[gen.randi_range(0, pool.size() - 1)].id, "price": 2})
+	else:
+		var others: Array = dark.filter(func(item): return item.id != relic.id)
+		var second: Dictionary = others[gen.randi_range(0, others.size() - 1)]
+		offers.append({"kind": "item", "id": second.id, "price": int(second.cost)})
+	data.offers = offers
+	Run.save_run()
 
 func close_reward() -> void:
 	paused = false

@@ -17,7 +17,8 @@ func check(condition: bool, description: String) -> void:
 func test_all() -> void:
 	run = root.get_node("Run")
 	catalog = root.get_node("Content")
-	check(catalog.items.size() == 60, "60 relics loaded")
+	check(catalog.items.filter(func(item): return item.rarity != "dark").size() == 60, "60 relics loaded")
+	check(catalog.items.filter(func(item): return item.rarity == "dark").size() == 8, "8 dark relics loaded")
 	# Ten starters plus Paint Sprayer, which only the painting collection unlocks.
 	check(catalog.weapons.size() == 11, "11 weapons loaded")
 	var collection = root.get_node("Collection")

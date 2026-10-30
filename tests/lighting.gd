@@ -134,6 +134,8 @@ func test_floor_light() -> void:
 	var environment: Environment = game.room_environment.environment
 	check(is_equal_approx(environment.ambient_light_energy, title.ambient) and is_equal_approx(game.key_light.light_energy, title.key), "the title keeps its own light")
 	game.start_run("candle", 61001, false)
+	# The old three floors are the bottom, middle and top of the tower.
+	run.plan_climb("legacy_tower")
 	var anchors: int = run.rooms["0,0"].get("lights", []).size()
 	var rng_state = run.rng.state
 	for floor in [1, 2, 3]:
