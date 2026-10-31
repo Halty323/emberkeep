@@ -10,7 +10,6 @@ const WALL_BACK_HEIGHT = 2.8
 const WALL_FRONT_HEIGHT = 1.8
 const WALL_CUTAWAY_HEIGHT = .45
 const CUTAWAY_REACH = 3.0
-const PALETTE = [Color("49433d"), Color("45413b"), Color("4d463e"), Color("413e39"), Color("50473e")]
 var game: Node3D
 var data: Dictionary = {}
 var geometry: RoomGeometry
@@ -29,6 +28,9 @@ const LANTERN_POOL := 4.4
 # This floor theme's stone, walls and motes (content/floors.json); empty in
 # the title room, which keeps the default stone.
 var look: Dictionary = {}
+# The floor sheets and slabs: lit by the key light, but left out of the water's
+# mirrored view, which looks up from below the floor.
+const GROUND_LAYER := 8
 var lamp_assignment: Array[int] = []
 var shadow_lamps: Array[SpotLight3D] = []
 # This floor's light (FloorLight): lantern warmth, glow and how many still burn.
@@ -124,30 +126,20 @@ static func socket_key(cell: Vector2i, direction: Vector2i) -> String:
 	return "%d,%d,%d,%d" % [cell.x, cell.y, direction.x, direction.y]
 
 func build_floor() -> void:
-	# Batches are chunked per cell so a large room's floor is not one giant
-	# mesh receiving every distant lantern's lighting pass.
+	# One finely divided stone sheet per cell, so a large room's floor is not
+	# one giant mesh receiving every distant lantern's lighting pass.
+	var material = Look.floor_material(look)
 	for cell in geometry.cells:
 		var center = RoomGeometry.cell_center(cell)
-		var palette: Array = look.get("floor", []).map(func(hex): return Color(hex)) if look.has("floor") else PALETTE
-		for color_index in palette.size():
-			var points: Array[Vector3] = []
-			for x in range(int(center.x) - 9, int(center.x) + 9):
-				for z in range(int(center.y) - 7, int(center.y) + 7):
-					if posmod(x * 37 + z * 19 + x * z, 5) == color_index:
-						points.append(Vector3(x + .5, -.16, z + .5))
-			var mm = MultiMesh.new()
-			mm.transform_format = MultiMesh.TRANSFORM_3D
-			mm.mesh = Geo.shared_box(Vector3(.975, .25, .975))
-			mm.instance_count = points.size()
-			for i in points.size():
-				mm.set_instance_transform(i, Transform3D(Basis.IDENTITY, points[i]))
-			var mesh = MultiMeshInstance3D.new()
-			mesh.multimesh = mm
-			mesh.material_override = Geo.material(palette[color_index])
-			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			add_child(mesh)
-		Geo.box(self, Vector3(center.x, -.55, center.y), Vector3(18.6, .7, 14.6), Color(look.get("base", "242d31")))
-		Geo.box(self, Vector3(center.x, -.96, center.y), Vector3(17.9, .25, 13.9), Color(look.get("under", "19232b")))
+		var sheet = MeshInstance3D.new()
+		sheet.mesh = Look.floor_mesh()
+		sheet.material_override = material
+		sheet.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		sheet.position = Vector3(center.x, Look.FLOOR_TOP, center.y)
+		sheet.layers = GROUND_LAYER
+		add_child(sheet)
+		Geo.box(self, Vector3(center.x, -.55, center.y), Vector3(18.6, .7, 14.6), Color(look.get("base", "242d31"))).layers = GROUND_LAYER
+		Geo.box(self, Vector3(center.x, -.96, center.y), Vector3(17.9, .25, 13.9), Color(look.get("under", "19232b"))).layers = GROUND_LAYER
 
 func build_walls() -> void:
 	for segment in geometry.wall_segments():
@@ -253,7 +245,9 @@ func make_gate(socket: Dictionary) -> void:
 
 func make_wall(at: Vector3, dimensions: Vector3, front_side := Vector2i.ZERO, line := 0.0, from := 0.0, to := 0.0) -> Dictionary:
 	var body = Geo.box(self, at, dimensions, Color(look.get("wall", "394148")))
+	body.material_override = Look.wall_material(Color(look.get("wall", "394148")))
 	var cap = Geo.box(self, at + Vector3(0, dimensions.y / 2 + .035, 0), Vector3(dimensions.x + .06, .09, dimensions.z + .06), Color(look.get("cap", "656358")))
+	cap.material_override = Look.wall_material(Color(look.get("cap", "656358")), true)
 	var collider = Geo.collider(self, at, dimensions + Vector3(0, 2, 0))
 	var entry = {"body": body, "cap": cap, "collider": collider}
 	if front_side != Vector2i.ZERO:
@@ -494,7 +488,7 @@ func make_shadow_light(p: Vector3) -> void:
 	# A fixed inward-facing spotlight needs one map instead of six cube faces.
 	var shadow_light = SpotLight3D.new()
 	shadow_light.light_color = light.lamp_color
-	shadow_light.light_cull_mask = 1
+	shadow_light.light_cull_mask = Geo.LIT_LAYERS
 	shadow_light.light_energy = light.shadow
 	shadow_light.spot_range = 13.0
 	shadow_light.spot_angle = 58.0

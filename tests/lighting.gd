@@ -38,7 +38,7 @@ func verify_room_budget(room: Node3D, enabled: bool, label: String) -> void:
 	check(shadowed.size() <= 1, label + ": at most one local shadow map")
 	check((not shadowed.is_empty()) == enabled, label + ": requested shadow quality applied")
 	for light in lights:
-		check(light.light_cull_mask == 1, label + ": real lights exclude halo geometry")
+		check(light.light_cull_mask & 2 == 0 and light.light_cull_mask & 1 != 0, label + ": real lights exclude halo geometry")
 		if light is OmniLight3D:
 			check(not light.shadow_enabled, label + ": omni lights never allocate cube shadows")
 	for light in shadowed:

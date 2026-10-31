@@ -23,7 +23,13 @@ var _applied: Dictionary = {}
 
 func _ready() -> void:
 	load_settings()
+	# Apply device constraints before the scene creates any render targets.
+	apply_render_policy()
+	get_tree().root.size_changed.connect(apply_render_policy)
 	apply_all()
+	var policy = RenderPolicy.current()
+	if policy.reason != "":
+		print("EMBERKEEP RENDER POLICY v1: %s; MSAA off, screen passes off, 3D budget %d pixels" % [policy.reason, policy.max_3d_pixels])
 
 func load_settings() -> void:
 	values = DEFAULTS.duplicate()
@@ -107,14 +113,19 @@ func apply(key: String) -> void:
 		"render_scale":
 			# Godot's built-in Compatibility bilinear scaling: only the 3D buffer
 			# shrinks, so canvas text, input and camera projection stay native.
-			var root = get_tree().root
-			root.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
-			root.scaling_3d_scale = values.render_scale
+			apply_render_policy()
 		"fps_limit":
 			Engine.max_fps = values.fps_limit
 		"vsync":
 			if vsync_supported():
 				DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if values.vsync else DisplayServer.VSYNC_DISABLED)
+
+func apply_render_policy() -> void:
+	var viewport = get_tree().root
+	if not RenderPolicy.current().msaa:
+		viewport.msaa_3d = Viewport.MSAA_DISABLED
+	viewport.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+	viewport.scaling_3d_scale = RenderPolicy.effective_scale(float(values.render_scale), viewport.size)
 
 func vsync_supported() -> bool:
 	# Godot 4.6 routes the Android/iOS VSync setter through RenderingDevice; the
@@ -129,10 +140,10 @@ func effective_vsync() -> String:
 	return "off" if DisplayServer.window_get_vsync_mode() == DisplayServer.VSYNC_DISABLED else "on"
 
 func render_pixels() -> Vector2i:
-	var size = Vector2(DisplayServer.window_get_size())
+	var size = Vector2(get_tree().root.size)
 	if size.x <= 0 or size.y <= 0:
-		size = Vector2(get_tree().root.size)
-	return Vector2i(roundi(size.x * values.render_scale), roundi(size.y * values.render_scale))
+		size = Vector2(DisplayServer.window_get_size())
+	return Vector2i(roundi(size.x * get_tree().root.scaling_3d_scale), roundi(size.y * get_tree().root.scaling_3d_scale))
 
 func effect_budget(channel: String) -> int:
 	return EFFECT_BUDGETS[values.effects_detail][channel]

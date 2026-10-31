@@ -36,6 +36,7 @@ lights_and_shadows/positional_shadow/atlas_size=1024
 lights_and_shadows/positional_shadow/soft_shadow_filter_quality=0
 environment/defaults/default_clear_color=Color(0.025, 0.035, 0.045, 1)
 anti_aliasing/quality/msaa_3d=1
+anti_aliasing/quality/msaa_3d.mobile=0
 
 [input_devices]
 pointing/emulate_touch_from_mouse=false

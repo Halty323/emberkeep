@@ -4,7 +4,9 @@ Verified with Godot 4.6.3 Standard on Linux: headless suites, Mesa llvmpipe Open
 
 ## Headless suites
 
-`./tools/test.sh` imports the project, runs every suite with disposable user storage, and fails on any script error even if Godot exits successfully. Last full run: **132,994 checks, zero failures**, plus the painting importer's offline test.
+`./tools/test.sh` imports the project, runs every suite with disposable user storage, and fails on any script error even if Godot exits successfully. Last full run: **132,978 checks, zero failures**, plus the painting importer's offline test.
+
+The 2026-10-31 PowerVR safeguard run passed **133,052 checks** across all suites plus the importer test; the subsequently expanded policy suite passed **63 checks** (five additional checks). Android, Linux and iOS resource packs each passed their catalog check and 240 quickstart frames. A native desktop OpenGL smoke also rendered the full High post/glow/water-reflection path without shader errors.
 
 | Suite | Checks | What it covers |
 | --- | ---: | --- |
@@ -28,9 +30,11 @@ Verified with Godot 4.6.3 Standard on Linux: headless suites, Mesa llvmpipe Open
 
 Run with a display or under Xvfb. All passed on llvmpipe:
 
+- `./tools/render_mobile_startup.sh`: 240 frames at a 2424×1080 viewport with High preferences under the simulated PowerVR Android policy, including title quality changes and three visible wet-room rebuilds. Zero failures or framebuffer warnings; peak 491 draw calls. Each equivalent wet-room visit measured 248 nodes, 34.09 MB texture memory and 40.42 MB video memory. This ran on desktop Mesa llvmpipe, not on PowerVR; it validates the fallback paths and allocation bounds, not Pixel stability or frame rate. `tests/render_policy.gd` separately passed 63 device-policy, shader-selection, settings and pixel-budget checks. See [the diagnosis and Pixel follow-up](ANDROID_RENDERING_FIX.md).
+
 - `./tools/render_lighting.sh`: lantern shadows on/off with no glow outside the floor; an L room in both shadow modes where a glow and a paint mark placed at the notch's corner leave the notch at background luminance; 50 % versus 100 % render scale with a HUD mean luminance difference of 0.006 and zero framing offset; a wide (Last Supper) and a tall (Arnolfini) painting keeping their proportions on the wall. The same room on floors 1, 2 and 3 measures a mean luminance of about 0.05, 0.13 and 0.25, and a foe in the cellar renders about seven times brighter than the floor beside it.
 - `./tools/render_ui.sh`: 20 renderer checks across title, the compact desktop and touch HUD (keys, bombs, wards, the held item and Item/Bomb buttons), pause, secret entry, settings, journal and rewards; a real lantern lights the stone HUD while text brightness stays stable.
-- `./tools/render_stress.sh`: the largest room with every relic, Paint Sprayer, two moths, a buff, furniture and fourteen foes. On llvmpipe at 1280×720: about 1,080 draw calls at Low effects detail and 1,740 at High (projectile trails follow the detail level), 24 MB texture memory, room transition 13–15 ms with the floor's foe scripts preloaded. These numbers describe the workload only; software rendering says nothing about phone frame rates.
+- `./tools/render_stress.sh`: the largest room with every relic, Paint Sprayer, two moths, a buff, furniture and fourteen foes. On llvmpipe at 1280×720 with the displaced ground, brick walls, reflective water, glowing shots, foe rims and the full-screen pass: about 960 draw calls at Low effects detail and 1,630 at High (one ground sheet per cell replaces five tile batches; shot ribbons and floor light follow the detail level), 30 MB texture memory at Low and 45 MB at High, room transition 14–16 ms. The same machine measured the version before this look at about 1,050 and 1,680 draw calls; its software-rendered frame times were no faster, but both runs shared the CPU with other work, so those timings are rough. These numbers describe the workload only; software rendering says nothing about phone frame rates.
 
 ## Packaged builds
 
@@ -40,12 +44,15 @@ A debug APK was exported with the official 4.6.3 Android template and Godot’s 
 
 `tools/build_windows.sh`, which the **Windows build** workflow runs after `tools/test.sh`, exports the Windows Desktop preset with the official 4.6.3 `windows_release_x86_64.exe` template and the pack embedded: one 105 MB `Emberkeep.exe`, a 64-bit GUI executable carrying the project icon and 0.1.0.0 version details, with no DLLs or `.pck` beside it. The script then has the Linux editor load the pack embedded in that exe with `--verify-catalog` and play 240 `--quickstart` frames, and fails on any error. Locally both passed using only the release template, as the workflow installs it. The exe has not been launched on Windows itself.
 
+Debug APK build 19 adds the new look (ground, walls, water, shots, post pass). Its packed game loaded the catalog cleanly and played 900 `--quickstart` frames without script errors under desktop Godot; the Windows exe from the same source passed the same checks.
+
 Debug APK build 18 (version code 18, the same local debug key as earlier builds) carries the five-floor climb, forged weapons and the dark store. The game files inside it, run under desktop Godot, loaded the catalog cleanly (8 floor themes, 68 relics) and played 900 `--quickstart` frames without script errors. The Windows exe built by `tools/build_windows.sh` from the same source passed the same checks on its embedded pack.
 
 On a Pixel 10 (PowerVR D-Series DXT-48-1536, Android 17) that APK crashed 14–15 s after every launch, in the menu or in play. Android's own crash record placed it in the audio callback thread with a read just past a large heap block. Godot mixes a forward loop up to and including `loop_end`, and the 12-second menu music set `loop_end` to its frame count, so every wrap read one frame beyond the sample data. Desktop allocators leave slack after such a block; Android's puts a guard page there. Valgrind on desktop shows the same invalid read before the fix and none after it, and the `smoke` suite now checks every looping stream. The fixed build has not yet been confirmed on the phone. No IPA was built here: iOS needs the macOS workflow, which runs `tools/test.sh` before building.
 
 ## Not yet verified
 
+- **The new look on real GPUs.** The ground, water, shot and full-screen shaders were checked in OpenGL captures on llvmpipe only. On phones the ground sheet's per-pixel work, the water mirror's second render and the full-screen pass are the costs to watch; Low effects detail turns all three off (flat ground, no mirror, plain vignette).
 - **Balance of the new run.** Five-floor climbs, the five new themes' foes and bosses, forged weapons and dark-store prices were checked for behaviour, not for feel. A forced sweep cleared three fights and the boss on every theme at depths 1, 3 and 5 (each with a twist) without errors, but no one has yet played whole runs to judge difficulty, the coin economy at 0.4 coins a foe, or whether some forged combinations are too strong or too weak.
 - **Painting reproductions are not bundled.** The image hosts (Wikimedia Commons, NGA, the Met, AIC) were unreachable from this environment, so every record is `pending`. Run `python3 tools/import_paintings.py` on a machine that can reach them, review the downloaded files and `docs/PAINTING_CREDITS.md`, then `--check`. Until then each painting slot shows a covered canvas and the viewer says the reproduction awaits import.
 - **Water Lilies (1906)** still needs per-image verification through the AIC API; Woman with a Parasol holds its place in the collection.

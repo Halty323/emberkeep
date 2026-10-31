@@ -79,6 +79,11 @@ var merge_time = 0.0
 var rng := RandomNumberGenerator.new()
 var halo: MeshInstance3D
 var restless = false
+# A rim of the foe's colour and a white flash when struck, drawn over its
+# body (foe_rim.gdshader); every foe shares one overlay material.
+static var overlay: ShaderMaterial
+var skin: Array = []
+var flash = 0.0
 
 func setup(owner_game: Node3D, type: String, id: int) -> void:
 	game = owner_game
@@ -116,6 +121,25 @@ func setup(owner_game: Node3D, type: String, id: int) -> void:
 	halo = Geo.halo(self, Vector3(0, .022, 0), radius * 3.8, Color(color.r, color.g, color.b, light.foe_glow))
 	timer = 1.0 + float(entity_id % 5) * .23
 	prepare()
+	dress_skin()
+
+## The rim and flash overlay, from Balanced effects detail up.
+func dress_skin() -> void:
+	if Look.quality() == 0: return
+	if overlay == null:
+		overlay = ShaderMaterial.new()
+		overlay.shader = preload("res://shaders/foe_rim.gdshader")
+	for node in visual.find_children("*", "MeshInstance3D", true, false):
+		if node.get_parent() == eyes: continue
+		node.material_overlay = overlay
+		node.set_instance_shader_parameter("rim_tint", color.lightened(.35))
+		skin.append(node)
+
+func show_flash(delta: float) -> void:
+	if flash <= 0: return
+	flash = maxf(0, flash - delta * 9.0)
+	for node in skin:
+		if is_instance_valid(node): node.set_instance_shader_parameter("flash", flash)
 
 ## [health, speed, radius, colour] before floor scaling.
 func stats() -> Array:
@@ -190,6 +214,7 @@ func tempo() -> float:
 func update_sim(delta: float) -> void:
 	if not alive:
 		return
+	show_flash(delta)
 	age += delta
 	slow_time = maxf(0, slow_time - delta)
 	aura_haste = maxf(0, aura_haste - delta)
@@ -403,6 +428,7 @@ func take_hit(damage: float, impulse: Vector3, critical := false, dot := false, 
 	knock_velocity += impulse / (2.5 if boss else 1.0)
 	if not dot:
 		visual.scale = Vector3(1.17, .85, 1.17)
+		flash = 1.0
 		Effects.play("hit_spark", global_position + Vector3.UP * radius, Color("ffe0a8") if critical else color)
 		Audio.play_sound("hit", 1.3 if critical else 1)
 		game.damage_number(global_position + Vector3.UP * 1.1, damage, critical)

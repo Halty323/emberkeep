@@ -4,6 +4,8 @@ The project targets a **landscape, native Android game** using Godot’s GL Comp
 
 The source project has an export configuration, not a prebuilt APK. A debug APK has been exported and inspected (see `docs/TESTING.md`), but an on-device run and performance pass are still required.
 
+Android GLES disables MSAA before drawing. PowerVR/Imagination GLES devices automatically use bounded, lighter rendering while keeping saved graphics preferences. See [the Pixel startup fix and verification steps](ANDROID_RENDERING_FIX.md).
+
 ## Prerequisites
 
 Install these on your development machine:

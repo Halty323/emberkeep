@@ -23,6 +23,16 @@ const LOOKS := {"wax": [Color(.86, .78, .6, .9), .12, 0.0, .45, .025], "ice": [C
 	"glass": [Color(.82, .94, 1.0, .62), .4, 0.0, .1, .032], "water": [Color(.2, .4, .5, .72), .18, 0.0, .05, .022],
 	"ink": [Color(.1, .08, .14, .88), .05, 0.0, .3, .026]}
 const STEAM_LIFE := 3.5
+const WATERY := ["water", "ice"]
+# The order the residue shader knows kinds by.
+const KINDS := ["wax", "ice", "fire", "moss", "glass", "water", "ink"]
+const MAX_RIPPLES := 8
+var ripples: Array = []
+var clock = 0.0
+var wade = 0.0
+var rain = 0.0
+# Rain is cosmetic: its own stream, never the gameplay generator.
+var drizzle := RandomNumberGenerator.new()
 # How much each kind slows whoever wades through it.
 const DRAG := {"moss": .75, "water": .8, "ink": .6}
 const SHOCK_REACH := 400
@@ -50,25 +60,81 @@ func setup(owner_game: Node3D, room_geometry: RoomGeometry) -> void:
 		var image = Image.create(grid_size.x, grid_size.y, false, Image.FORMAT_R8)
 		var texture = ImageTexture.create_from_image(image)
 		var mat = ShaderMaterial.new()
-		mat.shader = preload("res://shaders/residue.gdshader")
+		var plane = PlaneMesh.new()
+		plane.size = Vector2(grid_size) * TILE
+		if kind in WATERY and RenderPolicy.current().refraction:
+			# Water and ice: reflective, refracting, and for water, rolling.
+			mat.shader = preload("res://shaders/water.gdshader")
+			mat.set_shader_parameter("frozen", 1.0 if kind == "ice" else 0.0)
+			mat.set_shader_parameter("detail", Look.detail())
+			if game.get("mirror") and is_instance_valid(game.mirror): mat.set_shader_parameter("reflection", game.mirror.get_texture())
+			if kind == "water" and Look.quality() > 0:
+				plane.subdivide_width = int(plane.size.x * 3)
+				plane.subdivide_depth = int(plane.size.y * 3)
+		else:
+			mat.shader = preload("res://shaders/residue.gdshader")
+			mat.set_shader_parameter("tint", look[0])
+			mat.set_shader_parameter("glow", look[1])
+			mat.set_shader_parameter("flicker", look[2])
+			mat.set_shader_parameter("roughness_value", look[3])
+			mat.set_shader_parameter("kind", KINDS.find(kind))
+			mat.set_shader_parameter("detail", Look.detail())
 		mat.set_shader_parameter("mask", texture)
-		mat.set_shader_parameter("tint", look[0])
-		mat.set_shader_parameter("glow", look[1])
-		mat.set_shader_parameter("flicker", look[2])
-		mat.set_shader_parameter("roughness_value", look[3])
 		mat.set_shader_parameter("grid_origin", Vector2(grid_origin) * TILE)
 		mat.set_shader_parameter("grid_size", Vector2(grid_size))
 		mat.set_shader_parameter("tile", TILE)
-		var plane = PlaneMesh.new()
-		plane.size = Vector2(grid_size) * TILE
 		var view = MeshInstance3D.new()
 		view.mesh = plane
 		view.material_override = mat
+		view.layers = 8
 		view.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		view.position = Vector3((grid_origin.x + grid_size.x / 2.0) * TILE, look[4], (grid_origin.y + grid_size.y / 2.0) * TILE)
 		view.visible = false
 		add_child(view)
-		views[kind] = {"view": view, "image": image, "texture": texture}
+		views[kind] = {"view": view, "image": image, "texture": texture, "count": 0, "material": mat}
+	drizzle.seed = Content.stable_hash("drizzle:%d" % grid_origin.x)
+
+## Rings spreading on water from a point (a shot landing, a foot wading).
+func ripple(at: Vector3, strength := 1.0) -> void:
+	if kind_at(at) != "water": return
+	if ripples.size() >= MAX_RIPPLES: ripples.pop_front()
+	ripples.append(Vector4(at.x, at.z, clock, strength))
+
+## Whether anything here would show the mirror.
+func reflective() -> bool:
+	return RenderPolicy.current().reflections and WATERY.any(func(kind): return views[kind].count > 0)
+
+## Water and ice show the mirror only while it runs.
+func set_mirror(active: bool) -> void:
+	if not RenderPolicy.current().refraction: return
+	for kind in WATERY:
+		views[kind].material.set_shader_parameter("reflect_strength", .65 if active else 0.0)
+
+## Visual only: rain on the cistern's pools, wading rings, the ripple clock.
+func animate(delta: float) -> void:
+	clock += delta
+	if not RenderPolicy.current().refraction: return
+	if views.water.count == 0: return
+	wade -= delta
+	if wade <= 0:
+		wade = .3
+		if is_instance_valid(game.player) and game.player.velocity.length() > .5: ripple(game.player.global_position, .6)
+		for enemy in game.enemies:
+			if is_instance_valid(enemy) and enemy.alive and enemy.targetable and (enemy.entity_id + int(clock * 10)) % 3 == 0:
+				ripple(enemy.global_position, .5)
+	if Run.active and Run.theme().get("hazard", "") == "water":
+		rain -= delta
+		if rain <= 0:
+			rain = .16
+			var wet: Array = tiles.keys()
+			if not wet.is_empty():
+				var tile: Vector2i = wet[drizzle.randi_range(0, wet.size() - 1)]
+				var at = center(tile) + Vector3(drizzle.randf_range(-.4, .4), 0, drizzle.randf_range(-.4, .4))
+				ripple(at, .35)
+	var packed = PackedVector4Array(ripples)
+	while packed.size() < MAX_RIPPLES: packed.append(Vector4.ZERO)
+	views.water.material.set_shader_parameter("ripples", packed)
+	views.water.material.set_shader_parameter("clock", clock)
 
 static func key(at: Vector3) -> Vector2i:
 	return Vector2i(floori(at.x / TILE), floori(at.z / TILE))
@@ -316,3 +382,4 @@ func rebuild(kind: String) -> void:
 		count += 1
 	entry.texture.update(image)
 	entry.view.visible = count > 0
+	entry.count = count

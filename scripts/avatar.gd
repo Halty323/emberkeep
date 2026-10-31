@@ -363,6 +363,7 @@ func hurt(amount: float, source: Vector3) -> void:
 	invulnerability = 1.0
 	game.shake = .22
 	game.hurt_flash = .75
+	ScreenFx.wave(global_position, 2.5, .7)
 	Audio.play_sound("hurt")
 	Effects.play("hit_spark", global_position + Vector3.UP * .6, Color("ef9f7e"), 8)
 	if Run.stats.thorns > 0:

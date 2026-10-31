@@ -52,6 +52,8 @@ var chosen_reward_shop = false
 var chosen_reward_dark = false
 var snapshot_timer = 0.0
 var vignette: ShaderMaterial
+var screen_fx: ScreenFx
+var mirror: WaterMirror
 var actions: GameActions
 var interactions := InteractionRegistry.new()
 var companions: Array = []
@@ -113,7 +115,7 @@ func _ready() -> void:
 	add_child(room_environment)
 	key_light = DirectionalLight3D.new()
 	key_light.light_color = Color("99b4cf")
-	key_light.light_cull_mask = 1
+	key_light.light_cull_mask = Geo.LIT_LAYERS
 	key_light.light_energy = .22
 	key_light.rotation_degrees = Vector3(-53, -35, 0)
 	key_light.shadow_enabled = true
@@ -131,6 +133,9 @@ func _ready() -> void:
 	camera.near = .1
 	camera.far = 100
 	camera.current = true
+	mirror = WaterMirror.new()
+	add_child(mirror)
+	mirror.setup(camera)
 	var fx_layer = CanvasLayer.new()
 	fx_layer.layer = 2
 	add_child(fx_layer)
@@ -141,6 +146,9 @@ func _ready() -> void:
 	vignette.shader = preload("res://shaders/vignette.gdshader")
 	overlay.material = vignette
 	fx_layer.add_child(overlay)
+	screen_fx = ScreenFx.new()
+	add_child(screen_fx)
+	screen_fx.setup(self, overlay, vignette)
 	light_veil = ColorRect.new()
 	light_veil.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	light_veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -534,6 +542,12 @@ func _process(delta: float) -> void:
 	hurt_flash = maxf(0, hurt_flash - delta * 1.6)
 	update_camera(delta)
 	vignette.set_shader_parameter("hurt", hurt_flash)
+	# The water's mirror runs only where there is water or ice to show it.
+	var wet = not in_menu and residue != null and is_instance_valid(residue) and residue.reflective()
+	mirror.follow(wet, get_viewport().get_visible_rect().size)
+	if residue and is_instance_valid(residue):
+		residue.set_mirror(mirror.render_target_update_mode == SubViewport.UPDATE_ALWAYS)
+		if not paused: residue.animate(delta)
 	if marker_visual and is_instance_valid(marker_visual):
 		# Animate the luminous relic alone; its pedestal and light stay static,
 		# allowing the room's shadow maps to remain cached while idle.
@@ -784,6 +798,23 @@ func enter_room(spawn: Vector3, keep_view := false) -> void:
 ## The tower brightens floor by floor; the title keeps its own warm light.
 func apply_floor_light() -> void:
 	FloorLight.apply(FloorLight.profile(0) if in_menu else FloorLight.current(), room_environment.environment, key_light, vignette)
+	screen_fx.set_grade({} if in_menu else Run.theme())
+
+## Where the air shimmers: burning floor, a hot clinker, the Kilnmother.
+func heat_sources(limit: int) -> Array:
+	var sources: Array = []
+	for enemy in enemies:
+		if sources.size() >= limit: break
+		if not is_instance_valid(enemy) or not enemy.alive: continue
+		if enemy.kind == "kilnmother": sources.append({"at": enemy.global_position + Vector3.UP * 1.5, "reach": 3.5, "power": 1.0})
+		elif enemy.kind == "clinker" and enemy.burn_time > 0: sources.append({"at": enemy.global_position + Vector3.UP * .6, "reach": 1.4, "power": .7})
+	if residue:
+		var fires: Array = residue.tiles.keys().filter(func(tile): return residue.tiles[tile].kind == "fire")
+		var stride = maxi(1, fires.size() / maxi(1, limit - sources.size()))
+		for i in range(0, fires.size(), stride):
+			if sources.size() >= limit: break
+			sources.append({"at": ResidueField.center(fires[i]) + Vector3.UP * .4, "reach": 1.6, "power": .8})
+	return sources
 
 ## Each doorway trigger names one specific portal; the transition itself is
 ## scheduled for the end of the physics tick.
@@ -862,6 +893,7 @@ func on_enemy_killed(enemy: DungeonEnemy) -> void:
 	if enemy.boss:
 		hitstop = .11
 		shake = .3
+		ScreenFx.wave(enemy.global_position, 7.0, 1.6)
 		for shot in shots:
 			if is_instance_valid(shot) and not shot.friendly: shot.remove()
 	var data: Dictionary = Run.rooms[Run.current_room]
