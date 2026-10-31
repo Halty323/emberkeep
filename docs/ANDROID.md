@@ -10,6 +10,8 @@ Android GLES disables MSAA before drawing. PowerVR/Imagination GLES devices auto
 
 Open **Actions → Android APK → Run workflow** on GitHub. The job installs the matching Godot 4.6.3 Android template, runs the regression suites, exports a signed development APK, and checks its signature, alignment, manifest and packaged game. Download the **Emberkeep-Android** artifact from the completed run; it contains `Emberkeep-Android.apk`, a SHA-256 checksum and a verification report. Artifacts remain available for seven days.
 
+If the standard APK conflicts with a previously installed diagnostic build, download **Emberkeep-Preview** from the same run and install `Emberkeep-Preview.apk`. Its package ID is `org.emberkeep.preview` and its launcher name is **Emberkeep Preview**. It installs alongside the original app, retains that installation and its saves, and uses its own separate progress. The standard APK still uses `org.emberkeep.game`. Both variants use the same cached signing key and pass the same checks, including package-specific content-provider authorities.
+
 CI builds use version code `100000 + workflow run number` and a cached development signing key. This is a new key: an older diagnostic APK signed with a different key cannot be updated in place. Keep the existing installation and its saves until you have decided how to migrate them. The signing key is excluded from downloadable artifacts. This is a development build, not a Play Store release.
 
 ## Prerequisites

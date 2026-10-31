@@ -87,12 +87,15 @@ def verify(args):
     target_sdk = int(field(badging, r"^targetSdkVersion:'(\d+)'", "target SDK"))
     native_line = field(badging, r"^native-code:(.+)$", "native architectures")
     abis = re.findall(r"'([^']+)'", native_line)
-    require(package == "org.emberkeep.game", "Unexpected package identifier")
+    require(package == args.expected_package, "Unexpected package identifier")
     require(version_code > 19, "APK version code would downgrade known diagnostic builds")
     require(minimum_sdk == 24 and target_sdk == 36, "Unexpected Godot 4.6.3 template SDK levels")
     require("arm64-v8a" in abis, "Missing Android arm64 support")
     orientation = field(manifest, r"android:screenOrientation[^\n]*=\(type 0x10\)0x([0-9a-fA-F]+)", "manifest screen orientation")
     require(int(orientation, 16) in [0, 6, 8, 11], "APK does not require landscape orientation")
+    authorities = re.findall(r'android:authorities[^\n]*?="([^"]+)"', manifest)
+    require(authorities and all(value.startswith(package + ".") for value in authorities),
+            "Content providers must use this APK's own package namespace")
     with zipfile.ZipFile(apk) as archive:
         require(archive.testzip() is None, "Corrupt APK ZIP entry")
         names = archive.namelist()
@@ -119,6 +122,8 @@ def verify(args):
         "file": apk.name, "bytes": apk.stat().st_size, "sha256": digest,
         "commit": os.environ.get("GITHUB_SHA", "local"), "godot": "4.6.3",
         "package_identifier": package, "version": version_name, "version_code": version_code,
+        "installation_channel": "preview" if package == "org.emberkeep.preview" else "standard",
+        "provider_authorities": authorities,
         "minimum_sdk": minimum_sdk, "target_sdk": target_sdk, "architectures": abis,
         "orientation": "landscape", "certificate_sha256": certificate.lower().replace(":", ""),
         "signing": "development debug; earlier APKs may have a different signing certificate",
@@ -137,6 +142,8 @@ def main():
     parser.add_argument("--apksigner", required=True)
     parser.add_argument("--zipalign", required=True)
     parser.add_argument("--godot")
+    parser.add_argument("--expected-package", default="org.emberkeep.game",
+                        choices=["org.emberkeep.game", "org.emberkeep.preview"])
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
     try:

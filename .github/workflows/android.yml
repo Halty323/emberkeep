@@ -132,12 +132,52 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Prepare a separately installable Preview
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('export_presets.cfg')
+          text = path.read_text()
+          assert text.count('package/unique_name="org.emberkeep.game"') == 1
+          assert text.count('package/name="Emberkeep"') == 1
+          text = text.replace('package/unique_name="org.emberkeep.game"', 'package/unique_name="org.emberkeep.preview"')
+          text = text.replace('package/name="Emberkeep"', 'package/name="Emberkeep Preview"')
+          path.write_text(text)
+          PY
+
+      - name: Export signed Preview APK
+        run: bash tools/export_android.sh "$RUNNER_TEMP/emberkeep-android/Emberkeep-Preview.apk"
+
+      - name: Verify the Preview APK
+        shell: bash
+        run: |
+          python3 tools/verify_android_apk.py \
+            "$RUNNER_TEMP/emberkeep-android/Emberkeep-Preview.apk" \
+            --expected-package org.emberkeep.preview \
+            --aapt "$ANDROID_HOME/build-tools/35.0.0/aapt" \
+            --apksigner "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
+            --zipalign "$ANDROID_HOME/build-tools/35.0.0/zipalign" \
+            --godot godot \
+            --output-dir "$RUNNER_TEMP/emberkeep-android/verification-preview"
+
+      - name: Upload separately installable Preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: Emberkeep-Preview
+          path: |
+            ${{ runner.temp }}/emberkeep-android/Emberkeep-Preview.apk
+            ${{ runner.temp }}/emberkeep-android/verification-preview/*.json
+            ${{ runner.temp }}/emberkeep-android/verification-preview/*.sha256
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Upload build diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: Android-build-diagnostics
-          path: ${{ runner.temp }}/emberkeep-android/verification/*.log
+          path: ${{ runner.temp }}/emberkeep-android/verification*/*.log
           if-no-files-found: ignore
           retention-days: 3
 
@@ -147,6 +187,7 @@ jobs:
           {
             echo '### Emberkeep Android APK'
             echo 'Download **Emberkeep-Android**, unzip it, and install **Emberkeep-Android.apk**.'
+            echo 'If an older diagnostic build conflicts, download **Emberkeep-Preview** instead. It installs as a separate app and leaves the existing installation and saves alone; it starts with its own progress.'
             echo "Source commit: $GITHUB_SHA"
             echo 'This development APK uses a cached debug signing key. Earlier diagnostic APKs may have a different certificate and cannot necessarily be updated in place.'
             echo 'The PowerVR safeguard is included. Stability on the Pixel 10 still needs an on-device run.'
