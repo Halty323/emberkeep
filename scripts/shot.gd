@@ -17,7 +17,21 @@ var radius = .14
 var alive = true
 var returning = false
 var start_position = Vector3.ZERO
-var trail: Array[MeshInstance3D] = []
+# The light of a shot: a hot core, a soft glow, a ribbon behind it and a pool
+# on the floor below. Shots of one colour share each material; size,
+# brightness and the ribbon's direction ride on the nodes' transforms. It
+# blooms in when fired and flashes out when it ends; the light outlives the
+# shot by a moment, but only the light.
+const APPEAR := .09
+const VANISH := .16
+static var materials: Dictionary = {}
+var lights: Array[MeshInstance3D] = []
+var core: MeshInstance3D
+var glow: MeshInstance3D
+var streak: MeshInstance3D
+var splat: MeshInstance3D
+var appear = 0.0
+var vanish = -1.0
 # Forged traits: gathering speed, hanging as a mine, swelling, forking at
 # the end of flight, and the residue a shot leaves where it flies.
 var base_speed = 15.0
@@ -40,16 +54,76 @@ func setup(owner_game: Node3D, at: Vector3, travel: Vector3, power: float, veloc
 	base_speed = speed
 	if float(stats.get("linger", 0)) > 0: lifetime *= 2.2
 	radius = (.12 if friendly else .17) * float(stats.get("size", 1))
-	Geo.sphere(self, Vector3.ZERO, radius, color.lightened(.4), 1.6)
-	Geo.halo(self, Vector3(0, -.02, 0), radius * 7, Color(color.r, color.g, color.b, .42))
+	build_light(color)
 	if not friendly:
 		Geo.ring(self, Vector3.ZERO, radius * 1.4, Color("f39b88"), .025)
-	else:
-		# Trails are cosmetic, so they follow the Effects detail budget.
-		for i in [0, 2, 3][Settings.DETAIL_LEVELS.find(Settings.values.effects_detail)]:
-			var mesh = Geo.sphere(self, -direction * (i + 1) * .14, radius * (.65 - i * .15), color, 1.0)
-			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			trail.append(mesh)
+
+static func material(name: String, color: Color) -> ShaderMaterial:
+	var key = name + color.to_html()
+	if not materials.has(key):
+		var mat = ShaderMaterial.new()
+		mat.shader = load("res://shaders/shot_%s.gdshader" % name)
+		mat.set_shader_parameter("tint", color)
+		materials[key] = mat
+	return materials[key]
+
+## The ribbon and the floor pool are cosmetic, so they follow effects detail.
+func build_light(color: Color) -> void:
+	var level = Look.quality()
+	var sphere = SphereMesh.new()
+	sphere.radius = radius
+	sphere.height = radius * 2.0
+	sphere.radial_segments = 10
+	sphere.rings = 6
+	var shade = color.lightened(.15)
+	core = add_light(sphere, "core", shade)
+	glow = add_light(QuadMesh.new(), "glow", shade)
+	if level >= 1:
+		streak = add_light(QuadMesh.new(), "streak", shade)
+		streak.top_level = true
+	if level >= 2:
+		var pool = PlaneMesh.new()
+		pool.size = Vector2.ONE * radius * 14.0
+		splat = add_light(pool, "splat", shade)
+		splat.position = Vector3(0, -position.y + .04, 0)
+	shine()
+
+func add_light(mesh: Mesh, kind: String, color: Color) -> MeshInstance3D:
+	var node = MeshInstance3D.new()
+	node.mesh = mesh
+	node.material_override = material(kind, color)
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	node.layers = 2
+	add_child(node)
+	lights.append(node)
+	return node
+
+## Fade, swell and ribbon length for this frame of the shot's light.
+func shine() -> void:
+	var rise = ease(clampf(appear, 0.0, 1.0), .4)
+	var fall = clampf(vanish, 0.0, 1.0) if vanish >= 0 else 0.0
+	var fade = maxf(.001, rise * (1.0 - fall))
+	core.scale = Vector3.ONE * maxf(.001, lerpf(1.8, 1.0, rise) * (1.0 - fall * .85))
+	# The glow's X scale is its size, its Y scale (relative) its brightness.
+	var size = radius * 7.5 * (lerpf(1.6, 1.0, rise) + fall * 1.4)
+	glow.scale = Vector3(size, size * fade, size)
+	if splat: splat.scale = Vector3.ONE * maxf(.001, fade)
+	if streak:
+		var tail = maxf(.001, clampf(speed * .045, .15, 1.3) * rise * (1.0 - fall))
+		var flat = Vector3(direction.x, 0, direction.z).normalized() if Vector2(direction.x, direction.z).length() > .01 else Vector3.RIGHT
+		streak.global_transform = Transform3D(Basis(direction * tail, Vector3.UP * fade, flat.cross(Vector3.UP) * radius * 2.4), global_position)
+
+func _process(delta: float) -> void:
+	if vanish >= 0:
+		vanish += delta / VANISH
+		if vanish >= 1.0:
+			queue_free()
+			return
+	elif appear < 1.0:
+		appear = minf(1.0, appear + delta / APPEAR)
+	elif streak == null:
+		return
+	shine()
 
 func update_sim(delta: float) -> void:
 	if not alive:
@@ -125,8 +199,6 @@ func update_sim(delta: float) -> void:
 			return
 	else:
 		global_position = target_position
-	for i in trail.size():
-		trail[i].position = -direction * (i + 1) * .17
 	if friendly:
 		for enemy in game.enemies.duplicate():
 			if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable or hit_ids.has(enemy.entity_id):
@@ -169,6 +241,7 @@ func shape_flight(delta: float) -> void:
 ## friendly shot that struck nothing is a miss.
 func finish() -> void:
 	if not alive: return
+	if game.residue: game.residue.ripple(global_position, 1.0)
 	if friendly and float(stats.get("fork", 0)) > 0 and not forked and age >= lifetime:
 		fork()
 	if game.residue and friendly: game.residue.react(global_position, .7, stats)
@@ -238,7 +311,8 @@ func hit_enemy(enemy: DungeonEnemy) -> void:
 	else:
 		remove()
 
+## The shot is gone at once; its light flashes out a moment longer.
 func remove() -> void:
 	if alive:
 		alive = false
-		queue_free()
+		vanish = 0.0

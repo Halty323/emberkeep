@@ -569,12 +569,15 @@ func settings_rows(page: String) -> Array:
 	match page:
 		"display":
 			var pixels = Settings.render_pixels()
+			var scale = "%d%%" % roundi(Settings.values.render_scale * 100)
+			if get_viewport().scaling_3d_scale < float(Settings.values.render_scale) - .005:
+				scale += " (limited)"
 			var vsync = ["vsync", "VSync", on_off("vsync"), true]
 			if not Settings.vsync_supported():
 				vsync = ["vsync", "VSync", "System controlled", false]
 			elif Settings.effective_vsync() != on_off("vsync").to_lower():
 				vsync[2] += " · driver " + Settings.effective_vsync().capitalize()
-			return [["render_scale", "Render resolution", "%d%%  ·  %d×%d" % [roundi(Settings.values.render_scale * 100), pixels.x, pixels.y], true],
+			return [["render_scale", "Render resolution", "%s  ·  %d×%d" % [scale, pixels.x, pixels.y], true],
 				["fps_limit", "FPS limit", "Unlimited" if Settings.values.fps_limit == 0 else str(Settings.values.fps_limit), true],
 				vsync, ["show_fps", "Show FPS", on_off("show_fps"), true]]
 		"graphics":

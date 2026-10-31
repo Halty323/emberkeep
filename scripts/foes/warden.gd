@@ -58,7 +58,7 @@ func build_body(light: Dictionary) -> void:
 	spot.light_energy = 2.2
 	spot.spot_range = CONE_REACH + 1.5
 	spot.spot_angle = CONE_ANGLE
-	spot.light_cull_mask = 1
+	spot.light_cull_mask = Geo.LIT_LAYERS
 	add_child(spot)
 
 func eye_height() -> float:
