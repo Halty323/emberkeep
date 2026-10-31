@@ -6,6 +6,12 @@ The source project has an export configuration, not a prebuilt APK. A debug APK 
 
 Android GLES disables MSAA before drawing. PowerVR/Imagination GLES devices automatically use bounded, lighter rendering while keeping saved graphics preferences. See [the Pixel startup fix and verification steps](ANDROID_RENDERING_FIX.md).
 
+## GitHub APK build
+
+Open **Actions → Android APK → Run workflow** on GitHub. The job installs the matching Godot 4.6.3 Android template, runs the regression suites, exports a signed development APK, and checks its signature, alignment, manifest and packaged game. Download the **Emberkeep-Android** artifact from the completed run; it contains `Emberkeep-Android.apk`, a SHA-256 checksum and a verification report. Artifacts remain available for seven days.
+
+CI builds use version code `100000 + workflow run number` and a cached development signing key. This is a new key: an older diagnostic APK signed with a different key cannot be updated in place. Keep the existing installation and its saves until you have decided how to migrate them. The signing key is excluded from downloadable artifacts. This is a development build, not a Play Store release.
+
 ## Prerequisites
 
 Install these on your development machine:

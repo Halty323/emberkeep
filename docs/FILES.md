@@ -3,6 +3,7 @@
 Godot import caches, Python bytecode and Git internals are generated locally and excluded from the source archive. Painting reproductions appear under `assets/paintings/` once `tools/import_paintings.py` has been run.
 
 ```text
+.github/workflows/android.yml
 .github/workflows/ios-unsigned.yml
 .github/workflows/windows.yml
 .gitignore
@@ -273,6 +274,7 @@ tools/render_stress.sh
 tools/render_ui.sh
 tools/test.sh
 tools/test_import_paintings.py
+tools/verify_android_apk.py
 tools/verify_ios_ipa.py
 tools/verify_pack.sh
 ```

@@ -1,0 +1,153 @@
+name: Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/android.yml'
+      - 'tools/export_android.sh'
+      - 'tools/configure_android.gd'
+      - 'tools/verify_android_apk.py'
+
+permissions:
+  contents: read
+
+# Serialize first-time signing-key creation as well as repeat exports.
+concurrency:
+  group: android-debug-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  export:
+    name: Export and verify Android APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android export tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Restore Godot 4.6.3 and Android template
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/godot-4.6.3-android
+          key: godot-4.6.3-linux-android-template-v1
+
+      - name: Download and verify official Godot files
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          download_dir="$RUNNER_TEMP/emberkeep-godot-android"
+          godot_dir="$HOME/godot-4.6.3-android"
+          mkdir -p "$download_dir" "$godot_dir/templates"
+          base_url='https://github.com/godotengine/godot-builds/releases/download/4.6.3-stable'
+          curl --fail --location --retry 3 --connect-timeout 30 --max-time 900 \
+            "$base_url/Godot_v4.6.3-stable_linux.x86_64.zip" -o "$download_dir/editor.zip"
+          curl --fail --location --retry 3 --connect-timeout 30 --max-time 900 \
+            "$base_url/Godot_v4.6.3-stable_export_templates.tpz" -o "$download_dir/templates.tpz"
+          # SHA-512 values from the official 4.6.3 SHA512-SUMS.txt.
+          (cd "$download_dir" && sha512sum --check <<'CHECKSUMS'
+          a035258da32b77f966a5376f9fa29c30a6adde826a85ba918e1605bd1fc9823eba7d85f1dd5e748956bd2ba72827c0025ffa11bb82aec91128c407a2e723c99c  editor.zip
+          da606b61c10157844f8300172df374472665f95015495cb1a7cd132c40ede404faa96cc1016a4b9662db9909ddea69632c4948b2cd11163438dad4808881fb68  templates.tpz
+          CHECKSUMS
+          )
+          unzip -q -j "$download_dir/editor.zip" 'Godot_v4.6.3-stable_linux.x86_64' -d "$godot_dir"
+          mv "$godot_dir/Godot_v4.6.3-stable_linux.x86_64" "$godot_dir/godot"
+          chmod +x "$godot_dir/godot"
+          unzip -q -j "$download_dir/templates.tpz" 'templates/android_debug.apk' 'templates/version.txt' -d "$godot_dir/templates"
+
+      - name: Install Godot template
+        shell: bash
+        run: |
+          set -euo pipefail
+          template_dir="$HOME/.local/share/godot/export_templates/4.6.3.stable"
+          mkdir -p "$template_dir"
+          cp "$HOME/godot-4.6.3-android/templates/"* "$template_dir/"
+          echo "$HOME/godot-4.6.3-android" >> "$GITHUB_PATH"
+
+      - name: Restore development signing key
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/emberkeep-android/.local-signing
+          key: emberkeep-android-debug-signing-v1
+
+      - name: Run gameplay and rendering-policy checks
+        run: bash tools/test.sh
+
+      - name: Assign APK build version
+        shell: bash
+        env:
+          APK_BUILD_CODE: ${{ github.run_number }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          build = 100000 + int(os.environ['APK_BUILD_CODE'])
+          path = Path('export_presets.cfg')
+          text = path.read_text()
+          assert text.count('version/code=1\n') == 1
+          assert text.count('version/name="0.1.0"') == 1
+          text = text.replace('version/code=1\n', f'version/code={build}\n')
+          text = text.replace('version/name="0.1.0"', f'version/name="0.1.0-android.{build}"')
+          path.write_text(text)
+          PY
+
+      - name: Export signed debug APK
+        run: bash tools/export_android.sh "$RUNNER_TEMP/emberkeep-android/Emberkeep-Android.apk"
+
+      - name: Verify the APK
+        shell: bash
+        run: |
+          python3 tools/verify_android_apk.py \
+            "$RUNNER_TEMP/emberkeep-android/Emberkeep-Android.apk" \
+            --aapt "$ANDROID_HOME/build-tools/35.0.0/aapt" \
+            --apksigner "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
+            --zipalign "$ANDROID_HOME/build-tools/35.0.0/zipalign" \
+            --godot godot \
+            --output-dir "$RUNNER_TEMP/emberkeep-android/verification"
+
+      - name: Upload APK and verification report
+        uses: actions/upload-artifact@v4
+        with:
+          name: Emberkeep-Android
+          path: |
+            ${{ runner.temp }}/emberkeep-android/Emberkeep-Android.apk
+            ${{ runner.temp }}/emberkeep-android/verification/*.json
+            ${{ runner.temp }}/emberkeep-android/verification/*.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload build diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-build-diagnostics
+          path: ${{ runner.temp }}/emberkeep-android/verification/*.log
+          if-no-files-found: ignore
+          retention-days: 3
+
+      - name: Describe the build
+        shell: bash
+        run: |
+          {
+            echo '### Emberkeep Android APK'
+            echo 'Download **Emberkeep-Android**, unzip it, and install **Emberkeep-Android.apk**.'
+            echo "Source commit: $GITHUB_SHA"
+            echo 'This development APK uses a cached debug signing key. Earlier diagnostic APKs may have a different certificate and cannot necessarily be updated in place.'
+            echo 'The PowerVR safeguard is included. Stability on the Pixel 10 still needs an on-device run.'
+          } >> "$GITHUB_STEP_SUMMARY"
