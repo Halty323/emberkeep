@@ -1,0 +1,114 @@
+name: Linux AppImage
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: appimage-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and verify x86-64 AppImage
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install desktop entry validator
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends desktop-file-utils
+
+      - name: Restore Godot and AppImage tools
+        id: tools-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/emberkeep-appimage-tools
+          key: emberkeep-godot-4.6.3-appimagetool-1.9.1-runtime-20251108-v1
+
+      - name: Download and verify packaging tools
+        if: steps.tools-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          download_dir="$RUNNER_TEMP/appimage-downloads"
+          tool_dir="$HOME/emberkeep-appimage-tools"
+          mkdir -p "$download_dir" "$tool_dir/templates"
+          godot_url='https://github.com/godotengine/godot-builds/releases/download/4.6.3-stable'
+          curl --fail --location --retry 3 --connect-timeout 30 --max-time 900 \
+            "$godot_url/Godot_v4.6.3-stable_linux.x86_64.zip" -o "$download_dir/editor.zip"
+          curl --fail --location --retry 3 --connect-timeout 30 --max-time 900 \
+            "$godot_url/Godot_v4.6.3-stable_export_templates.tpz" -o "$download_dir/templates.tpz"
+          (cd "$download_dir" && sha512sum --check <<'CHECKSUMS'
+          a035258da32b77f966a5376f9fa29c30a6adde826a85ba918e1605bd1fc9823eba7d85f1dd5e748956bd2ba72827c0025ffa11bb82aec91128c407a2e723c99c  editor.zip
+          da606b61c10157844f8300172df374472665f95015495cb1a7cd132c40ede404faa96cc1016a4b9662db9909ddea69632c4948b2cd11163438dad4808881fb68  templates.tpz
+          CHECKSUMS
+          )
+          unzip -q -j "$download_dir/editor.zip" 'Godot_v4.6.3-stable_linux.x86_64' -d "$tool_dir"
+          mv "$tool_dir/Godot_v4.6.3-stable_linux.x86_64" "$tool_dir/godot"
+          unzip -q -j "$download_dir/templates.tpz" 'templates/linux_release.x86_64' 'templates/version.txt' -d "$tool_dir/templates"
+          curl --fail --location --retry 3 --connect-timeout 30 --max-time 300 \
+            'https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage' -o "$tool_dir/appimagetool.AppImage"
+          curl --fail --location --retry 3 --connect-timeout 30 --max-time 300 \
+            'https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64' -o "$tool_dir/runtime-x86_64"
+          (cd "$tool_dir" && sha256sum --check <<'CHECKSUMS'
+          ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  appimagetool.AppImage
+          2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d  runtime-x86_64
+          CHECKSUMS
+          )
+          chmod +x "$tool_dir/godot" "$tool_dir/appimagetool.AppImage"
+
+      - name: Configure build paths
+        shell: bash
+        run: |
+          echo "$HOME/emberkeep-appimage-tools" >> "$GITHUB_PATH"
+          echo "APPIMAGETOOL=$HOME/emberkeep-appimage-tools/appimagetool.AppImage" >> "$GITHUB_ENV"
+          echo "APPIMAGE_RUNTIME_FILE=$HOME/emberkeep-appimage-tools/runtime-x86_64" >> "$GITHUB_ENV"
+          echo "GODOT_TEMPLATE_DIR=$HOME/emberkeep-appimage-tools/templates" >> "$GITHUB_ENV"
+
+      - name: Run game regression checks
+        run: bash tools/test.sh
+
+      - name: Export and verify the AppImage
+        run: bash tools/build_appimage.sh "$RUNNER_TEMP/emberkeep-appimage"
+
+      - name: Upload the AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: Emberkeep-Linux-AppImage
+          path: |
+            ${{ runner.temp }}/emberkeep-appimage/Emberkeep-x86_64.AppImage
+            ${{ runner.temp }}/emberkeep-appimage/Emberkeep-x86_64.AppImage.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppImage-build-diagnostics
+          path: ${{ runner.temp }}/emberkeep-appimage/*.log
+          if-no-files-found: ignore
+          retention-days: 3
+
+      - name: Describe installation
+        shell: bash
+        run: |
+          {
+            echo '### Emberkeep for Linux x86-64'
+            echo 'Download **Emberkeep-Linux-AppImage** below and unzip it.'
+            echo 'Run `chmod +x Emberkeep-x86_64.AppImage`, then `./Emberkeep-x86_64.AppImage`.'
+            echo 'Without FUSE, use `./Emberkeep-x86_64.AppImage --appimage-extract-and-run`.'
+            echo 'Needs a Linux desktop and an OpenGL 3.3-capable driver. Saves use the existing Godot user-data location.'
+            echo "Source commit: $GITHUB_SHA"
+          } >> "$GITHUB_STEP_SUMMARY"

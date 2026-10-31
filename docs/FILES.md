@@ -4,6 +4,7 @@ Godot import caches, Python bytecode and Git internals are generated locally and
 
 ```text
 .github/workflows/android.yml
+.github/workflows/appimage.yml
 .github/workflows/ios-unsigned.yml
 .github/workflows/windows.yml
 .gitignore
@@ -35,6 +36,7 @@ docs/ANDROID_RENDERING_FIX.md
 docs/EXPANSION_PLAN.md
 docs/FILES.md
 docs/IOS.md
+docs/LINUX.md
 docs/LORE.md
 docs/ONLINE.md
 docs/PAINTING_COLLECTION_PLAN.md
@@ -267,6 +269,7 @@ tests/tower.gd
 tests/tower.gd.uid
 tests/ui_presentation.gd
 tests/ui_presentation.gd.uid
+tools/build_appimage.sh
 tools/build_ios_unsigned.sh
 tools/build_windows.sh
 tools/configure_android.gd
