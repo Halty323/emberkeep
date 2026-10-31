@@ -5,15 +5,15 @@ set -euo pipefail
 fail() { printf 'Export stopped: %s\n' "$*" >&2; exit 1; }
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 godot_bin="${GODOT_BIN:-godot}"
-command -v "$godot_bin" >/dev/null 2>&1 || fail 'Godot was not found. Set GODOT_BIN to your Godot 4.6.3 executable.'
+command -v "$godot_bin" >/dev/null 2>&1 || fail 'Godot was not found. Set GODOT_BIN to your Godot 4.7.2 executable.'
 version="$("$godot_bin" --version)"
-[[ "$version" == 4.6.3.* ]] || fail "Expected Godot 4.6.3; found $version. Install matching editor and export templates."
+[[ "$version" == 4.7.2.* ]] || fail "Expected Godot 4.7.2; found $version. Install matching editor and export templates."
 
 sdk_dir="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 [[ -n "$sdk_dir" && -d "$sdk_dir" ]] || fail 'Set ANDROID_HOME or ANDROID_SDK_ROOT to an installed Android SDK.'
 sdk_dir="$(cd -- "$sdk_dir" && pwd)"
 [[ -x "$sdk_dir/platform-tools/adb" ]] || fail 'Android SDK Platform-Tools are missing (platform-tools/adb).'
-[[ -f "$sdk_dir/platforms/android-35/android.jar" ]] || fail 'Android SDK Platform 35 is missing.'
+[[ -f "$sdk_dir/platforms/android-36/android.jar" ]] || fail 'Android SDK Platform 36 is missing.'
 shopt -s nullglob
 build_tools=("$sdk_dir"/build-tools/*/zipalign)
 [[ ${#build_tools[@]} -gt 0 ]] || fail 'Android SDK Build-Tools are missing (zipalign).'
@@ -38,7 +38,7 @@ case "$(uname -s)" in
     *) fail 'This helper supports Linux/macOS shells. On Windows, use the Godot Export dialog.' ;;
 esac
 template_dir="${GODOT_TEMPLATE_DIR:-$template_root/$template_version}"
-[[ -f "$template_dir/android_debug.apk" ]] || fail "Matching Android debug template is missing at $template_dir. Install Godot 4.6.3 export templates."
+[[ -f "$template_dir/android_debug.apk" ]] || fail "Matching Android debug template is missing at $template_dir. Install Godot 4.7.2 export templates."
 if [[ -n "${GODOT_TEMPLATE_DIR:-}" && "$template_dir" != "$template_root/$template_version" ]]; then
     fail 'For CLI export, install templates in the Godot template directory shown in docs/ANDROID.md, or configure Custom Template / Debug in the Android preset.'
 fi

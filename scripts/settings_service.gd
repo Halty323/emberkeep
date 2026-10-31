@@ -11,6 +11,7 @@ const FPS_LIMITS := [30, 60, 90, 120, 0]
 const DETAIL_LEVELS := ["low", "balanced", "high"]
 const DEFAULTS := {"render_scale": 1.0, "fps_limit": 60, "vsync": true, "show_fps": false,
 	"effects_detail": "balanced", "small_details": "balanced",
+	"fov": 78, "mouse_sensitivity": .0025, "touch_sensitivity": .004, "invert_y": false, "head_bob": false,
 	"sound": true, "music": true, "shake": true, "touch": false, "shadows": true}
 # Preferences previously stored in profile.json, migrated once.
 const LEGACY_KEYS := {"sound": "sound", "music": "music", "shake": "shake", "touch": "touch", "quality": "shadows"}
@@ -53,6 +54,10 @@ func validate(key: String, value) -> Variant:
 	if value == null or not DEFAULTS.has(key):
 		return null
 	match key:
+		"fov":
+			return float(value) if (value is int or value is float) and value >= 60 and value <= 100 else null
+		"mouse_sensitivity", "touch_sensitivity":
+			return float(value) if (value is int or value is float) and value >= .0005 and value <= .012 else null
 		"render_scale":
 			if not (value is float or value is int): return null
 			for option in RENDER_SCALES:
@@ -84,6 +89,9 @@ func set_value(key: String, value) -> bool:
 
 func options(key: String) -> Array:
 	match key:
+		"fov": return [65, 72, 78, 85, 90, 100]
+		"mouse_sensitivity": return [.001, .0018, .0025, .0035, .005]
+		"touch_sensitivity": return [.002, .003, .004, .006, .008]
 		"render_scale": return RENDER_SCALES
 		"fps_limit": return FPS_LIMITS
 		"effects_detail", "small_details": return DETAIL_LEVELS

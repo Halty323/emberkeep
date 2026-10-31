@@ -33,7 +33,7 @@ func prepare() -> void:
 func behave(delta: float, distance: float, direction: Vector3) -> Vector3:
 	touch_cooldown = maxf(0, touch_cooldown - delta)
 	visual.position.y = .1 + sin(age * 2.0) * .08
-	if targetable and distance < radius + .5 and touch_cooldown <= 0:
+	if ground_wave_reaches(1.3) and targetable and distance < radius + .5 and touch_cooldown <= 0:
 		touch_cooldown = 1.2
 		game.player.hurt(1.0, global_position)
 		game.kindle_heat = 0.0

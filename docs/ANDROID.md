@@ -1,6 +1,6 @@
 # Android export
 
-The project targets a **landscape, native Android game** using Godot’s GL Compatibility renderer. The preset exports an APK for arm64 devices and x86_64 emulators, with package ID `org.emberkeep.game`, through Godot’s built-in templates; Gradle and custom Android source builds are disabled. The APK therefore uses the template’s own SDK levels: with the 4.6.3 templates it installs on Android 7.0+ (API 24) and targets API 36. Godot refuses to export a template build whose preset overrides Min SDK or Target SDK, so those fields stay empty; choosing other levels needs a Gradle build.
+The project targets a **landscape, native Android game** using Godot’s GL Compatibility renderer. The preset exports an APK for arm64 devices and x86_64 emulators, with package ID `org.emberkeep.game`, through Godot’s built-in templates; Gradle and custom Android source builds are disabled. The APK therefore uses the template’s own SDK levels: with the 4.7.2 templates it installs on Android 7.0+ (API 24) and targets API 36. Godot refuses to export a template build whose preset overrides Min SDK or Target SDK, so those fields stay empty; choosing other levels needs a Gradle build.
 
 The source project has an export configuration, not a prebuilt APK. A debug APK has been exported and inspected (see `docs/TESTING.md`), but an on-device run and performance pass are still required.
 
@@ -8,26 +8,26 @@ Android GLES disables MSAA before drawing. PowerVR/Imagination GLES devices auto
 
 ## GitHub APK build
 
-Open **Actions → Android APK → Run workflow** on GitHub. The job installs the matching Godot 4.6.3 Android template, runs the regression suites, exports a signed development APK, and checks its signature, alignment, manifest and packaged game. Download the **Emberkeep-Android** artifact from the completed run; it contains `Emberkeep-Android.apk`, a SHA-256 checksum and a verification report. Artifacts remain available for seven days.
+Open **Actions → Android APK → Run workflow** on GitHub. The job installs the matching Godot 4.7.2 Android template, runs the regression suites, exports a signed development APK, and checks its signature, alignment, manifest and packaged game. Download the **Emberkeep-Android** artifact from the completed run; it contains `Emberkeep-Android.apk`, a SHA-256 checksum and a verification report. Artifacts remain available for seven days.
 
 If the standard APK conflicts with a previously installed diagnostic build, download **Emberkeep-Preview** from the same run and install `Emberkeep-Preview.apk`. Its package ID is `org.emberkeep.preview` and its launcher name is **Emberkeep Preview**. It installs alongside the original app, retains that installation and its saves, and uses its own separate progress. The standard APK still uses `org.emberkeep.game`. Both variants use the same cached signing key and pass the same checks, including package-specific content-provider authorities.
 
-CI builds use version code `100000 + workflow run number` and a cached development signing key. This is a new key: an older diagnostic APK signed with a different key cannot be updated in place. Keep the existing installation and its saves until you have decided how to migrate them. The signing key is excluded from downloadable artifacts. This is a development build, not a Play Store release.
+CI builds use version code `100000 + workflow run number` and a cached development signing key. The first-person update preserves the existing Preview key and package ID, so it can update that Preview installation in place. An older diagnostic APK signed with a different key cannot be updated in place. Keep the existing installation and its saves until you have decided how to migrate them. The signing key is excluded from downloadable artifacts. This is a development build, not a Play Store release.
 
 ## Prerequisites
 
 Install these on your development machine:
 
-1. Godot **4.6.3 Standard** and its **matching 4.6.3 export templates**. Use **Editor → Manage Export Templates** in Godot. The Android template should appear as `android_debug.apk` in the version’s template directory.
+1. Godot **4.7.2 Standard** and its **matching 4.7.2 export templates**. Use **Editor → Manage Export Templates** in Godot. The Android template should appear as `android_debug.apk` in the version’s template directory.
 2. A JDK; **OpenJDK 17** is the recommended baseline. Set `JAVA_HOME` to the JDK directory.
-3. Android SDK **Platform-Tools**, **Build-Tools 35.0.0** and **SDK Platform 35**. Android Studio’s SDK Manager can install them. Accept the SDK licenses through Android Studio or `sdkmanager --licenses`.
+3. Android SDK **Platform-Tools**, **Build-Tools 36.1.0** and **SDK Platform 36**. Android Studio’s SDK Manager can install them. Accept the SDK licenses through Android Studio or `sdkmanager --licenses`.
 4. Set `ANDROID_HOME` (or `ANDROID_SDK_ROOT`) to the SDK directory.
 
 Typical template directories are:
 
-- Linux: `${XDG_DATA_HOME:-$HOME/.local/share}/godot/export_templates/4.6.3.stable/`
-- macOS: `~/Library/Application Support/Godot/export_templates/4.6.3.stable/`
-- Windows: `%APPDATA%\Godot\export_templates\4.6.3.stable\`
+- Linux: `${XDG_DATA_HOME:-$HOME/.local/share}/godot/export_templates/4.7.2.stable/`
+- macOS: `~/Library/Application Support/Godot/export_templates/4.7.2.stable/`
+- Windows: `%APPDATA%\Godot\export_templates\4.7.2.stable\`
 
 The exact folder must match the editor version/channel.
 

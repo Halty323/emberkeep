@@ -73,7 +73,7 @@ func place_bomb() -> Dictionary:
 	if Run.pending_bombs.filter(func(bomb): return bomb.room == Run.current_room).size() >= MAX_PENDING_BOMBS:
 		return result(false, "Too many lit bombs")
 	var at: Vector3 = game.player.position
-	var record = {"id": Run.next_instance("b"), "room": Run.current_room, "position": [snappedf(at.x, .001), snappedf(at.z, .001)], "fuse": BOMB_FUSE}
+	var record = {"id": Run.next_instance("b"), "room": Run.current_room, "position": [snappedf(at.x, .001), snappedf(at.z, .001)], "fuse": BOMB_FUSE, "height": game.room.floor_height(at) if game.first_person else 0.0}
 	Run.bombs -= 1
 	Run.pending_bombs.append(record)
 	# The debit and the lit fuse are saved together: a reload neither refunds
@@ -88,16 +88,16 @@ func place_bomb() -> Dictionary:
 ## Walls, props and drops change in saved state; effects play only on screen.
 func detonate(bomb: Dictionary) -> void:
 	Run.pending_bombs.erase(bomb)
-	var at = Vector3(float(bomb.position[0]), 0, float(bomb.position[1]))
+	var at = Vector3(float(bomb.position[0]), float(bomb.get("height", 0)), float(bomb.position[1]))
 	var live = bomb.room == Run.current_room and is_instance_valid(game.room)
 	if live:
 		game.bomb_exploded(bomb, at, BOMB_RADIUS)
 		game.make_noise(at, 3.5)
 		if game.residue: game.residue.ignite(at, BOMB_RADIUS * .8)
 		for enemy in game.enemies.duplicate():
-			if is_instance_valid(enemy) and enemy.alive and enemy.targetable and Vector2(enemy.position.x, enemy.position.z).distance_to(Vector2(at.x, at.z)) < BOMB_RADIUS + enemy.radius:
+			if is_instance_valid(enemy) and enemy.alive and enemy.targetable and (enemy.position.distance_to(at) if game.first_person else Vector2(enemy.position.x, enemy.position.z).distance_to(Vector2(at.x, at.z))) < BOMB_RADIUS + enemy.radius:
 				enemy.take_hit(BOMB_DAMAGE, (enemy.position - at).normalized() * 3.0, false, false, "blast")
-		if is_instance_valid(game.player) and Vector2(game.player.position.x, game.player.position.z).distance_to(Vector2(at.x, at.z)) < BOMB_RADIUS:
+		if is_instance_valid(game.player) and (game.player.position.distance_to(at) if game.first_person else Vector2(game.player.position.x, game.player.position.z).distance_to(Vector2(at.x, at.z))) < BOMB_RADIUS:
 			game.player.hurt(BOMB_SELF_DAMAGE, at)
 	game.breach(bomb.room, at, BOMB_RADIUS, live)
 	if Run.active:
@@ -112,6 +112,7 @@ func interact(target_id: String, required_kind := "") -> Dictionary:
 		return result(false, "nothing there")
 	if InteractionRegistry.flat_distance(game.player.position, target.position) > target.radius + INTERACT_SLACK:
 		return result(false, "too far away")
+	if game.first_person and not game.interaction_eligible(target): return result(false, "not in sight")
 	match target.kind:
 		"treasure", "shop", "rest", "dark", "exit": return game.use_pedestal(target)
 		"chest": return open_chest(target_id.trim_prefix("chest:"))
@@ -163,7 +164,7 @@ func take_item(instance_id: String) -> Dictionary:
 	var previous: Dictionary = Run.active_item
 	if not previous.is_empty():
 		data.items.append({"id": previous.instance, "def": previous.def,
-			"position": [snappedf(game.player.position.x, .001), snappedf(game.player.position.z, .001)]})
+			"position": [snappedf(game.player.position.x, .001), snappedf(game.player.position.z, .001)], "height": game.room.floor_height(game.player.position) if game.first_person else 0.0})
 	Run.active_item = {"instance": record.id, "def": record.def}
 	if not Run.cooldowns.has(record.def):
 		Run.cooldowns[record.def] = 0.0

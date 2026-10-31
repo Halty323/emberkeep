@@ -1,7 +1,8 @@
 extends Node
 signal changed
 signal item_gained(item: Dictionary)
-const SAVE_VERSION := 2
+const SAVE_VERSION := 3
+var view_angles: Array = [0.0, 0.0]
 const ALL_RELICS_CODE := "ALLRELICS"
 const PAINT_SPRAYER_CODE := "PAINTSPRAYER"
 const SECRET_CODES := [ALL_RELICS_CODE, PAINT_SPRAYER_CODE]
@@ -63,7 +64,7 @@ var daily = false
 # Device preferences live in the Settings service, never in the profile.
 const PROFILE_VERSION := 2
 var profile = {"version": PROFILE_VERSION, "runs": 0, "wins": 0, "kills": 0, "best_floor": 0, "discovered": [],
-	"paintings": [], "unlocks": [], "floors": []}
+	"paintings": [], "unlocks": [], "floors": [], "fps_tutorial_seen": false}
 
 func _ready() -> void:
 	if FileAccess.file_exists(PROFILE_PATH):
@@ -75,6 +76,7 @@ func _ready() -> void:
 	stats = Content.base_stats()
 
 func start_run(chosen_weapon: String, seed_input := 0, is_daily := false) -> void:
+	view_angles = [0.0, 0.0]
 	seed_value = seed_input if seed_input != 0 else int(Time.get_unix_time_from_system()) % 99999999
 	rng.seed = seed_value
 	floor_number = 1
@@ -489,11 +491,11 @@ func save_profile() -> void:
 func snapshot() -> Dictionary:
 	return {"version": SAVE_VERSION, "generator": generator_version, "content_revision": Content.revision,
 		"seed": seed_value, "floor": floor_number, "floor_plan": floor_plan, "floor_twists": floor_twists, "rooms": rooms, "portals": portals,
-		"current_room": current_room, "entry": entry, "inventory": inventory, "weapon": weapon_id, "hp": hp,
+		"current_room": current_room, "entry": entry, "view_angles": view_angles, "inventory": inventory, "weapon": weapon_id, "hp": hp,
 		"coins": coins, "keys": keys, "bombs": bombs, "wards": wards, "active": active_item, "cooldowns": cooldowns,
 		"modifiers": modifiers, "pending_bombs": pending_bombs, "instance_counter": instance_counter,
 		"events": processed_events, "pigment": pigment, "blood_debt": blood_debt, "painting_slots": painting_slots, "kills": kills, "cleared": cleared, "elapsed": elapsed, "daily": daily,
-		"rng_state": str(rng.state)}
+		"rng_state": str(rng.state), "camera_mode": "first_person" if OS.get_environment("EMBERKEEP_LEGACY_TEST") != "1" else "isometric"}
 
 ## Drop records name a pickup definition. Version 1 records used a bare kind;
 ## those are resolved explicitly, and an unknown kind is dropped with a
@@ -542,6 +544,12 @@ func load_run() -> bool:
 		return false
 	if int(d.get("version", -1)) == 1 and d.get("rooms") is Dictionary and d.has("current_room"):
 		d = migrate_v1(d)
+	if int(d.get("version", -1)) == 2:
+		if not d.get("rooms") is Dictionary: return false
+		for data in d.rooms.values():
+			if not data is Dictionary: return false
+			data["fps_flat"] = true
+		d.version = SAVE_VERSION
 	if int(d.get("version", -1)) != SAVE_VERSION:
 		return false
 	for key in ["seed", "floor", "rooms", "portals", "current_room", "entry", "inventory", "weapon", "hp", "coins", "kills", "cleared", "elapsed"]:
@@ -573,6 +581,10 @@ func load_run() -> bool:
 	portals = d.portals
 	current_room = d.current_room
 	entry = d.entry
+	view_angles = [0.0, 0.0]
+	var saved_angles = d.get("view_angles", [])
+	if saved_angles is Array and saved_angles.size() == 2 and saved_angles.all(func(value): return (value is int or value is float) and is_finite(float(value))):
+		view_angles = [wrapf(float(saved_angles[0]), -PI, PI), clampf(float(saved_angles[1]), deg_to_rad(-85), deg_to_rad(85))]
 	generator_version = int(d.get("generator", FloorGenerator.VERSION))
 	inventory = d.inventory
 	weapon_id = d.weapon

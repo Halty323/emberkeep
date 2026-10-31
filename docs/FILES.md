@@ -76,6 +76,12 @@ scripts/effects/effects_pool.gd
 scripts/effects/effects_pool.gd.uid
 scripts/enemy.gd
 scripts/enemy.gd.uid
+scripts/first_person/architecture.gd
+scripts/first_person/architecture.gd.uid
+scripts/first_person/controller.gd
+scripts/first_person/controller.gd.uid
+scripts/first_person/room_terrain.gd
+scripts/first_person/room_terrain.gd.uid
 scripts/foes/archivist.gd
 scripts/foes/archivist.gd.uid
 scripts/foes/bailer.gd
@@ -210,6 +216,8 @@ shaders/light_shaft.gdshader
 shaders/light_shaft.gdshader.uid
 shaders/mist.gdshader
 shaders/mist.gdshader.uid
+shaders/mist_eye.gdshader
+shaders/mist_eye.gdshader.uid
 shaders/post.gdshader
 shaders/post.gdshader.uid
 shaders/residue.gdshader
@@ -240,6 +248,8 @@ tests/dungeon.gd
 tests/dungeon.gd.uid
 tests/effects.gd
 tests/effects.gd.uid
+tests/first_person.gd
+tests/first_person.gd.uid
 tests/furniture.gd
 tests/furniture.gd.uid
 tests/items.gd
@@ -248,6 +258,8 @@ tests/lighting.gd
 tests/lighting.gd.uid
 tests/presentation.gd
 tests/presentation.gd.uid
+tests/render_first_person.gd
+tests/render_first_person.gd.uid
 tests/render_lighting.gd
 tests/render_lighting.gd.uid
 tests/render_mobile_startup.gd

@@ -7,9 +7,9 @@ set -euo pipefail
 fail() { printf 'Export stopped: %s\n' "$*" >&2; exit 1; }
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 godot_bin="${GODOT_BIN:-godot}"
-command -v "$godot_bin" >/dev/null 2>&1 || fail 'Godot was not found. Set GODOT_BIN to your Godot 4.6.3 executable.'
+command -v "$godot_bin" >/dev/null 2>&1 || fail 'Godot was not found. Set GODOT_BIN to your Godot 4.7.2 executable.'
 version="$("$godot_bin" --version)"
-[[ "$version" == 4.6.3.* ]] || fail "Expected Godot 4.6.3; found $version. Install matching editor and export templates."
+[[ "$version" == 4.7.2.* ]] || fail "Expected Godot 4.7.2; found $version. Install matching editor and export templates."
 errors='SCRIPT ERROR|^ERROR:|Parse Error|Compile Error'
 
 output_dir="${1:-$project_dir/../builds/windows}"

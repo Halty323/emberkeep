@@ -9,7 +9,7 @@ The **iOS unsigned IPA** GitHub Actions workflow uses a standard `macos-15` runn
 3. Open the completed run and download **Emberkeep-iOS-unsigned** under Artifacts.
 4. Extract **Emberkeep-unsigned.ipa**. The artifact also includes a SHA-256 checksum and build metadata.
 
-Changes to the workflow, build scripts or export presets trigger a build automatically. Ordinary gameplay changes can be built manually. The workflow downloads checksum-pinned Godot 4.6.3 and matching official iOS templates, runs the existing regression suites, exports an Xcode project, compiles with signing disabled, and verifies the IPA structure, arm64 executable permissions, landscape orientation and resource pack.
+Changes to the workflow, build scripts or export presets trigger a build automatically. Ordinary gameplay changes can be built manually. The workflow downloads checksum-pinned Godot 4.7.2 and matching official iOS templates, runs the existing regression suites, exports an Xcode project, compiles with signing disabled, and verifies the IPA structure, arm64 executable permissions, landscape orientation and resource pack.
 
 No Apple ID, signing certificate, provisioning profile or paid Developer membership is required by the build. The placeholder Team ID in the preset satisfies Godot's project-export configuration check; Xcode signing and team selection are explicitly disabled. This preset does not produce an App Store submission.
 
@@ -25,7 +25,7 @@ To put the downloaded IPA in Documents, use your browser's **Save as** destinati
 
 ## Build on a Mac directly
 
-Install Godot 4.6.3 with matching iOS export templates and Xcode, then run:
+Install Godot 4.7.2 with matching iOS export templates and Xcode, then run:
 
 ```sh
 bash tools/build_ios_unsigned.sh

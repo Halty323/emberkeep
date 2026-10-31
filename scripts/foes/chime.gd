@@ -36,7 +36,7 @@ func behave(delta: float, distance: float, direction: Vector3) -> Vector3:
 func ring() -> void:
 	var node = Node3D.new()
 	game.scene_root.add_child(node)
-	node.position = Vector3(global_position.x, .1, global_position.z)
+	node.position = Vector3(global_position.x, global_position.y + .1 if game.first_person else .1, global_position.z)
 	var open := {}
 	for g in GAPS:
 		var start = rng.randi_range(0, SEGMENTS - 1)
@@ -62,7 +62,7 @@ func update_ring(ring_state: Dictionary, delta: float) -> bool:
 		piece.scale = Vector3(1, 1, ring_state.radius * TAU / SEGMENTS / .5)
 	var to: Vector3 = game.player.global_position - ring_state.node.position
 	to.y = 0
-	if not ring_state.hit and absf(to.length() - ring_state.radius) < .3:
+	if (not game.first_person or absf(game.player.position.y - ring_state.node.position.y) < .4) and not ring_state.hit and absf(to.length() - ring_state.radius) < .3:
 		var index = posmod(roundi(atan2(to.z, to.x) / TAU * SEGMENTS), SEGMENTS)
 		if not ring_state.open.has(index):
 			ring_state.hit = true

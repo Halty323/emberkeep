@@ -89,7 +89,7 @@ def verify(args):
     abis = re.findall(r"'([^']+)'", native_line)
     require(package == args.expected_package, "Unexpected package identifier")
     require(version_code > 19, "APK version code would downgrade known diagnostic builds")
-    require(minimum_sdk == 24 and target_sdk == 36, "Unexpected Godot 4.6.3 template SDK levels")
+    require(minimum_sdk == 24 and target_sdk == 36, "Unexpected Godot 4.7.2 template SDK levels")
     require("arm64-v8a" in abis, "Missing Android arm64 support")
     orientation = field(manifest, r"android:screenOrientation[^\n]*=\(type 0x10\)0x([0-9a-fA-F]+)", "manifest screen orientation")
     require(int(orientation, 16) in [0, 6, 8, 11], "APK does not require landscape orientation")
@@ -120,7 +120,7 @@ def verify(args):
         digest = hashlib.file_digest(source, "sha256").hexdigest()
     details = {
         "file": apk.name, "bytes": apk.stat().st_size, "sha256": digest,
-        "commit": os.environ.get("GITHUB_SHA", "local"), "godot": "4.6.3",
+        "commit": os.environ.get("GITHUB_SHA", "local"), "godot": "4.7.2",
         "package_identifier": package, "version": version_name, "version_code": version_code,
         "installation_channel": "preview" if package == "org.emberkeep.preview" else "standard",
         "provider_authorities": authorities,

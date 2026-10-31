@@ -80,7 +80,7 @@ func sweep(angle: float, length: float) -> void:
 	var b: Vector3 = global_position + along * (length + .6)
 	var player_at: Vector3 = game.player.global_position
 	player_at.y = global_position.y
-	if touch_cooldown <= 0 and Geometry3D.get_closest_point_to_segment(player_at, a, b).distance_to(player_at) < HAND_REACH:
+	if ground_wave_reaches(.4) and touch_cooldown <= 0 and Geometry3D.get_closest_point_to_segment(player_at, a, b).distance_to(player_at) < HAND_REACH:
 		touch_cooldown = .8
 		game.player.hurt(1.0, global_position)
 
@@ -98,7 +98,7 @@ func spread_strike(ring_state: Dictionary, delta: float) -> bool:
 	ring_state.node.scale = Vector3(ring_state.radius, 1, ring_state.radius)
 	var to: Vector3 = game.player.global_position - global_position
 	to.y = 0
-	if not ring_state.hit and absf(to.length() - ring_state.radius) < .35:
+	if ground_wave_reaches() and not ring_state.hit and absf(to.length() - ring_state.radius) < .35:
 		ring_state.hit = true
 		game.player.hurt(1.0, global_position)
 	if ring_state.radius > STRIKE_REACH:

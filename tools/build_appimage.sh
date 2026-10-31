@@ -6,9 +6,9 @@ project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 godot_bin="${GODOT_BIN:-godot}"
 tool="${APPIMAGETOOL:-appimagetool}"
 runtime="${APPIMAGE_RUNTIME_FILE:-}"
-template_dir="${GODOT_TEMPLATE_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/godot/export_templates/4.6.3.stable}"
+template_dir="${GODOT_TEMPLATE_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/godot/export_templates/4.7.2.stable}"
 command -v "$godot_bin" >/dev/null || fail 'Godot was not found.'
-[[ "$("$godot_bin" --version)" == 4.6.3.* ]] || fail 'Godot 4.6.3 and matching Linux templates are required.'
+[[ "$("$godot_bin" --version)" == 4.7.2.* ]] || fail 'Godot 4.7.2 and matching Linux templates are required.'
 command -v "$tool" >/dev/null || fail 'Set APPIMAGETOOL to appimagetool 1.9.1.'
 command -v desktop-file-validate >/dev/null || fail 'Install desktop-file-utils.'
 [[ -f "$runtime" ]] || fail 'Set APPIMAGE_RUNTIME_FILE to the x86-64 type-2 runtime.'
@@ -24,9 +24,9 @@ mkdir -p "$appdir/usr/bin" "$appdir/usr/share/applications" \
     "$work/data" "$work/config" "$work/cache"
 export XDG_DATA_HOME="$work/data" XDG_CONFIG_HOME="$work/config" XDG_CACHE_HOME="$work/cache"
 # Keep installed templates visible after isolating user data.
-[[ -f "$template_dir/linux_release.x86_64" ]] || fail 'Set GODOT_TEMPLATE_DIR to the installed 4.6.3.stable templates directory.'
-mkdir -p "$XDG_DATA_HOME/godot/export_templates/4.6.3.stable"
-cp "$template_dir/linux_release.x86_64" "$XDG_DATA_HOME/godot/export_templates/4.6.3.stable/"
+[[ -f "$template_dir/linux_release.x86_64" ]] || fail 'Set GODOT_TEMPLATE_DIR to the installed 4.7.2.stable templates directory.'
+mkdir -p "$XDG_DATA_HOME/godot/export_templates/4.7.2.stable"
+cp "$template_dir/linux_release.x86_64" "$XDG_DATA_HOME/godot/export_templates/4.7.2.stable/"
 errors='SCRIPT ERROR|^ERROR:|Parse Error|Compile Error'
 "$godot_bin" --headless --editor --path "$project_dir" --import --quit > "$output_dir/import.log" 2>&1
 if grep -Eq "$errors" "$output_dir/import.log"; then cat "$output_dir/import.log"; exit 1; fi

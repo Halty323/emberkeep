@@ -37,7 +37,7 @@ func damage_scale(cause: String) -> float:
 	return HOT if hot() else SHELL
 
 func after_move(_delta: float, distance: float, _direction: Vector3) -> void:
-	if hot() and distance < radius + .5: game.player.hurt(1.0, global_position)
+	if ground_wave_reaches(1.1) and hot() and distance < radius + .5: game.player.hurt(1.0, global_position)
 
 func on_death() -> void:
 	if not hot(): return

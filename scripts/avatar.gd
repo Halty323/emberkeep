@@ -47,10 +47,13 @@ func setup(owner_game: Node3D) -> void:
 	collision_layer = 2
 	collision_mask = 5 | PropVisuals.FURNITURE_LAYER
 	var collider = CollisionShape3D.new()
-	var shape = SphereShape3D.new()
-	shape.radius = .36
+	var shape: Shape3D = CapsuleShape3D.new() if game.first_person else SphereShape3D.new()
+	shape.radius = .32 if game.first_person else .36
+	if game.first_person: shape.height = 1.7
 	collider.shape = shape
-	collider.position.y = .48
+	collider.position.y = .85 if game.first_person else .48
+	floor_snap_length = .3
+	floor_max_angle = deg_to_rad(48)
 	add_child(collider)
 	visual = Node3D.new()
 	add_child(visual)
@@ -181,62 +184,65 @@ func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting:
 	recoil = move_toward(recoil, 0.0, delta * 3.0)
 	if aim_input.length_squared() > .01:
 		aim_direction = aim_input.normalized()
-	var direction: Vector3 = game.screen_direction(move_input)
-	if direction.length_squared() > .01:
-		last_move = direction.normalized()
-	graze_grace = maxf(0, graze_grace - delta)
-	if dash_time > 0 or graze_grace > 0:
-		var chest = global_position + Vector3(0, .65, 0)
-		for shot in game.shots.duplicate():
-			if is_instance_valid(shot) and shot.alive and not shot.friendly and shot.global_position.distance_to(chest) < GRAZE_RADIUS:
-				game.catch_spark(shot)
-	# A shove moves the player this tick without becoming their own speed.
-	var shove = Vector3.ZERO
-	if dash_time > 0:
-		dash_time -= delta
-		velocity = dash_direction * DASH_SPEED
-		leaving_dash = dash_time <= 0
-		if leaving_dash: graze_grace = GRAZE_GRACE
-		# Dashing slips past foes but never through walls or furniture.
-		collision_mask = 1 | PropVisuals.FURNITURE_LAYER
-		for enemy in game.enemies.duplicate():
-			if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable: continue
-			var reach = global_position.distance_to(enemy.global_position)
-			# Dashing through a ward pops it; through a prism shatters it.
-			if reach < enemy.radius + .7: enemy.dashed_through()
-			if Run.stats.dash_damage > 0 and reach < 1.1 and enemy.alive:
-				enemy.take_hit(float(Run.stats.dash_damage) * delta * 8, Vector3.ZERO, false, false, "dash")
+	if game.first_person:
+		game.fps.move_player(self, delta, move_input)
 	else:
-		collision_mask = 5 | PropVisuals.FURNITURE_LAYER
-		# Moss and spores drag at the feet; ice keeps whatever speed you had.
-		var footing: ResidueField = game.residue
-		var top_speed = RUN_SPEED * float(Run.stats.speed) * (footing.slows(global_position) if footing else 1.0)
-		var slippery = footing != null and footing.kind_at(global_position) == "ice"
-		if leaving_dash:
-			velocity = velocity.limit_length(top_speed)
-			leaving_dash = false
-		var target = direction * top_speed
-		velocity = velocity.move_toward(target, delta * (4.5 if slippery else 47.0))
-		shove = push
-		push = push.move_toward(Vector3.ZERO, delta * 14.0)
-	var geometry: RoomGeometry = game.room.geometry
-	if geometry.contains(Vector2(position.x, position.z), ROOM_MARGIN):
-		last_valid = position
-	velocity += shove
-	move_and_slide()
-	velocity -= shove
-	var kept = geometry.recover(Vector2(last_valid.x, last_valid.z), Vector2(position.x, position.z), ROOM_MARGIN)
-	position = Vector3(kept.x, 0, kept.y)
-	var stride = floori(walk_time / PI)
-	walk_time += delta * velocity.length() * 2.7
-	if floori(walk_time / PI) != stride and dash_time <= 0:
-		Effects.play("footstep", global_position + Vector3(0, .05, 0))
-	visual.position.y = absf(sin(walk_time)) * .055
-	visual.rotation.y = lerp_angle(visual.rotation.y, atan2(-aim_direction.x, -aim_direction.z), delta * 18)
-	visual.rotation.z = -direction.x * .07
-	visual.visible = not (invulnerability > 0 and dash_time <= 0 and int(invulnerability * 18) % 2 == 0)
-	gun.rotation.y = atan2(-aim_direction.x, -aim_direction.z)
-	gun.position = -aim_direction * recoil
+		var direction: Vector3 = game.screen_direction(move_input)
+		if direction.length_squared() > .01:
+			last_move = direction.normalized()
+		graze_grace = maxf(0, graze_grace - delta)
+		if dash_time > 0 or graze_grace > 0:
+			var chest = shot_origin()
+			for shot in game.shots.duplicate():
+				if is_instance_valid(shot) and shot.alive and not shot.friendly and shot.global_position.distance_to(chest) < GRAZE_RADIUS:
+					game.catch_spark(shot)
+		# A shove moves the player this tick without becoming their own speed.
+		var shove = Vector3.ZERO
+		if dash_time > 0:
+			dash_time -= delta
+			velocity = dash_direction * DASH_SPEED
+			leaving_dash = dash_time <= 0
+			if leaving_dash: graze_grace = GRAZE_GRACE
+			# Dashing slips past foes but never through walls or furniture.
+			collision_mask = 1 | PropVisuals.FURNITURE_LAYER
+			for enemy in game.enemies.duplicate():
+				if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable: continue
+				var reach = global_position.distance_to(enemy.global_position)
+				# Dashing through a ward pops it; through a prism shatters it.
+				if reach < enemy.radius + .7: enemy.dashed_through()
+				if Run.stats.dash_damage > 0 and reach < 1.1 and enemy.alive:
+					enemy.take_hit(float(Run.stats.dash_damage) * delta * 8, Vector3.ZERO, false, false, "dash")
+		else:
+			collision_mask = 5 | PropVisuals.FURNITURE_LAYER
+			# Moss and spores drag at the feet; ice keeps whatever speed you had.
+			var footing: ResidueField = game.residue
+			var top_speed = RUN_SPEED * float(Run.stats.speed) * (footing.slows(global_position) if footing else 1.0)
+			var slippery = footing != null and footing.kind_at(global_position) == "ice"
+			if leaving_dash:
+				velocity = velocity.limit_length(top_speed)
+				leaving_dash = false
+			var target = direction * top_speed
+			velocity = velocity.move_toward(target, delta * (4.5 if slippery else 47.0))
+			shove = push
+			push = push.move_toward(Vector3.ZERO, delta * 14.0)
+		var geometry: RoomGeometry = game.room.geometry
+		if geometry.contains(Vector2(position.x, position.z), ROOM_MARGIN):
+			last_valid = position
+		velocity += shove
+		move_and_slide()
+		velocity -= shove
+		var kept = geometry.recover(Vector2(last_valid.x, last_valid.z), Vector2(position.x, position.z), ROOM_MARGIN)
+		position = Vector3(kept.x, 0, kept.y)
+		var stride = floori(walk_time / PI)
+		walk_time += delta * velocity.length() * 2.7
+		if floori(walk_time / PI) != stride and dash_time <= 0:
+			Effects.play("footstep", global_position + Vector3(0, .05, 0))
+		visual.position.y = absf(sin(walk_time)) * .055
+		visual.rotation.y = lerp_angle(visual.rotation.y, atan2(-aim_direction.x, -aim_direction.z), delta * 18)
+		visual.rotation.z = -direction.x * .07
+		visual.visible = not (invulnerability > 0 and dash_time <= 0 and int(invulnerability * 18) % 2 == 0)
+		gun.rotation.y = atan2(-aim_direction.x, -aim_direction.z)
+		gun.position = -aim_direction * recoil
 	if shooting and fire_cooldown <= 0 and dash_time <= 0:
 		fire()
 	show_flame(delta)
@@ -246,6 +252,12 @@ func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting:
 			if is_instance_valid(enemy) and enemy.alive and enemy.orbital_cooldown <= 0 and enemy.global_position.distance_to(orbit_meshes[i].global_position - Vector3(0, .6, 0)) < .65:
 				enemy.orbital_cooldown = .25
 				enemy.take_hit(5 * Run.stats.damage, Vector3.ZERO, false)
+
+func shot_origin() -> Vector3:
+	return game.fps.shot_origin() if game.first_person else global_position + Vector3(0, .65, 0)
+
+func aim_up() -> Vector3:
+	return game.fps.right().cross(aim_direction).normalized() if game.first_person else Vector3.UP
 
 func fire() -> void:
 	var weapon: Dictionary = Run.weapon()
@@ -274,33 +286,45 @@ func fire() -> void:
 		burst_timer = float(weapon.burst_gap)
 		burst_shot = {"weapon": weapon, "stats": stats, "damage": damage, "tint": tint, "gap": weapon.burst_gap}
 	if stats.backshot > 0:
-		game.spawn_shot(global_position + Vector3(0, .65, 0), -aim_direction, damage, weapon.speed * stats.shot_speed, stats, tint, true)
+		launch_shot(shot_origin(), -aim_direction, damage, weapon.speed * stats.shot_speed, stats, tint, true)
 	if stats.side_shot > 0:
 		for side in [-1, 1]:
-			game.spawn_shot(global_position + Vector3(0, .65, 0), aim_direction.rotated(Vector3.UP, side * PI / 2), damage * .75, weapon.speed * stats.shot_speed, stats, tint, true)
-	Effects.play("muzzle", global_position + Vector3(0, .7, 0) + aim_direction * .75, tint, -1, 1.0, aim_direction)
+			launch_shot(shot_origin(), aim_direction.rotated(aim_up(), side * PI / 2), damage * .75, weapon.speed * stats.shot_speed, stats, tint, true)
+	Effects.play("muzzle", shot_origin() + aim_direction * .2, tint, -1, 1.0, aim_direction)
 	game.make_noise(global_position, 1.0)
 	fire_cooldown = maxf(.07, weapon.cooldown / (stats.rate + (stats.kill_haste if haste_time > 0 else 0)))
 	recoil = .17
 	Audio.play_sound("shoot", 1.0 + float(count) * .015)
 
 ## One volley of the weapon's pattern; returns how many shots left.
+func launch_shot(at: Vector3, travel: Vector3, power: float, speed: float, effects: Dictionary, tint: Color, friendly: bool):
+	if game.first_person:
+		var base: Vector3 = game.fps.shot_origin()
+		var hit = get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(base, at, 1 | PropVisuals.FURNITURE_LAYER))
+		if not hit.is_empty(): at = hit.position + hit.normal * .03
+	return game.spawn_shot(at, travel, power, speed, effects, tint, friendly)
+
 func volley(weapon: Dictionary, stats: Dictionary, damage: float, tint: Color) -> int:
 	var count = mini(int(weapon.count + stats.shots), 15)
 	var spread: float = weapon.spread
 	if count > int(weapon.count) and stats.radial <= 0:
 		spread += (count - int(weapon.count)) * .115
-	var origin = global_position + Vector3(0, .65, 0)
+	var origin = game.fps.shot_origin() if game.first_person else shot_origin()
 	var speed_value = float(weapon.speed) * stats.shot_speed
 	var turn = spin_angle
 	spin_angle += float(weapon.get("spin", 0))
 	for i in count:
 		var angle = TAU * float(i) / count + turn if stats.radial > 0 else (float(i) / maxf(1, count - 1) - .5) * spread
-		var direction = aim_direction.rotated(Vector3.UP, angle)
-		var at = origin + direction * .5
+		var axis = game.fps.right().cross(aim_direction).normalized() if game.first_person else Vector3.UP
+		var direction = aim_direction.rotated(axis, angle)
+		var at = origin + direction * (.08 if game.first_person else .5)
 		# Twin shots fly side by side rather than apart.
-		if weapon.has("twin"): at += aim_direction.cross(Vector3.UP) * (float(i) / maxf(1, count - 1) - .5) * float(weapon.twin) * 2.0
-		game.spawn_shot(at, direction, damage, speed_value, stats, tint, true)
+		if weapon.has("twin"): at += aim_direction.cross(aim_up()) * (float(i) / maxf(1, count - 1) - .5) * float(weapon.twin) * 2.0
+		if game.first_person:
+			# Start at the camera-near muzzle; sweep clearance before offsetting.
+			var hit = get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(origin, at, 1 | PropVisuals.FURNITURE_LAYER))
+			if not hit.is_empty(): at = origin
+		launch_shot(at, direction, damage, speed_value, stats, tint, true)
 	return count
 
 ## Caught sparks leave with the next shot as homing embers.
@@ -310,8 +334,8 @@ func release_sparks(damage: float, stats: Dictionary) -> void:
 	spark_stats.homing = maxf(float(spark_stats.get("homing", 0)), 5.0)
 	spark_stats.pierce = 0
 	for i in game.sparks:
-		var d = aim_direction.rotated(Vector3.UP, (i - (game.sparks - 1) / 2.0) * .35)
-		game.spawn_shot(global_position + Vector3(0, .65, 0) + d * .5, d, damage * 1.5, 15.0, spark_stats, Color("fff3c4"), true)
+		var d = aim_direction.rotated(aim_up(), (i - (game.sparks - 1) / 2.0) * .35)
+		launch_shot(shot_origin() + d * .5, d, damage * 1.5, 15.0, spark_stats, Color("fff3c4"), true)
 	game.sparks = 0
 
 ## The flame follows the kindle: a wider, warmer light, and caught sparks
@@ -342,7 +366,7 @@ func dash() -> void:
 		effects.chill += 1
 		for i in 12:
 			var direction = Vector3.RIGHT.rotated(Vector3.UP, TAU * i / 12)
-			game.spawn_shot(global_position + Vector3(0, .5, 0), direction, 5.0 * Run.stats.dash_nova, 10.0, effects, Color("b6e2e5"), true)
+			launch_shot(global_position + Vector3(0, .5, 0), direction, 5.0 * Run.stats.dash_nova, 10.0, effects, Color("b6e2e5"), true)
 
 func hurt(amount: float, source: Vector3) -> void:
 	if invulnerability > 0 or not Run.active or Run.has_flag("invulnerable"):
@@ -358,6 +382,10 @@ func hurt(amount: float, source: Vector3) -> void:
 		Effects.play("ward", global_position + Vector3(0, .6, 0))
 		Audio.play_sound("coin", .7)
 		return
+	if game.first_person:
+		game.fps.damage_time = .7
+		var towards = source - global_position
+		game.fps.damage_angle = atan2(towards.dot(game.fps.right()), towards.dot(Vector3.FORWARD.rotated(Vector3.UP, game.fps.yaw)))
 	Run.hp = maxf(0, Run.hp - amount)
 	game.gutter()
 	invulnerability = 1.0

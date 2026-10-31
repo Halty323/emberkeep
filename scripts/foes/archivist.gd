@@ -57,6 +57,7 @@ func behave(delta: float, distance: float, direction: Vector3) -> Vector3:
 	return (side * .6 + direction * (1.0 if distance > 7.0 else (-.6 if distance < 4.5 else 0.0))).normalized()
 
 func fan(direction: Vector3) -> void:
+	direction = aimed_direction(direction, .8)
 	for i in 7:
 		var d = direction.rotated(Vector3.UP, (i / 6.0 - .5) * 1.1)
 		game.spawn_shot(global_position + Vector3.UP * .8 + d * 1.0, d, 1, 5.5, {}, Color("e8e4d8"), false)

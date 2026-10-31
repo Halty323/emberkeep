@@ -13,6 +13,7 @@ const ENTRY_INSET := 1.7
 const TRIGGER_DEPTH := .85
 const TRIGGER_HALF_WIDTH := 1.1
 const DIRECTIONS := [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]
+var terrain: FirstPersonTerrain
 var cells: Array = []
 var cell_set: Dictionary = {}
 var min_cell := Vector2i.ZERO

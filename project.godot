@@ -1,11 +1,11 @@
-; Emberkeep — Godot 4.6 / native Android prototype
+; Emberkeep — Godot 4.7.2 / first-person dungeon roguelike
 config_version=5
 
 [application]
 config/name="Emberkeep"
 run/main_scene="res://scenes/main.tscn"
-config/features=PackedStringArray("4.6", "GL Compatibility")
-config/description="A cozy, isometric dungeon roguelike. Every little light fights back."
+config/features=PackedStringArray("4.7", "GL Compatibility")
+config/description="A cozy first-person dungeon roguelike. Every little light fights back."
 config/icon="res://assets/icon.svg"
 
 [autoload]

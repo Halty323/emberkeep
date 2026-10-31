@@ -62,6 +62,7 @@ func spot(gen: RandomNumberGenerator, cell: Vector2i, keep_clear: Array, margin 
 	for attempt in 12:
 		var at = center + Vector2(gen.randf_range(-6.5, 6.5), gen.randf_range(-4.5, 4.5))
 		if not geometry.contains(at, margin): continue
+		if game.first_person and game.room.floor_height(Vector3(at.x, 0, at.y)) > .05: continue
 		if keep_clear.any(func(point): return point.distance_to(at) < CLEAR_OF): continue
 		return at
 	return best

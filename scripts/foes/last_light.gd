@@ -88,6 +88,7 @@ func cadence() -> float:
 
 ## The player's weapon turned around: same count, spread and flight.
 func mirror_volley(direction: Vector3) -> void:
+	direction = aimed_direction(direction, .65)
 	var weapon: Dictionary = Run.weapon()
 	var shooting: Dictionary = Run.projectile_stats()
 	var count = mini(int(weapon.count + shooting.shots), 9)

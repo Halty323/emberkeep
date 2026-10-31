@@ -3,12 +3,18 @@ var sounds: Dictionary = {}
 var players: Array[AudioStreamPlayer] = []
 var music_player: AudioStreamPlayer
 var voice = 0
+var spatial_players: Array[AudioStreamPlayer3D] = []
+var spatial_voice := 0
 
 func _exit_tree() -> void:
 	# Stop looping playback explicitly before the audio server shuts down.
 	if music_player:
 		music_player.stop()
 		music_player.stream = null
+	for player in spatial_players:
+		if is_instance_valid(player):
+			player.stop()
+			player.stream = null
 	for player in players:
 		player.stop()
 		player.stream = null
@@ -18,6 +24,7 @@ func _ready() -> void:
 		var player = AudioStreamPlayer.new()
 		add_child(player)
 		players.append(player)
+	sounds["step"] = tone(95, 48, .075, .045)
 	sounds["shoot"] = tone(650, 180, .08, .16)
 	sounds["hit"] = tone(170, 65, .1, .23)
 	sounds["kill"] = tone(230, 55, .19, .23)
@@ -121,3 +128,20 @@ func make_ambient() -> AudioStreamWAV:
 	stream.loop_end = count
 	stream.data = bytes
 	return stream
+
+func play_at(id: String, parent: Node3D, at: Vector3, pitch := 1.0) -> void:
+	if DisplayServer.get_name() == "headless" or not Settings.values.sound or not sounds.has(id): return
+	if spatial_players.is_empty():
+		for i in 8:
+			var player = AudioStreamPlayer3D.new()
+			parent.get_tree().root.add_child(player)
+			player.max_distance = 24
+			player.unit_size = 4
+			spatial_players.append(player)
+	var player = spatial_players[spatial_voice % spatial_players.size()]
+	spatial_voice += 1
+	player.global_position = at
+	player.stream = sounds[id]
+	player.pitch_scale = pitch
+	player.volume_db = -12
+	player.play()

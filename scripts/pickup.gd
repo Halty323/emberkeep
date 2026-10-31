@@ -61,7 +61,7 @@ func update_sim(delta: float) -> void:
 	if age <= .25 or not PickupRules.can_collect(definition):
 		return
 	var to_player: Vector3 = game.player.global_position - global_position
-	to_player.y = 0
+	if not game.first_person: to_player.y = 0
 	if to_player.length() < float(Run.stats.magnet):
 		position += to_player.normalized() * delta * 8.0
 	if to_player.length() < .65:

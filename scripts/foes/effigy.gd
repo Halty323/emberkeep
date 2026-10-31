@@ -33,6 +33,7 @@ func behave(delta: float, _distance: float, direction: Vector3) -> Vector3:
 	return to.normalized() if to.length() > .4 else Vector3.ZERO
 
 func volley(direction: Vector3) -> void:
+	direction = aimed_direction(direction, .6)
 	var weapon: Dictionary = Run.weapon()
 	var count = mini(int(weapon.count), 5)
 	for i in count:

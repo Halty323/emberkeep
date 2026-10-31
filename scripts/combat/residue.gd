@@ -36,6 +36,7 @@ var drizzle := RandomNumberGenerator.new()
 # How much each kind slows whoever wades through it.
 const DRAG := {"moss": .75, "water": .8, "ink": .6}
 const SHOCK_REACH := 400
+var first_person := false
 var game: Node3D
 var geometry: RoomGeometry
 # Vector2i tile -> {"kind", "age", "life", "spread", "under"}.
@@ -54,6 +55,7 @@ var tick = 0.0
 
 func setup(owner_game: Node3D, room_geometry: RoomGeometry) -> void:
 	game = owner_game
+	first_person = game.get("first_person") == true
 	geometry = room_geometry
 	# A tile of margin on every side lets the edges fade out cleanly.
 	var area: Rect2 = geometry.bounds()
@@ -102,10 +104,11 @@ func setup(owner_game: Node3D, room_geometry: RoomGeometry) -> void:
 func setup_cloud_surface() -> void:
 	cloud_view = MeshInstance3D.new()
 	cloud_view.name = "MistSurface"
-	cloud_view.mesh = PlaneMesh.new()
+	cloud_view.mesh = QuadMesh.new() if first_person else PlaneMesh.new()
 	mist_material = ShaderMaterial.new()
-	mist_material.shader = preload("res://shaders/mist.gdshader")
+	mist_material.shader = preload("res://shaders/mist_eye.gdshader") if first_person else preload("res://shaders/mist.gdshader")
 	mist_material.set_shader_parameter("detail", Look.detail())
+
 	cloud_view.material_override = mist_material
 	# Receive existing dungeon lighting, without reflection or shadow passes.
 	cloud_view.layers = 8
@@ -135,9 +138,23 @@ func refresh_cloud_surface() -> void:
 		fields.append(Vector4.ZERO)
 		tints.append(Color.TRANSPARENT)
 	var center = area.get_center()
-	var plane: PlaneMesh = cloud_view.mesh
-	if plane.size != area.size: plane.size = area.size
-	cloud_view.position = Vector3(center.x, .62, center.y)
+	var plane = cloud_view.mesh
+	var dimensions = area.size
+	if first_person:
+		var radius_max = 0.0
+		for cloud in clouds: radius_max = maxf(radius_max, cloud.radius)
+		dimensions = Vector2(area.size.length(), radius_max * 1.8)
+		cloud_view.rotation.y = game.fps.yaw
+		# Project centres into the shared billboard's local plane. Keeping
+		# shader fields in that plane avoids per-fragment 3D projections.
+		var right: Vector3 = game.fps.right()
+		for index in clouds.size():
+			var field: Vector4 = fields[index]
+			var offset = Vector3(field.x - center.x, 0, field.y - center.y)
+			fields[index] = Vector4(offset.dot(right), 0, field.z, field.w)
+	if plane.size != dimensions: plane.size = dimensions
+	if first_person: mist_material.set_shader_parameter("sheet_size", dimensions)
+	cloud_view.position = Vector3(center.x, .8 if first_person else .62, center.y)
 	mist_material.set_shader_parameter("sheet_origin", center)
 	mist_material.set_shader_parameter("cloud_fields", fields)
 	mist_material.set_shader_parameter("cloud_tints", tints)
@@ -271,6 +288,7 @@ func freeze(at: Vector3, radius: float) -> void:
 		elif current == "fire": set_tile(tile, "wax" if tiles[tile].under == "wax" else "")
 
 func slows(at: Vector3) -> float:
+	if first_person and at.y > .3: return 1.0
 	var factor: float = DRAG.get(kind_at(at), 1.0)
 	var cloud = cloud_at(at)
 	if cloud >= 0 and clouds[cloud].kind == "spores": factor *= .8
@@ -279,13 +297,14 @@ func slows(at: Vector3) -> float:
 ## Lightning striking a foe in water runs through the whole pool: every foe
 ## standing in the same water takes a share. Returns how many it reached.
 func shock(at: Vector3, damage: float, struck: Dictionary = {}) -> int:
+	if first_person and at.y > .5: return 0
 	if kind_at(at) != "water": return 0
 	var pool := {}
 	for tile in moss_linked(at, .5, ["water"]).slice(0, SHOCK_REACH): pool[tile] = true
 	var reached = 0
 	for enemy in game.enemies.duplicate():
 		if not is_instance_valid(enemy) or not enemy.alive or struck.has(enemy.entity_id): continue
-		if not pool.has(key(enemy.global_position)): continue
+		if not pool.has(key(enemy.global_position)) or (first_person and enemy.position.y > .3): continue
 		Effects.beam(game, at + Vector3.UP * .1, enemy.global_position + Vector3.UP * .4, Color("c4e2ff"))
 		enemy.shocked(damage)
 		reached += 1
@@ -293,6 +312,7 @@ func shock(at: Vector3, damage: float, struck: Dictionary = {}) -> int:
 
 ## Whether a segment crosses glass; the first crossing splits a shot.
 func crosses_glass(from: Vector3, to: Vector3) -> bool:
+	if first_person and minf(from.y, to.y) > .9: return false
 	var steps = maxi(1, ceili(from.distance_to(to) / (TILE * .5)))
 	for i in steps + 1:
 		if kind_at(from.lerp(to, float(i) / steps)) == "glass": return true
@@ -326,6 +346,7 @@ func add_cloud(at: Vector3, radius: float, kind := "spores") -> void:
 	refresh_cloud_surface()
 
 func cloud_at(at: Vector3) -> int:
+	if first_person and at.y > 2.0: return -1
 	for i in clouds.size():
 		if Vector2(clouds[i].at.x - at.x, clouds[i].at.z - at.z).length() < clouds[i].radius: return i
 	return -1
@@ -397,11 +418,11 @@ func update_sim(delta: float) -> void:
 	if touch:
 		for enemy in game.enemies:
 			if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable: continue
-			var under = kind_at(enemy.global_position)
+			var under = kind_at(enemy.global_position) if not first_person or enemy.position.y < .3 else ""
 			if under == "fire": enemy.apply_status({"burn": 1.2})
 			# Water puts a burning foe out.
 			elif under == "water": enemy.burn_time = 0.0
-		if kind_at(game.player.global_position) == "fire":
+		if kind_at(game.player.global_position) == "fire" and (not first_person or game.player.position.y < .3):
 			game.player.hurt(1.0, game.player.global_position)
 	for kind in dirty.keys():
 		if views.has(kind): rebuild(kind)

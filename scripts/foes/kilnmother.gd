@@ -97,7 +97,7 @@ func spread_ring(ring_state: Dictionary, delta: float) -> bool:
 	ring_state.node.scale = Vector3(ring_state.radius, 1, ring_state.radius)
 	var to: Vector3 = game.player.global_position - global_position
 	to.y = 0
-	if not ring_state.hit and absf(to.length() - ring_state.radius) < .3:
+	if ground_wave_reaches(.5) and not ring_state.hit and absf(to.length() - ring_state.radius) < .3:
 		ring_state.hit = true
 		game.player.hurt(1.0, global_position)
 	if ring_state.radius > FIRE_RING_REACH:

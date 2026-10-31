@@ -38,7 +38,7 @@ def verify(path):
         "sha256": digest,
         "bytes": path.stat().st_size,
         "commit": os.environ.get("GITHUB_SHA", "local"),
-        "godot": "4.6.3",
+        "godot": "4.7.2",
         "platform": "iPhoneOS",
         "architecture": "arm64",
         "bundle_identifier": info["CFBundleIdentifier"],

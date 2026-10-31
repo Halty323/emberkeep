@@ -45,6 +45,8 @@ var ember_origins: Array[Vector3] = []
 var obstacles: Array[Dictionary] = []
 var front_walls: Array[Dictionary] = []
 var navigators: Dictionary = {}
+var first_person_room := false
+var terrain: FirstPersonTerrain
 var pedestal := Vector3.ZERO
 # Live view of each prop: {"record", "definition", "node", "base", "health"}.
 var props: Dictionary = {}
@@ -57,6 +59,7 @@ var candle_points: Array[Vector3] = []
 
 func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 	game = owner_game
+	first_person_room = game.get("first_person") == true and not preview
 	data = room
 	decor_rng.seed = int(room.get("seed", 53))
 	light = FloorLight.profile(0) if preview else FloorLight.current()
@@ -71,6 +74,7 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 	collect_sockets(room, preview)
 	build_floor()
 	build_walls()
+	if first_person_room: FirstPersonArchitecture.build(self)
 	var points: Array = room.get("lights", default_lights())
 	var burning: Array = FloorLight.lit_lanterns(points.size(), light, int(room.get("seed", 53)))
 	# A room remembers lanterns relit or put out once its fight was over.
@@ -91,6 +95,10 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 		var pillars = FloorGenerator.pillar_points(geometry.cells, int(room.seed), Vector2(pedestal.x, pedestal.z))
 		for i in pillars.size():
 			records.append({"id": "%s:p%d" % [room.get("id", ""), i], "kind": "pillar", "position": [pillars[i].x, pillars[i].y], "rotation": 0, "size": [1.3, 1.3]})
+	if first_person_room and not preview:
+		terrain = FirstPersonTerrain.new()
+		terrain.setup(self)
+		geometry.terrain = terrain
 	build_props(records)
 	# Containers are solid: navigation and spawns route around them.
 	for chest in room.get("chests", []):
@@ -137,6 +145,12 @@ func build_floor() -> void:
 		sheet.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		sheet.position = Vector3(center.x, Look.FLOOR_TOP, center.y)
 		sheet.layers = GROUND_LAYER
+		if first_person_room:
+			Geo.collider(self, Vector3(center.x, -.12, center.y), Vector3(18, .24, 14))
+			Geo.box(self, Vector3(center.x, 5.6, center.y), Vector3(18, .3, 14), Color("292c2d"))
+			Geo.collider(self, Vector3(center.x, 5.6, center.y), Vector3(18, .3, 14))
+			for beam in [-1, 1]:
+				Geo.box(self, Vector3(center.x + beam * 5.4, 5.15, center.y), Vector3(.24, .5, 14), Color("514839"))
 		add_child(sheet)
 		Geo.box(self, Vector3(center.x, -.55, center.y), Vector3(18.6, .7, 14.6), Color(look.get("base", "242d31"))).layers = GROUND_LAYER
 		Geo.box(self, Vector3(center.x, -.96, center.y), Vector3(17.9, .25, 13.9), Color(look.get("under", "19232b"))).layers = GROUND_LAYER
@@ -145,9 +159,9 @@ func build_walls() -> void:
 	for segment in geometry.wall_segments():
 		var box = RoomGeometry.segment_box(segment)
 		var front = RoomGeometry.is_front(segment.dir)
-		var height = WALL_FRONT_HEIGHT if front else WALL_BACK_HEIGHT
+		var height = 5.4 if first_person_room else (WALL_FRONT_HEIGHT if front else WALL_BACK_HEIGHT)
 		make_wall(Vector3(box.center.x, height / 2, box.center.y), Vector3(box.size.x, height, box.size.y),
-			segment.dir if front else Vector2i.ZERO, segment.line, segment.from, segment.to)
+			segment.dir if front and not first_person_room else Vector2i.ZERO, segment.line, segment.from, segment.to)
 	for key in sockets:
 		var socket: Dictionary = sockets[key]
 		if socket.state in ["open", "locked", "revealed"]:
@@ -160,13 +174,13 @@ func make_plug(socket: Dictionary) -> void:
 	if socket.state == "concealed":
 		make_seam_hints(socket)
 	var front = RoomGeometry.is_front(direction)
-	var height = WALL_FRONT_HEIGHT if front else WALL_BACK_HEIGHT
+	var height = 5.4 if first_person_room else (WALL_FRONT_HEIGHT if front else WALL_BACK_HEIGHT)
 	var point = RoomGeometry.socket_point(socket.cell, direction)
 	var at = point + Vector2(direction) * .15
 	var line = point.dot(Vector2(direction).abs())
 	var along = point.dot(Vector2(absi(direction.y), absi(direction.x)))
 	socket["walls"] = make_wall(Vector3(at.x, height / 2, at.y), Vector3(.45, height, 2.5) if direction.x != 0 else Vector3(2.5, height, .45),
-		direction if front else Vector2i.ZERO, line, along - 1.25, along + 1.25)
+		direction if front and not first_person_room else Vector2i.ZERO, line, along - 1.25, along + 1.25)
 
 ## Subtle tells of a concealed passage: cracked mortar on the inner face, a
 ## little rubble at its foot and a faint draft of dust.
@@ -216,13 +230,17 @@ func make_gate(socket: Dictionary) -> void:
 	add_child(gate)
 	gate.position = Vector3(at.x, 0, at.y)
 	var rotated = direction.x != 0
-	var post_height = WALL_BACK_HEIGHT - .25 if direction.x + direction.y < 0 else 1.5
+	var post_height = 2.8 if first_person_room else (WALL_BACK_HEIGHT - .25 if direction.x + direction.y < 0 else 1.5)
 	Geo.box(gate, Vector3(0, -.015, 0), Vector3(.8, .08, 2.25) if rotated else Vector3(2.25, .08, .8), Color("b69c6a"))
 	for s in [-1, 1]:
 		Geo.box(gate, Vector3(0, post_height / 2, s * 1.1) if rotated else Vector3(s * 1.1, post_height / 2, 0), Vector3(.25, post_height, .25), Color("797263"))
 	if post_height > 1.5:
 		Geo.box(gate, Vector3(0, post_height, 0), Vector3(.3, .18, 2.5) if rotated else Vector3(2.5, .18, .3), Color("797263"))
-	var barrier = Geo.box(gate, Vector3(0, .75, 0), Vector3(.16, 1.45, 2.0) if rotated else Vector3(2.0, 1.45, .16), Color("b85e4c"), .7)
+	var gate_height = 2.7 if first_person_room else 1.45
+	var barrier = Geo.box(gate, Vector3(0, gate_height / 2, 0), Vector3(.16, gate_height, 2.0) if rotated else Vector3(2.0, gate_height, .16), Color("66504a") if first_person_room else Color("b85e4c"), .08 if first_person_room else .7)
+	if first_person_room:
+		Geo.box(gate, Vector3(0, 4.2, 0), Vector3(.45, 2.5, 2.5) if rotated else Vector3(2.5, 2.5, .45), Color("393a36"))
+		Geo.collider(gate, Vector3(0, 4.2, 0), Vector3(.45, 2.5, 2.5) if rotated else Vector3(2.5, 2.5, .45))
 	barrier.name = "Barrier"
 	Geo.halo(gate, Vector3(0, .035, 0), 3.5, Color(.92, .62, .25, .28))
 	# An open doorway's outline glows (posts, sill and any lintel), brightest
@@ -271,7 +289,11 @@ func wall_obstructs(wall: Dictionary, point: Vector3) -> bool:
 	var inward = wall.line - across
 	return inward > -1.0 and inward < CUTAWAY_REACH and along > wall.from - CUTAWAY_REACH and along < wall.to + CUTAWAY_REACH
 
+func floor_height(at: Vector3) -> float:
+	return terrain.height(Vector2(at.x, at.z)) if terrain else 0.0
+
 func update_wall_visibility(focus: Vector3, delta: float, others: Array = []) -> void:
+	if first_person_room: return
 	for wall in front_walls:
 		var near = wall_obstructs(wall, focus)
 		if not near:

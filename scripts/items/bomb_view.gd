@@ -8,7 +8,7 @@ var ring: MeshInstance3D
 
 func setup(bomb: Dictionary, radius: float) -> void:
 	record = bomb
-	position = Vector3(float(bomb.position[0]), 0, float(bomb.position[1]))
+	position = Vector3(float(bomb.position[0]), float(bomb.get("height", 0)), float(bomb.position[1]))
 	Geo.sphere(self, Vector3(0, .32, 0), .3, Color("4b4f52"))
 	Geo.cylinder(self, Vector3(0, .66, 0), .05, .16, Color("8a7b5c"))
 	spark = Geo.sphere(self, Vector3(0, .78, 0), .07, Color("ffd38a"), 2.4)

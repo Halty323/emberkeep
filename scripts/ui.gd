@@ -19,7 +19,9 @@ const DASH_RADIUS := 48.0
 # One hit-region table drives drawing, touch and mouse handling alike.
 const ACTION_BUTTONS := {"dash": {"center": Vector2(973, 610), "radius": 48.0},
 	"active": {"center": Vector2(904, 510), "radius": 44.0},
-	"bomb": {"center": Vector2(1032, 486), "radius": 38.0}}
+	"bomb": {"center": Vector2(1032, 486), "radius": 38.0},
+	"fire": {"center": Vector2(1178, 552), "radius": 56.0},
+	"jump": {"center": Vector2(1178, 660), "radius": 48.0}}
 const MINIMAP_RECT := Rect2(1032, 16, 164, 120)
 const MINIMAP_AREA := Rect2(1040, 24, 148, 104)
 const PAUSE_RECT := Rect2(1204, 16, 60, 56)
@@ -39,9 +41,10 @@ const TITLE_FADE := .9
 const SCRIBBLE_TIME := .75
 const REWARD_WIDTH := 340.0
 const REWARD_GAP := 26.0
-const SETTINGS_PAGES := [["display", "Display"], ["graphics", "Graphics"], ["controls", "Sound & Controls"]]
+const SETTINGS_PAGES := [["display", "Display"], ["graphics", "Graphics"], ["controls", "Controls"], ["camera", "Camera"]]
 const SETTINGS_NOTES := {"display": "Resolution scales only the dungeon; text and controls stay sharp. Your display or device can still cap the frame rate.",
 	"graphics": "Detail changes decoration and cosmetic effects only. Walls, furniture collision, loot and combat stay identical.",
+	"camera": "Comfort settings affect presentation, never movement speed or weapon damage.",
 	"controls": "Touch controls show the on-screen sticks and action buttons on any device."}
 var game: Node3D
 var body: Font = preload("res://assets/fonts/body.ttf")
@@ -80,6 +83,8 @@ var left_origin = Vector2(140, 574)
 var right_origin = Vector2(1112, 574)
 var left_vector = Vector2.ZERO
 var right_vector = Vector2.ZERO
+var look_delta = Vector2.ZERO
+var fire_touch := -1
 var touch_used = false
 # True while a mouse press that began on an action button is held, so the
 # click can never turn into weapon fire.
@@ -197,6 +202,8 @@ func show_screen(screen: String) -> void:
 	right_touch = -1
 	left_vector = Vector2.ZERO
 	right_vector = Vector2.ZERO
+	look_delta = Vector2.ZERO
+	fire_touch = -1
 	for child in content.get_children():
 		if child is CanvasItem: child.hide()
 		child.queue_free()
@@ -333,10 +340,11 @@ func sync_lighting() -> void:
 		for lamp in game.room.lamps:
 			if lighting_lamps.size() == 4: break
 			if not is_instance_valid(lamp): continue
+			if game.first_person and not game.in_menu and game.camera.is_position_behind(lamp.global_position): continue
 			var screen = game.camera.unproject_position(lamp.global_position)
 			var range_edge = game.camera.unproject_position(lamp.global_position + game.camera.global_basis.x * lamp.omni_range)
 			var point = local_point(screen)
-			lighting_lamps.append(Vector4(point.x, point.y, screen.distance_to(range_edge) / scale_value, lamp.light_energy if lamp.is_visible_in_tree() else 0.0))
+			lighting_lamps.append(Vector4(point.x, point.y, clampf(screen.distance_to(range_edge) / scale_value, 16, 1100) if game.first_person else screen.distance_to(range_edge) / scale_value, lamp.light_energy if lamp.is_visible_in_tree() else 0.0))
 			lighting_colors.append(lamp.light_color)
 	while lighting_lamps.size() < 4:
 		lighting_lamps.append(Vector4.ZERO)
@@ -551,7 +559,7 @@ func open_settings(back: String) -> void:
 func build_settings() -> void:
 	for i in SETTINGS_PAGES.size():
 		var page: Array = SETTINGS_PAGES[i]
-		button(page[1], Rect2(330 + i * 210, 154, 200, 56), func(): open_settings_page(page[0]), page[0] == settings_page)
+		button(page[1], Rect2(330 + i * 157, 154, 149, 56), func(): open_settings_page(page[0]), page[0] == settings_page)
 	var rows = settings_rows(settings_page)
 	for i in rows.size():
 		setting_row(Rect2(330, 228 + i * 68, 620, 56), rows[i])
@@ -580,6 +588,12 @@ func settings_rows(page: String) -> Array:
 			return [["render_scale", "Render resolution", "%s  ·  %d×%d" % [scale, pixels.x, pixels.y], true],
 				["fps_limit", "FPS limit", "Unlimited" if Settings.values.fps_limit == 0 else str(Settings.values.fps_limit), true],
 				vsync, ["show_fps", "Show FPS", on_off("show_fps"), true]]
+		"camera":
+			return [["fov", "Field of view", "%d°" % Settings.values.fov, true],
+				["mouse_sensitivity", "Mouse sensitivity", "%.4f" % Settings.values.mouse_sensitivity, true],
+				["touch_sensitivity", "Touch sensitivity", "%.4f" % Settings.values.touch_sensitivity, true],
+				["invert_y", "Invert vertical look", on_off("invert_y"), true],
+				["head_bob", "Head bob", on_off("head_bob"), true]]
 		"graphics":
 			return [["effects_detail", "Effects detail", Settings.values.effects_detail.capitalize(), true],
 				["small_details", "Small details", Settings.values.small_details.capitalize(), true],
@@ -728,6 +742,7 @@ func _input(event: InputEvent) -> void:
 			# Buttons are hit-tested before a floating stick can capture the finger.
 			var action = action_at(right)
 			if action != "":
+				if action == "fire": fire_touch = event.index
 				trigger_action(action)
 				get_viewport().set_input_as_handled()
 			elif INTERACTION_RECT.has_point(from_middle(p)) and game.interaction_text != "":
@@ -738,12 +753,13 @@ func _input(event: InputEvent) -> void:
 				left_origin = Vector2(clampf(p.x, 90, 420), clampf(p.y, 400, 620))
 				left_vector = (p - left_origin).limit_length(58) / 58.0
 				get_viewport().set_input_as_handled()
-			elif right.y > 330 and right.x > 730 and right_touch == -1:
+			elif right_touch == -1 and ((game.first_person and right.y > 145 and right.x > 600) or (not game.first_person and right.y > 330 and right.x > 730)):
 				right_touch = event.index
 				right_origin = Vector2(clampf(right.x, 810, 1190), clampf(right.y, 400, 620))
 				right_vector = (right - right_origin).limit_length(58) / 58.0
 				get_viewport().set_input_as_handled()
 		else:
+			if event.index == fire_touch: fire_touch = -1
 			if event.index == left_touch:
 				left_touch = -1
 				left_vector = Vector2.ZERO
@@ -757,8 +773,14 @@ func _input(event: InputEvent) -> void:
 		if event.index == left_touch:
 			left_vector = (p - left_origin).limit_length(58) / 58.0
 			get_viewport().set_input_as_handled()
+		# Dragging FIRE also looks, supporting ordinary two-thumb play while
+		# preserving a separate swipe finger for players who prefer it.
+		if game.first_person and event.index == fire_touch:
+			look_delta += event.relative / scale_value
+			get_viewport().set_input_as_handled()
 		if event.index == right_touch:
-			right_vector = (from_right(p) - right_origin).limit_length(58) / 58.0
+			if game.first_person: look_delta += event.relative / scale_value
+			else: right_vector = (from_right(p) - right_origin).limit_length(58) / 58.0
 			get_viewport().set_input_as_handled()
 
 func touch_hud_visible() -> bool:
@@ -766,12 +788,15 @@ func touch_hud_visible() -> bool:
 
 func action_at(point: Vector2) -> String:
 	for action in ACTION_BUTTONS:
+		if action in ["fire", "jump"] and not game.first_person: continue
 		if point.distance_to(ACTION_BUTTONS[action].center) < ACTION_BUTTONS[action].radius:
 			return action
 	return ""
 
 func trigger_action(action: String) -> void:
 	match action:
+		"jump":
+			if game.first_person: game.fps.jump_buffer = .14
 		"dash": game.request_dash = true
 		"active": game.submit({"type": "use_active"})
 		"bomb": game.submit({"type": "place_bomb"})
@@ -873,6 +898,17 @@ func draw_hud() -> void:
 	draw_hud_left()
 	anchor(widen() / 2.0)
 	draw_hud_middle()
+	if game.first_person:
+		var aim_center = Vector2(640, 360)
+		draw_circle(aim_center, 2.0, GOLD if game.fps.hit_time > 0 else INK)
+		if game.fps.hit_time > 0:
+			for x in [-1, 1]:
+				for y in [-1, 1]: draw_line(aim_center + Vector2(x, y) * 6, aim_center + Vector2(x, y) * 11, INK, 2)
+		if game.fps.damage_time > 0:
+			var angle: float = game.fps.damage_angle - PI / 2
+			draw_arc(aim_center, 78, angle - .35, angle + .35, 14, Color(1, .42, .28, game.fps.damage_time), 3.5)
+		for side in [-1, 1]:
+			draw_line(aim_center + Vector2(side * 7, 0), aim_center + Vector2(side * 12, 0), GOLD, 1.5)
 	anchor(widen())
 	draw_hud_right()
 
@@ -910,7 +946,7 @@ func draw_hud_left() -> void:
 	if Run.inventory.size() > 12:
 		text("+%d" % (Run.inventory.size() - 12), Vector2(232, HUD_RECT.end.y + 21), 14, GOLD)
 	if not touch_hud_visible():
-		text("WASD move · Mouse fire · Space dash · F item · B bomb", Vector2(28, 668), 15, MUTED)
+		text("WASD move · Mouse aim/fire · Space jump · Shift dash · E interact" if game.first_person else "WASD move · Mouse fire · Space dash · F item · B bomb", Vector2(28, 668), 15, MUTED)
 	text("SEED %d" % Run.seed_value, Vector2(28, 697), 13, MUTED)
 	if touch_hud_visible():
 		draw_stick(left_origin, left_vector, "MOVE", left_touch >= 0)
@@ -953,7 +989,12 @@ func draw_hud_right() -> void:
 	draw_minimap()
 	text("%d:%02d" % [int(Run.elapsed) / 60, int(Run.elapsed) % 60], Vector2(1196, 697), 15, MUTED)
 	if not touch_hud_visible(): return
-	draw_stick(right_origin, right_vector, "AIM + FIRE", right_touch >= 0)
+	if game.first_person:
+		draw_action_ring("fire", 1.0, GOLD)
+		centered("FIRE", 1178, 558, 18, GOLD, bold)
+		draw_action_ring("jump", 1.0, GOLD)
+		centered("JUMP", 1178, 666, 15, GOLD, bold)
+	else: draw_stick(right_origin, right_vector, "AIM + FIRE", right_touch >= 0)
 	var ready: bool = game.player and game.player.dash_cooldown <= 0
 	draw_action_ring("dash", 1.0 if ready else 0.0, GOLD if ready else MUTED)
 	centered("DASH" if ready else "%.1f" % game.player.dash_cooldown, DASH_CENTER.x, DASH_CENTER.y + 7, 18, GOLD if ready else MUTED, bold)
@@ -978,6 +1019,12 @@ func floor_title_length() -> float:
 	return TITLE_DELAY + letters * TITLE_LETTER + .3 + TITLE_HOLD + .9 + TITLE_FADE
 
 func draw_floor_title() -> void:
+	if game.first_person:
+		var t = elapsed_ui - floor_title_start
+		if t >= 0 and t < 2.6:
+			var opacity = minf(clampf(t / .25, 0, 1), clampf((2.6 - t) / .6, 0, 1))
+			centered(str(Run.theme().name), view_width / 2, 186, 25, Color(INK, opacity), heading)
+		return
 	var age = elapsed_ui - floor_title_start
 	if age < 0 or age > floor_title_length(): return
 	var theme: Dictionary = Run.theme()

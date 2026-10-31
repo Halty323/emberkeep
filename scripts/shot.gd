@@ -107,11 +107,18 @@ func shine() -> void:
 	# The glow's X scale is its size, its Y scale (relative) its brightness.
 	var size = radius * 7.5 * (lerpf(1.6, 1.0, rise) + fall * 1.4)
 	glow.scale = Vector3(size, size * fade, size)
-	if splat: splat.scale = Vector3.ONE * maxf(.001, fade)
+	if splat:
+		splat.scale = Vector3.ONE * maxf(.001, fade)
+		if game.first_person:
+			splat.global_position = Vector3(global_position.x, game.room.floor_height(global_position) + .04, global_position.z)
 	if streak:
 		var tail = maxf(.001, clampf(speed * .045, .15, 1.3) * rise * (1.0 - fall))
 		var flat = Vector3(direction.x, 0, direction.z).normalized() if Vector2(direction.x, direction.z).length() > .01 else Vector3.RIGHT
-		streak.global_transform = Transform3D(Basis(direction * tail, Vector3.UP * fade, flat.cross(Vector3.UP) * radius * 2.4), global_position)
+		var up = Vector3.UP
+		if game.first_person:
+			up = direction.cross(game.camera.global_basis.x).normalized()
+			if up.length_squared() < .01: up = direction.cross(Vector3.FORWARD).normalized()
+		streak.global_transform = Transform3D(Basis(direction * tail, up * fade, direction.cross(up).normalized() * radius * 2.4), global_position)
 
 func _process(delta: float) -> void:
 	if vanish >= 0:
@@ -150,7 +157,7 @@ func update_sim(delta: float) -> void:
 	elif stats.get("homing", 0) > 0:
 		# A mirrored volley seeks the player, more gently.
 		var desired: Vector3 = game.player.global_position + Vector3.UP * .65 - global_position
-		desired.y = 0
+		if not game.first_person: desired.y = 0
 		direction = direction.lerp(desired.normalized(), minf(.5, delta * float(stats.homing) * .5)).normalized()
 	if friendly: shape_flight(delta)
 	var movement = direction * speed * delta + game.wind * delta
@@ -160,7 +167,7 @@ func update_sim(delta: float) -> void:
 	# A shot through a dead lantern's glass lights it again.
 	if friendly and is_instance_valid(game.room):
 		var lantern: int = game.room.lantern_near(Vector2(target_position.x, target_position.z), .6, false)
-		if lantern >= 0:
+		if lantern >= 0 and (not game.first_person or absf(target_position.y - game.room.lanterns[lantern].at.y - 1.6) < .65):
 			game.relight(lantern)
 			Effects.play("impact", global_position, Color("ffd08a"))
 			remove()
@@ -171,8 +178,37 @@ func update_sim(delta: float) -> void:
 		for side in [-1, 1]:
 			var copy = game.spawn_shot(global_position, direction.rotated(Vector3.UP, side * .32), damage * (.6 if friendly else 1.0), speed, stats, tint, friendly)
 			if copy: copy.hit_ids = hit_ids.duplicate()
-	var query = PhysicsRayQueryParameters3D.create(global_position, target_position, 1)
+	var query = PhysicsRayQueryParameters3D.create(global_position, target_position, (1 | PropVisuals.FURNITURE_LAYER) if game.first_person else 1)
 	var hit = get_world_3d().direct_space_state.intersect_ray(query)
+	if not friendly and game.first_person:
+		var low: Vector3 = game.player.global_position + Vector3.UP * .32
+		var high: Vector3 = game.player.global_position + Vector3.UP * 1.38
+		var pair = Geometry3D.get_closest_points_between_segments(global_position, target_position, low, high)
+		var wall_distance = global_position.distance_to(hit.position) if not hit.is_empty() else INF
+		if pair[0].distance_to(pair[1]) < .32 + radius and global_position.distance_to(pair[0]) < wall_distance:
+			game.player.hurt(damage, pair[0])
+			remove()
+			return
+	if friendly and game.first_person:
+		# Resolve swept body hits in distance order before a later wall hit.
+		var start = global_position
+		var wall_distance = start.distance_to(hit.position) if not hit.is_empty() else INF
+		var candidates: Array = []
+		for enemy in game.enemies:
+			if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable or hit_ids.has(enemy.entity_id): continue
+			var low: Vector3 = enemy.global_position + Vector3.UP * enemy.radius
+			var high: Vector3 = enemy.global_position + Vector3.UP * (enemy.hit_height - enemy.radius)
+			var pair = Geometry3D.get_closest_points_between_segments(start, target_position, low, high)
+			var distance = start.distance_to(pair[0])
+			if pair[0].distance_to(pair[1]) < enemy.radius + radius and distance < wall_distance:
+				candidates.append({"enemy": enemy, "point": pair[0], "distance": distance})
+		candidates.sort_custom(func(a, b): return a.distance < b.distance)
+		for candidate in candidates:
+			global_position = candidate.point
+			if candidate.enemy.catch_shot(self): return
+			hit_enemy(candidate.enemy)
+			if not alive: return
+		global_position = start
 	var geometry: RoomGeometry = game.room.geometry
 	var flat_from = Vector2(global_position.x, global_position.z)
 	var flat_to = Vector2(target_position.x, target_position.z)
@@ -188,7 +224,7 @@ func update_sim(delta: float) -> void:
 			if hit.is_empty():
 				var edge = geometry.exit_normal(flat_from, flat_to, .1)
 				normal = Vector3(edge.x, 0, edge.y) if edge != Vector2.ZERO else -direction
-			normal.y = 0
+			if not game.first_person: normal.y = 0
 			direction = direction.bounce(normal.normalized()).normalized()
 			if not hit.is_empty():
 				global_position = hit.position + normal * .12
@@ -199,21 +235,29 @@ func update_sim(delta: float) -> void:
 			return
 	else:
 		global_position = target_position
-	if friendly:
+	if friendly and not game.first_person:
 		for enemy in game.enemies.duplicate():
 			if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable or hit_ids.has(enemy.entity_id):
 				continue
 			var center: Vector3 = enemy.global_position + Vector3.UP * .65
 			var closest = Geometry3D.get_closest_point_to_segment(center, global_position - movement, global_position)
-			if closest.distance_to(center) < enemy.radius + radius:
+			var separation = closest.distance_to(center)
+			if game.first_person:
+				var low: Vector3 = enemy.global_position + Vector3.UP * enemy.radius
+				var high: Vector3 = enemy.global_position + Vector3.UP * (enemy.hit_height - enemy.radius)
+				var pair = Geometry3D.get_closest_points_between_segments(global_position - movement, global_position, low, high)
+				separation = pair[0].distance_to(pair[1])
+			if separation < enemy.radius + radius:
 				# Some foes absorb or turn a shot instead of taking it.
 				if enemy.catch_shot(self):
 					return
 				hit_enemy(enemy)
 				if not alive:
 					return
-	else:
+	elif not friendly and not game.first_person:
 		var center: Vector3 = game.player.global_position + Vector3.UP * .65
+		if game.first_person:
+			center.y = clampf(global_position.y, game.player.global_position.y + .32, game.player.global_position.y + 1.35)
 		var closest = Geometry3D.get_closest_point_to_segment(center, global_position - movement, global_position)
 		if closest.distance_to(center) < .32 + radius:
 			game.player.hurt(damage, global_position)
@@ -277,6 +321,7 @@ func hit_enemy(enemy: DungeonEnemy) -> void:
 		power *= 1.0 + float(stats.get("execute", 0))
 	enemy.apply_status(stats)
 	if game.residue: game.residue.react(enemy.global_position, .7, stats)
+	if game.first_person: game.fps.hit_time = .13
 	enemy.take_hit(power, direction * float(stats.get("knockback", 1)) * 2.0, critical, false, "shot")
 	if Run.rng.randf() < minf(.25, float(stats.get("lifesteal", 0))):
 		Run.heal(.5)

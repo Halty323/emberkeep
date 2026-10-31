@@ -3,6 +3,8 @@ const CAMERA_GAME_SIZE = 14.4
 const CAMERA_MENU_SIZE = 18.8
 const CAMERA_FOLLOW_GAIN = .45
 const CAMERA_FOCUS_LIMIT = Vector2(3.6, 2.8)
+var first_person := OS.get_environment("EMBERKEEP_LEGACY_TEST") != "1" and not "--isometric" in OS.get_cmdline_user_args()
+var fps: FirstPersonController
 var room: DungeonRoom
 var camera: Camera3D
 var camera_focus = Vector3.ZERO
@@ -160,6 +162,10 @@ func _ready() -> void:
 	ui = GameInterface.new()
 	layer.add_child(ui)
 	ui.setup(self)
+	if first_person:
+		fps = FirstPersonController.new()
+		add_child(fps)
+		fps.setup(self)
 	Run.item_gained.connect(on_item_gained)
 	actions = GameActions.new(self)
 	Session.command_received.connect(on_command)
@@ -172,7 +178,7 @@ func _ready() -> void:
 func setup_inputs() -> void:
 	var actions = {"move_left": [KEY_A, KEY_LEFT], "move_right": [KEY_D, KEY_RIGHT],
 		"move_up": [KEY_W, KEY_UP], "move_down": [KEY_S, KEY_DOWN],
-		"dash": [KEY_SPACE, KEY_SHIFT], "interact": [KEY_E], "pause_game": [KEY_ESCAPE, KEY_P], "journal": [KEY_TAB], "map": [KEY_M],
+		"dash": [KEY_SHIFT], "jump": [KEY_SPACE], "interact": [KEY_E], "pause_game": [KEY_ESCAPE, KEY_P], "journal": [KEY_TAB], "map": [KEY_M],
 		"use_active": [KEY_F], "place_bomb": [KEY_B]}
 	for action in actions:
 		if not InputMap.has_action(action): InputMap.add_action(action)
@@ -180,7 +186,7 @@ func setup_inputs() -> void:
 			var event = InputEventKey.new()
 			event.physical_keycode = key
 			InputMap.action_add_event(action, event)
-	var joy_actions = {"dash": JOY_BUTTON_RIGHT_SHOULDER, "interact": JOY_BUTTON_A, "pause_game": JOY_BUTTON_START,
+	var joy_actions = {"jump": JOY_BUTTON_A, "dash": JOY_BUTTON_RIGHT_SHOULDER, "interact": JOY_BUTTON_Y, "pause_game": JOY_BUTTON_START,
 		"use_active": JOY_BUTTON_LEFT_SHOULDER, "place_bomb": JOY_BUTTON_X}
 	for action in joy_actions:
 		var event = InputEventJoypadButton.new()
@@ -238,12 +244,15 @@ func _notification(what: int) -> void:
 			elif ui.mode == "painting": ui.close_painting()
 			elif ui.mode == "secret": ui.close_secret_code()
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		if first_person and Run.active: Run.save_run()
 		get_tree().quit()
 
 func is_playing() -> bool:
 	return Run.active and not paused and not in_menu
 
 func screen_direction(value: Vector2) -> Vector3:
+	if first_person and fps:
+		return fps.right() * value.x + Vector3(0, 0, 1).rotated(Vector3.UP, fps.yaw) * value.y
 	return screen_right * value.x + screen_down * value.y
 
 func _physics_process(delta: float) -> void:
@@ -269,23 +278,31 @@ func _physics_process(delta: float) -> void:
 	var aim = Vector3.ZERO
 	var shooting = false
 	var aim_joy = Vector2(Input.get_joy_axis(0, JOY_AXIS_RIGHT_X), Input.get_joy_axis(0, JOY_AXIS_RIGHT_Y))
-	if ui.right_vector.length() > .15:
-		aim = screen_direction(ui.right_vector)
-		shooting = true
-	elif aim_joy.length() > .22:
-		aim = screen_direction(aim_joy)
-		shooting = true
-	elif not ui.touch_used and not ui.is_touch_platform():
-		var mouse = get_viewport().get_mouse_position()
-		var ray_origin = camera.project_ray_origin(mouse)
-		var ray_direction = camera.project_ray_normal(mouse)
-		var intersection = Plane(Vector3.UP, .65).intersects_ray(ray_origin, ray_direction)
-		if intersection != null:
-			aim = intersection - player.global_position - Vector3.UP * .65
-			aim.y = 0
-		# A click that pressed an on-screen action button never becomes fire.
-		shooting = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not ui.mouse_on_action
+	if first_person:
+		fps.collect_look(delta)
+		aim = fps.shot_direction(fps.shot_origin())
+		shooting = ui.fire_touch >= 0 or (Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not ui.mouse_on_action and not fps.suppress_mouse_fire) or Input.get_joy_axis(0, JOY_AXIS_TRIGGER_RIGHT) > .25
+	else:
+		if ui.right_vector.length() > .15:
+			aim = screen_direction(ui.right_vector)
+			shooting = true
+		elif aim_joy.length() > .22:
+			aim = screen_direction(aim_joy)
+			shooting = true
+		elif not ui.touch_used and not ui.is_touch_platform():
+			var mouse = get_viewport().get_mouse_position()
+			var ray_origin = camera.project_ray_origin(mouse)
+			var ray_direction = camera.project_ray_normal(mouse)
+			var intersection = Plane(Vector3.UP, .65).intersects_ray(ray_origin, ray_direction)
+			if intersection != null:
+				aim = intersection - player.global_position - Vector3.UP * .65
+				aim.y = 0
+			# A click that pressed an on-screen action button never becomes fire.
+			shooting = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not ui.mouse_on_action
 	if request_dash:
+		if first_person:
+			var dash_input = screen_direction(move_input)
+			player.last_move = dash_input.normalized() if dash_input.length_squared() > .01 else Vector3.FORWARD.rotated(Vector3.UP, fps.yaw)
 		player.dash()
 		request_dash = false
 	player.update_sim(delta, move_input, aim, shooting)
@@ -336,6 +353,13 @@ func in_transition() -> bool:
 ## The character walks through the doorway and fades. Everything runs on the
 ## simulation clock, so pausing holds it and every frame rate sees the same.
 func begin_transition(portal_id: String) -> void:
+	if first_person:
+		var facing = fps.yaw
+		travel(portal_id)
+		fps.yaw = facing
+		transition_cooldown = .65
+		light_veil.color.a = .15
+		return
 	var side = Run.portal_side(portal_id, Run.current_room)
 	var door = RoomGeometry.socket_point(side.cell, side.dir)
 	transition = {"portal": portal_id, "phase": "exit", "time": 0.0, "from": player.position,
@@ -347,6 +371,16 @@ func begin_transition(portal_id: String) -> void:
 
 func advance_transition(delta: float) -> void:
 	transition.time += delta
+	if transition.get("kind", "") == "fps_floor":
+		light_veil.color.a = clampf(transition.time / .35, 0, 1)
+		if transition.time >= .35:
+			if Run.last_floor(): end_run(true)
+			else:
+				Run.next_floor()
+				enter_room(Vector3(0, 0, 2))
+				light_veil.color.a = 1.0
+				ui.announce_floor()
+		return
 	if transition.get("kind", "") == "stairs":
 		advance_climb()
 		return
@@ -380,6 +414,9 @@ func advance_transition(delta: float) -> void:
 ## fills the view; the floor changes under it, then the figure comes up the
 ## new floor's stairwell as the light recedes. Simulation clock, like doorways.
 func begin_climb() -> void:
+	if first_person:
+		transition = {"kind": "fps_floor", "time": 0.0}
+		return
 	var path: Array = [player.position] + stairs.climb_path()
 	var times: Array = [CLIMB_APPROACH * .6, CLIMB_APPROACH * .4]
 	for i in Staircase.STEPS: times.append(CLIMB_STEPS / Staircase.STEPS)
@@ -538,12 +575,13 @@ func _process(delta: float) -> void:
 	if fade_prewarm > 0:
 		fade_prewarm -= 1
 		if fade_prewarm == 0 and in_menu and is_instance_valid(player): player.set_fade(1.0)
+	if first_person and transition.is_empty(): light_veil.color.a = move_toward(light_veil.color.a, 0, delta * 2)
 	shake = maxf(0, shake - delta * .9)
 	hurt_flash = maxf(0, hurt_flash - delta * 1.6)
 	update_camera(delta)
 	vignette.set_shader_parameter("hurt", hurt_flash)
 	# The water's mirror runs only where there is water or ice to show it.
-	var wet = not in_menu and residue != null and is_instance_valid(residue) and residue.reflective()
+	var wet = not first_person and not in_menu and residue != null and is_instance_valid(residue) and residue.reflective()
 	mirror.follow(wet, get_viewport().get_visible_rect().size)
 	if residue and is_instance_valid(residue):
 		residue.set_mirror(mirror.render_target_update_mode == SubViewport.UPDATE_ALWAYS)
@@ -560,6 +598,10 @@ func _process(delta: float) -> void:
 func update_camera(delta: float, snap := false) -> void:
 	if not camera:
 		return
+	if first_person and fps and not in_menu:
+		fps.update_view(delta)
+		return
+	if first_person and fps: fps.update_view(delta)
 	var target = Vector3.ZERO
 	if not in_menu and is_instance_valid(player):
 		target = camera_target(player.position)
@@ -637,6 +679,8 @@ func clean_room(keep_view := false) -> void:
 func show_title_room() -> void:
 	in_menu = true
 	paused = true
+	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	camera.h_offset = -4.5
 	camera.size = CAMERA_MENU_SIZE
 	clean_room()
@@ -660,6 +704,9 @@ func start_run(weapon: String, seed_input: int, is_daily: bool) -> void:
 	Run.start_run(weapon, seed_input, is_daily)
 	in_menu = false
 	paused = false
+	if first_person:
+		fps.yaw = float(Run.view_angles[0])
+		fps.pitch = float(Run.view_angles[1])
 	camera.h_offset = 0
 	camera.size = CAMERA_GAME_SIZE
 	# Scene entity ids restart with each run, so a seed plays out identically.
@@ -669,7 +716,11 @@ func start_run(weapon: String, seed_input: int, is_daily: bool) -> void:
 	enter_room(Vector3(0, 0, 2.0))
 	ui.show_screen("play")
 	var arrival: Array = Run.theme().arrival
-	ui.notify(arrival[0], arrival[1])
+	if first_person and not Run.profile.get("fps_tutorial_seen", false):
+		ui.notify("Keep your little light close", "Swipe right to look · Hold FIRE · Jump and dash to dodge" if ui.is_touch_platform() else "Mouse look · Click fire · Space jump · Shift dash")
+		Run.profile["fps_tutorial_seen"] = true
+		Run.save_profile()
+	else: ui.notify(arrival[0], arrival[1])
 	ui.announce_floor()
 
 func continue_run() -> void:
@@ -678,6 +729,9 @@ func continue_run() -> void:
 		return
 	in_menu = false
 	paused = false
+	if first_person:
+		fps.yaw = float(Run.view_angles[0])
+		fps.pitch = float(Run.view_angles[1])
 	camera.h_offset = 0
 	camera.size = CAMERA_GAME_SIZE
 	reset_combat()
@@ -716,6 +770,9 @@ func enter_room(spawn: Vector3, keep_view := false) -> void:
 	player = Adventurer.new()
 	scene_root.add_child(player)
 	player.setup(self)
+	if first_person:
+		spawn.y = room.floor_height(spawn) + .03
+		Run.entry["height"] = spawn.y
 	player.place(spawn)
 	player.invulnerability = 1.0
 	transition_cooldown = .9
@@ -730,6 +787,7 @@ func enter_room(spawn: Vector3, keep_view := false) -> void:
 		else:
 			var cells: int = room.geometry.cells.size()
 			var count = roundi((3 + mini(Run.floor_number, 4) + mini(int(data.depth) / 3, 2)) * (1.0 + .45 * (cells - 1)))
+			if first_person: count = clampi(roundi(count * .75), 3, 12)
 			if Run.has_twist("swarming"): count = roundi(count * 1.35)
 			var roster = Foes.roster_for(Run.theme_id(), Run.floor_number, Run.floor_plan)
 			var chance = Foes.elite_chance(Run.floor_number) + (.2 if Run.has_twist("gilded") else 0.0)
@@ -798,6 +856,8 @@ func enter_room(spawn: Vector3, keep_view := false) -> void:
 ## The tower brightens floor by floor; the title keeps its own warm light.
 func apply_floor_light() -> void:
 	FloorLight.apply(FloorLight.profile(0) if in_menu else FloorLight.current(), room_environment.environment, key_light, vignette)
+	if first_person and not in_menu:
+		room_environment.environment.ambient_light_energy = maxf(.10, room_environment.environment.ambient_light_energy)
 	screen_fx.set_grade({} if in_menu else Run.theme())
 
 ## Where the air shimmers: burning floor, a hot clinker, the Kilnmother.
@@ -845,7 +905,7 @@ func spawn_enemy(at: Vector3, kind: String, source := "") -> DungeonEnemy:
 	enemy.setup(self, kind, entity_counter)
 	enemy.source = source
 	var safe = room.geometry.safe_point(Vector2(at.x, at.z), .5 + enemy.radius * .5, room.blocked_at)
-	enemy.place(Vector3(safe.x, 0, safe.y))
+	enemy.place(Vector3(safe.x, room.floor_height(Vector3(safe.x, 0, safe.y)) if first_person else 0, safe.y))
 	enemies.append(enemy)
 	return enemy
 
@@ -875,12 +935,12 @@ func nearest_enemy(at: Vector3, distance: float, excluded: Dictionary = {}) -> D
 	return result
 
 func blast(at: Vector3, radius: float, damage: float, friendly: bool, excluded: DungeonEnemy) -> void:
-	Effects.ring_burst(scene_root, Vector3(at.x, 0, at.z), Color("edbd7b"), radius)
+	Effects.ring_burst(scene_root, Vector3(at.x, room.floor_height(at) if first_person else 0, at.z), Color("edbd7b"), radius)
 	if residue: residue.ignite(Vector3(at.x, 0, at.z), radius * .7)
 	if friendly:
 		make_noise(at, 2.5)
 		for enemy in enemies.duplicate():
-			if is_instance_valid(enemy) and enemy.alive and enemy.targetable and enemy != excluded and enemy.global_position.distance_to(Vector3(at.x, 0, at.z)) < radius + enemy.radius:
+			if is_instance_valid(enemy) and enemy.alive and enemy.targetable and enemy != excluded and (enemy.global_position + Vector3.UP * (enemy.hit_height * .4 if first_person else 0)).distance_to(at if first_person else Vector3(at.x, 0, at.z)) < radius + enemy.radius:
 				enemy.take_hit(damage, (enemy.global_position - at).normalized() * 2, false, false, "blast")
 	else:
 		if player.global_position.distance_to(at) < radius:
@@ -915,7 +975,7 @@ func spawn_pickup(at: Vector3, pickup_id: String, amount := -1.0, restored_id :=
 	var safe = room.geometry.safe_point(Vector2(at.x, at.z), .3)
 	var pickup = DungeonPickup.new()
 	scene_root.add_child(pickup)
-	pickup.setup(self, Vector3(safe.x, 0, safe.y), pickup_id, amount)
+	pickup.setup(self, Vector3(safe.x, room.floor_height(Vector3(safe.x, 0, safe.y)) if first_person else 0.0, safe.y), pickup_id, amount)
 	if restored_id.is_empty():
 		pickup.drop_id = Run.add_drop(Run.current_room, pickup_id, safe, pickup.value)
 	else:
@@ -1081,6 +1141,21 @@ func prompt_for(target: Dictionary) -> String:
 func interaction_eligible(target: Dictionary) -> bool:
 	if target.kind in ["chest", "item", "painting"] and not room.open:
 		return false
+	if first_person:
+		var point: Vector3 = target.position + Vector3.UP * (.9 if target.kind != "painting" else 1.3)
+		if target.kind == "painting" and is_instance_valid(target.get("node")):
+			point = target.node.global_position
+		var view: Vector3 = point - camera.global_position
+		if view.length() > .15 and fps.forward().dot(view.normalized()) < .65: return false
+		var ray = PhysicsRayQueryParameters3D.create(camera.global_position, point, 1 | PropVisuals.FURNITURE_LAYER)
+		# The object's own chest/altar collider must not hide its prompt.
+		var own: Node = target.get("node")
+		var ignored: Array[RID] = []
+		if is_instance_valid(own):
+			if own is CollisionObject3D: ignored.append(own.get_rid())
+			for body in own.find_children("*", "CollisionObject3D", true, false): ignored.append(body.get_rid())
+		ray.exclude = ignored
+		if not get_world_3d().direct_space_state.intersect_ray(ray).is_empty(): return false
 	var from = Vector2(player.position.x, player.position.z)
 	var to = Vector2(target.position.x, target.position.z)
 	for step in 6:
@@ -1245,6 +1320,7 @@ func refresh_items() -> void:
 		if id.begins_with("item:") or id.begins_with("chest:"): interactions.unregister(id)
 	for record in data.get("items", []):
 		var view = ItemViews.item(scene_root, record)
+		if first_person: view.position.y = float(record.get("height", room.floor_height(view.position)))
 		item_views[record.id] = view
 		interactions.register("item:" + record.id, "item", view.position, 1.6, "", view)
 	for chest in data.get("chests", []):
@@ -1384,6 +1460,7 @@ func wish_paint_sprayer() -> void:
 func pause_game() -> void:
 	if not Run.active or in_menu: return
 	paused = true
+	if first_person: Run.save_run()
 	ui.show_screen("pause")
 
 func resume_game() -> void:

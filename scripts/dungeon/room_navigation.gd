@@ -35,6 +35,7 @@ func to_world(cell: Vector2i) -> Vector2:
 func walkable(point: Vector2) -> bool:
 	if not geometry.contains(point, clearance):
 		return false
+	if geometry.terrain and not geometry.terrain.traversable(point, clearance): return false
 	for id in blockers:
 		if blockers[id].grow(clearance).has_point(point):
 			return false

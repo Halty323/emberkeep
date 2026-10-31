@@ -13,6 +13,7 @@ var alive = true
 var visual: Node3D
 var eyes: Node3D
 var radius = .4
+var hit_height := 1.5
 var timer = 1.0
 var age = 0.0
 var burn_time = 0.0
@@ -104,10 +105,11 @@ func setup(owner_game: Node3D, type: String, id: int) -> void:
 	collision_layer = 4
 	collision_mask = 7 | PropVisuals.FURNITURE_LAYER
 	var shape = CollisionShape3D.new()
-	var sphere = SphereShape3D.new()
+	var sphere: Shape3D = CapsuleShape3D.new() if game.first_person else SphereShape3D.new()
 	sphere.radius = radius
+	if game.first_person: sphere.height = maxf(1.5, radius * 3.5)
 	shape.shape = sphere
-	shape.position.y = radius
+	shape.position.y = maxf(1.5, radius * 3.5) / 2 if game.first_person else radius
 	add_child(shape)
 	visual = Node3D.new()
 	add_child(visual)
@@ -121,6 +123,15 @@ func setup(owner_game: Node3D, type: String, id: int) -> void:
 	halo = Geo.halo(self, Vector3(0, .022, 0), radius * 3.8, Color(color.r, color.g, color.b, light.foe_glow))
 	timer = 1.0 + float(entity_id % 5) * .23
 	prepare()
+	if game.first_person:
+		var top = 0.0
+		for mesh in visual.find_children("*", "MeshInstance3D", true, false):
+			var transform = visual.global_transform.affine_inverse() * mesh.global_transform
+			var bounds: AABB = transform * mesh.get_aabb()
+			top = maxf(top, bounds.end.y)
+		hit_height = maxf(maxf(1.5, top * 1.5), radius * 2)
+		sphere.height = hit_height
+		shape.position.y = hit_height / 2
 	dress_skin()
 
 ## The rim and flash overlay, from Balanced effects detail up.
@@ -290,15 +301,16 @@ func update_sim(delta: float) -> void:
 		var walled = Vector2(kept.x, kept.y).distance_to(Vector2(position.x, position.z)) > .05
 		for i in get_slide_collision_count():
 			if get_slide_collision(i).get_collider() is StaticBody3D: walled = true
-		position = Vector3(kept.x, 0, kept.y)
+		position = Vector3(kept.x, game.room.floor_height(Vector3(kept.x, 0, kept.y)) if game.first_person else 0.0, kept.y)
 		if charge_time > 0 and walled: hit_wall()
 	if windup <= 0:
 		visual.scale = visual.scale.lerp(Vector3.ONE, delta * 12)
+	if game.first_person: visual.scale.y = maxf(visual.scale.y, 1.5)
 	visual.position.y = sin(age * (4 if boss else 7) + entity_id) * .04
 	if turns():
 		visual.rotation.y = lerp_angle(visual.rotation.y, atan2(-direction.x, -direction.z), delta * 8)
 	if is_instance_valid(thread) and is_instance_valid(twin) and twin.alive: stretch(thread, global_position + Vector3.UP * .6, twin.global_position + Vector3.UP * .6)
-	if contact_damage and targetable and distance < radius + .45:
+	if contact_damage and targetable and distance < radius + .45 and (not game.first_person or absf(game.player.global_position.y - global_position.y) < maxf(1.1, radius * 2.5)):
 		game.player.hurt(1.0, global_position)
 	after_move(delta, distance, direction)
 
@@ -335,6 +347,7 @@ func turns() -> bool:
 	return true
 
 func begin_windup(direction: Vector3, length: float, ring: float, ring_color: Color) -> void:
+	if game.first_person: Audio.play_at("dash", self, global_position, .6)
 	windup = length
 	charge_direction = direction
 	if is_instance_valid(warning): warning.queue_free()
@@ -364,7 +377,22 @@ func hit_wall() -> void:
 		charge_time = 0.0
 		begin_windup(charge_direction, .25, .6, Color("ed9b77"))
 
+## Ground waves have a visible low silhouette; jumping clears them. Other
+## attacks keep their own volumes instead of flattening the player's height.
+func ground_wave_reaches(height := .45) -> bool:
+	return not game.first_person or absf(game.player.global_position.y - global_position.y) < height
+
+## Keep horizontal fan patterns while aiming their centre at chest height.
+func aimed_direction(direction: Vector3, muzzle_height := .65) -> Vector3:
+	if not game.first_person: return direction
+	var flat_distance = maxf(.5, Vector2(game.player.position.x - position.x, game.player.position.z - position.z).length())
+	direction.y = (game.player.position.y + .95 - (position.y + muzzle_height)) / flat_distance
+	return direction.normalized()
+
 func shoot_fan(direction: Vector3, count: int, spread: float, shot_speed := 5.0) -> void:
+	if game.first_person:
+		direction = aimed_direction(direction, .6)
+		Audio.play_at("shoot", self, global_position, .65)
 	for i in count:
 		var angle = (float(i) / maxf(count - 1, 1) - .5) * spread
 		var d = direction.rotated(Vector3.UP, angle)

@@ -1,6 +1,21 @@
-# First-person Emberkeep: proposed major update
+# First-person Emberkeep: architecture and delivery status
 
-Status: design proposal, based on source `9e0700f`. Gameplay is unchanged. Android firing controls, vertical movement and the first deliverable are awaiting the player's preferences.
+Status: first-person implementation on Godot **4.7.2 Standard**, version **0.2.0**. This document retains the design and records the implemented scope below. Android uses manual fire plus independent swipe-look; movement includes jump and dash. Multiplayer remains future work.
+
+## Implemented scope
+
+- **Controller:** fixed-step capsule motor, real floor collision, gravity, acceleration, coyote time, jump buffering, ramp traversal and recovery. Mouse, touch and controller look use separate input paths. Pause/focus release captured input. FOV/sensitivity/invert/bob settings are validated and saved.
+- **Combat:** camera target ray plus muzzle clearance, 3D swept enemy hit volumes ordered before wall impacts, actual floor/ceiling bounce normals, vertical homing, local-basis forged volleys and height-aware blasts. Aimed enemy fans and mirrored volleys track elevation; low boss waves can be jumped. All existing run content remains available. Crowd size is reduced for eye-level readability.
+- **Presentation:** procedural held weapon with recoil/wall retraction, crosshair/hit confirmation, directional damage, pooled positional attack/footstep cues, full walls/ceilings, beams and instanced arched ribs. Enemy readability and cozy room lighting use the existing bounded light budget. First-person mist uses one lit camera-facing max-union surface; no stacked bright spheres or screen/depth reads.
+- **Rooms:** existing validated seeded cell modules support entry, fights, galleries, secrets and bosses. Eligible multi-cell combat rooms add one persisted side gallery at 1.2 m via a broad ramp. Height is single-valued in XZ: the navigation graph rejects cliff edges and routes through the ramp. This deliberately avoids overlapping floors, ladders or arbitrary stacked geometry; those would require a richer navigation representation.
+- **Progress:** save version 3 adds facing and terrain metadata. Old v2 rooms stay flat after migration, preserving their contents and progression. Door transitions retain facing; stairs use a short first-person fade. Android Preview retains its package ID and cached signing identity.
+- **Engine/build:** editor, templates, artifact verifiers and all four native CI pipelines pin Godot 4.7.2 with verified release checksums. Android template minimum API 24 and target API 36 are unchanged; SDK Build-Tools is 36.1.0.
+
+## Remaining acceptance gates
+
+The implementation is playable, with 75 focused first-person checks and the existing regression suites. Physical-device touch comfort, sustained Pixel frame times/thermals, first-person full-run balance and native iOS/Windows launch still require hands-on testing. Software OpenGL captures validate presentation paths, not phone performance. Existing painting reproductions still require their documented import/provenance step.
+
+Static baked GI remains a conditional authoring experiment: these procedural meshes do not have baked UV2/lightmaps. The current runtime uses the low-cost ambient/local-light fallback specified below. The overhead water mirror stays disabled in first person until perspective clipping is separately validated. Neither feature is silently enabled on PowerVR.
 
 ## Direction
 
@@ -8,9 +23,9 @@ Make a true first-person dungeon action roguelike. Use Doom's clear silhouettes,
 
 Recommend a stylized, tactile dungeon rather than photorealism: vaulted ceilings, thick doorframes, worn stone, warm brass, dim blue recesses and readable enemies. Beauty should come primarily from architecture, lighting and coherent materials. Keep the working PowerVR fallback; expensive post effects are optional improvements after device testing.
 
-## What the existing code requires
+## Migration responsibilities
 
-| System | Current constraint | First-person change |
+| System | Original constraint | First-person implementation |
 | --- | --- | --- |
 | `main.gd` | Orthographic camera, fixed screen-relative axes, aiming at a horizontal plane | Separate gameplay input, first-person camera and run flow; yaw-relative movement and full camera aim |
 | `avatar.gd` | Small sphere collider, movement forced to Y=0 | Upright capsule, floor contact, gravity and safe eye placement; optional jump and vertical dash rules |
@@ -80,13 +95,11 @@ Keep permanent discoveries, relic collection and weapon unlocks. Version the new
 
 Verify near-wall shots, looking straight up/down, muzzle clearance, tall/short enemy hit volumes, ricochets from floors/ceilings, homing across height changes, jumping/slopes, pit recovery, doors and secret reveals, elevation-aware hazards, and readable first-person item effects. Test simultaneous move/look/fire/action touches, safe areas, Android Back, focus loss and resume. Retain existing state/action/catalog tests and replace overhead presentation assertions with first-person equivalents. Ship the updated Preview with the existing app ID and signing key.
 
-## Decisions awaiting preferences
+## Chosen defaults
 
-- Android manual fire plus swipe-look, or optional automatic firing.
-- Full vertical aiming/jump/dash with varied floor heights, or primarily flat arenas.
-- Detailed design first, or implementation of the initial playable slice now.
+Manual fire with swipe-look; full vertical aim, jump and dash; restrained camera motion with bob disabled; single-valued ramp/gallery elevation; Compatibility rendering with the existing PowerVR fallback. The user authorized implementation of the complete update after the design review.
 
 ## Engine references
 
-- [LightmapGI 4.6.3 class documentation](https://github.com/godotengine/godot/blob/4.6.3-stable/doc/classes/LightmapGI.xml): editor-only baking, dynamic probes, PrimitiveMesh/UV2 limitations and baking-device requirements.
+- [LightmapGI 4.7.2 class documentation](https://github.com/godotengine/godot/blob/4.7.2-stable/doc/classes/LightmapGI.xml): editor-only baking, dynamic probes, PrimitiveMesh/UV2 limitations and baking-device requirements.
 - [Godot 4.6 lightmap workflow](https://docs.godotengine.org/en/4.6/tutorials/3d/global_illumination/using_lightmap_gi.html).

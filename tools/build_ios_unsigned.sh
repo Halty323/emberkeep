@@ -3,6 +3,8 @@
 set -euo pipefail
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 godot_bin="${GODOT_BIN:-godot}"
+version="$("$godot_bin" --version)"
+[[ "$version" == 4.7.2.* ]] || { echo "Expected Godot 4.7.2; found $version." >&2; exit 1; }
 if [[ "$(uname -s)" != Darwin ]]; then
     echo "iOS compilation requires macOS and Xcode. Run the iOS unsigned IPA GitHub workflow." >&2
     exit 1

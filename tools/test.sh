@@ -19,7 +19,8 @@ if "${search_command[@]}" 'SCRIPT ERROR|Parse Error|Compile Error' "$test_root/i
     cat "$test_root/import.log"
     exit 1
 fi
-for suite in catalog settings render_policy dungeon items furniture effects cloud_surfaces collection smoke lighting combat tower secret_codes presentation ui_presentation; do
+export EMBERKEEP_LEGACY_TEST=1
+for suite in catalog settings render_policy dungeon items furniture effects cloud_surfaces collection smoke lighting combat tower secret_codes presentation ui_presentation first_person; do
     "$godot_bin" --headless --path "$project_dir" --script "res://tests/$suite.gd" > "$test_root/test.log" 2>&1 || { cat "$test_root/test.log"; exit 1; }
     cat "$test_root/test.log"
     if "${search_command[@]}" 'SCRIPT ERROR|^ERROR:|FAIL:' "$test_root/test.log"; then

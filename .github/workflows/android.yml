@@ -38,14 +38,14 @@ jobs:
         run: |
           set -euo pipefail
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-            'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+            'platform-tools' 'platforms;android-36' 'build-tools;36.1.0'
 
-      - name: Restore Godot 4.6.3 and Android template
+      - name: Restore Godot 4.7.2 and Android template
         id: godot-cache
         uses: actions/cache@v4
         with:
-          path: ~/godot-4.6.3-android
-          key: godot-4.6.3-linux-android-template-v1
+          path: ~/godot-4.7.2-android
+          key: godot-4.7.2-linux-android-template-v1
 
       - name: Download and verify official Godot files
         if: steps.godot-cache.outputs.cache-hit != 'true'
@@ -53,21 +53,21 @@ jobs:
         run: |
           set -euo pipefail
           download_dir="$RUNNER_TEMP/emberkeep-godot-android"
-          godot_dir="$HOME/godot-4.6.3-android"
+          godot_dir="$HOME/godot-4.7.2-android"
           mkdir -p "$download_dir" "$godot_dir/templates"
-          base_url='https://github.com/godotengine/godot-builds/releases/download/4.6.3-stable'
+          base_url='https://github.com/godotengine/godot-builds/releases/download/4.7.2-stable'
           curl --fail --location --retry 3 --connect-timeout 30 --max-time 900 \
-            "$base_url/Godot_v4.6.3-stable_linux.x86_64.zip" -o "$download_dir/editor.zip"
+            "$base_url/Godot_v4.7.2-stable_linux.x86_64.zip" -o "$download_dir/editor.zip"
           curl --fail --location --retry 3 --connect-timeout 30 --max-time 900 \
-            "$base_url/Godot_v4.6.3-stable_export_templates.tpz" -o "$download_dir/templates.tpz"
-          # SHA-512 values from the official 4.6.3 SHA512-SUMS.txt.
+            "$base_url/Godot_v4.7.2-stable_export_templates.tpz" -o "$download_dir/templates.tpz"
+          # SHA-512 values from the official 4.7.2 SHA512-SUMS.txt.
           (cd "$download_dir" && sha512sum --check <<'CHECKSUMS'
-          a035258da32b77f966a5376f9fa29c30a6adde826a85ba918e1605bd1fc9823eba7d85f1dd5e748956bd2ba72827c0025ffa11bb82aec91128c407a2e723c99c  editor.zip
-          da606b61c10157844f8300172df374472665f95015495cb1a7cd132c40ede404faa96cc1016a4b9662db9909ddea69632c4948b2cd11163438dad4808881fb68  templates.tpz
+          9aa00f7a605200940bce3027a567b782f49bd8e940dd06ae9e987bd65aee1b1467edd56ed84fcdcbdd44354bf613bdbb4e5d2913e925850368e150c59ed54c65  editor.zip
+          ca4d71c4d7b81dfc15d1a98baa07534aa95b03fdda78a0075b06672e1648d2e5f40980c9adc28d23e1b92e732ee7bf3461997aa804af74ec2fcd7a93ccb84079  templates.tpz
           CHECKSUMS
           )
-          unzip -q -j "$download_dir/editor.zip" 'Godot_v4.6.3-stable_linux.x86_64' -d "$godot_dir"
-          mv "$godot_dir/Godot_v4.6.3-stable_linux.x86_64" "$godot_dir/godot"
+          unzip -q -j "$download_dir/editor.zip" 'Godot_v4.7.2-stable_linux.x86_64' -d "$godot_dir"
+          mv "$godot_dir/Godot_v4.7.2-stable_linux.x86_64" "$godot_dir/godot"
           chmod +x "$godot_dir/godot"
           unzip -q -j "$download_dir/templates.tpz" 'templates/android_debug.apk' 'templates/version.txt' -d "$godot_dir/templates"
 
@@ -75,10 +75,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          template_dir="$HOME/.local/share/godot/export_templates/4.6.3.stable"
+          template_dir="$HOME/.local/share/godot/export_templates/4.7.2.stable"
           mkdir -p "$template_dir"
-          cp "$HOME/godot-4.6.3-android/templates/"* "$template_dir/"
-          echo "$HOME/godot-4.6.3-android" >> "$GITHUB_PATH"
+          cp "$HOME/godot-4.7.2-android/templates/"* "$template_dir/"
+          echo "$HOME/godot-4.7.2-android" >> "$GITHUB_PATH"
 
       - name: Restore development signing key
         uses: actions/cache@v4
@@ -101,9 +101,9 @@ jobs:
           path = Path('export_presets.cfg')
           text = path.read_text()
           assert text.count('version/code=1\n') == 1
-          assert text.count('version/name="0.1.0"') == 1
+          assert text.count('version/name="0.2.0"') == 1
           text = text.replace('version/code=1\n', f'version/code={build}\n')
-          text = text.replace('version/name="0.1.0"', f'version/name="0.1.0-android.{build}"')
+          text = text.replace('version/name="0.2.0"', f'version/name="0.2.0-android.{build}"')
           path.write_text(text)
           PY
 
@@ -115,9 +115,9 @@ jobs:
         run: |
           python3 tools/verify_android_apk.py \
             "$RUNNER_TEMP/emberkeep-android/Emberkeep-Android.apk" \
-            --aapt "$ANDROID_HOME/build-tools/35.0.0/aapt" \
-            --apksigner "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
-            --zipalign "$ANDROID_HOME/build-tools/35.0.0/zipalign" \
+            --aapt "$ANDROID_HOME/build-tools/36.1.0/aapt" \
+            --apksigner "$ANDROID_HOME/build-tools/36.1.0/apksigner" \
+            --zipalign "$ANDROID_HOME/build-tools/36.1.0/zipalign" \
             --godot godot \
             --output-dir "$RUNNER_TEMP/emberkeep-android/verification"
 
@@ -155,9 +155,9 @@ jobs:
           python3 tools/verify_android_apk.py \
             "$RUNNER_TEMP/emberkeep-android/Emberkeep-Preview.apk" \
             --expected-package org.emberkeep.preview \
-            --aapt "$ANDROID_HOME/build-tools/35.0.0/aapt" \
-            --apksigner "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
-            --zipalign "$ANDROID_HOME/build-tools/35.0.0/zipalign" \
+            --aapt "$ANDROID_HOME/build-tools/36.1.0/aapt" \
+            --apksigner "$ANDROID_HOME/build-tools/36.1.0/apksigner" \
+            --zipalign "$ANDROID_HOME/build-tools/36.1.0/zipalign" \
             --godot godot \
             --output-dir "$RUNNER_TEMP/emberkeep-android/verification-preview"
 
