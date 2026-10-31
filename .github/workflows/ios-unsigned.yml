@@ -22,9 +22,16 @@ jobs:
     name: Build iPhone and iPad IPA
     runs-on: macos-15
     timeout-minutes: 30
+    env:
+      # Godot 4.7.2's official template links the newer Swift/Apple SDKs.
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+      - name: Verify Xcode 26.3 and device SDK
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
       - name: Install Godot 4.7.2 and iOS templates
         shell: bash
         run: |

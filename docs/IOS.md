@@ -1,6 +1,6 @@
 # iPhone and iPad builds without owning a Mac
 
-The **iOS unsigned IPA** GitHub Actions workflow uses a standard `macos-15` runner to build a native arm64 iPhone/iPad app. Standard hosted runner compute is free for public repositories. Artifacts are retained for three days; keeping storage within GitHub's included allowance avoids storage charges.
+The **iOS unsigned IPA** GitHub Actions workflow uses a standard `macos-15` runner with Xcode 26.3 to build a native arm64 iPhone/iPad app. Standard hosted runner compute is free for public repositories. Artifacts are retained for three days; keeping storage within GitHub's included allowance avoids storage charges.
 
 ## Build and download
 
@@ -25,7 +25,7 @@ To put the downloaded IPA in Documents, use your browser's **Save as** destinati
 
 ## Build on a Mac directly
 
-Install Godot 4.7.2 with matching iOS export templates and Xcode, then run:
+Install Godot 4.7.2 with matching iOS export templates and Xcode 26.3 (or a compatible newer SDK), then run:
 
 ```sh
 bash tools/build_ios_unsigned.sh
@@ -33,4 +33,4 @@ bash tools/build_ios_unsigned.sh
 
 The output is `../builds/ios/Emberkeep-unsigned.ipa`. The same local sideload-signing step is required.
 
-Painting reproductions are bundled only after `python3 tools/import_paintings.py` has been run and committed; otherwise the build shows covered canvases. The project keeps the Compatibility renderer, landscape layout, and twin-stick controls; VSync is system controlled on iOS. iOS uses the same safe-area and default-touch paths as Android. Building and archive validation do not replace real-device checks of lighting, frame rate, touch comfort, audio, keyboard entry, and suspend/resume.
+Painting reproductions are bundled only after `python3 tools/import_paintings.py` has been run and committed; otherwise the build shows covered canvases. The project keeps the Compatibility renderer, landscape layout, and first-person swipe-look/manual-fire controls; VSync is system controlled on iOS. iOS uses the same safe-area and default-touch paths as Android. Building and archive validation do not replace real-device checks of lighting, frame rate, touch comfort, audio, keyboard entry, and suspend/resume.
