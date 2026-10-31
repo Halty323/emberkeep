@@ -154,7 +154,8 @@ func test_rosters() -> void:
 	check(Foes.boss_kind(catalog.record("floors", "cellar")) == "warden" and Foes.boss_kind(catalog.record("floors", "halls")) == "mosskeeper"
 		and Foes.boss_kind(catalog.record("floors", "hearth")) == "last_light", "each floor has its own boss")
 
-## Lanterns can be relit and put out; light exposes foes, darkness hides them.
+## Lanterns can be relit and put out; light exposes foes without hiding their
+## bodies when they move outside its reach.
 func test_light() -> void:
 	var id = await arena(1, "combat", 51234, true)
 	check(id != "", "a cellar room with a dead lantern")
@@ -187,14 +188,18 @@ func test_light() -> void:
 	in_light.take_hit(10, Vector3.ZERO, false, false, "shot")
 	in_dark.take_hit(10, Vector3.ZERO, false, false, "shot")
 	check(room.lit_at(in_light.global_position) and is_equal_approx(100.0 - in_light.hp, 12.5) and is_equal_approx(100.0 - in_dark.hp, 10.0), "a foe in lantern light takes a quarter more")
-	# Darkness hides: with a dead lantern in the room, only the eyes show.
+	# Darkness changes the actual lighting, never mesh visibility.
 	room.set_lantern(room.lantern_near(Vector2.ZERO, 999.0, true), false)
 	step(1)
 	var far = in_dark.global_position.distance_to(game.player.global_position) > game.player_light_radius()
-	check(room.has_dark() and far and in_dark.shrouded and not in_dark.visual.get_child(0).visible and in_dark.eyes.visible, "a foe in the dark shows only its eyes")
+	check(room.has_dark() and far and not in_dark.shrouded and in_dark.visual.get_child(0).visible and in_dark.eyes.visible,
+		"a distant foe keeps its full body visible outside lantern and player light")
+	var dark_body: MeshInstance3D = in_dark.visual.get_child(0)
+	check(dark_body.material_override.shading_mode == BaseMaterial3D.SHADING_MODE_PER_PIXEL and (dark_body.layers & Geo.LIT_LAYERS) != 0,
+		"ordinary bodies receive the dungeon's real lighting")
 	game.player.place(in_dark.global_position + Vector3(1.0, 0, 0))
 	step(1)
-	check(not in_dark.shrouded and in_dark.visual.get_child(0).visible, "the player's own light shows it")
+	check(not in_dark.shrouded and in_dark.visual.get_child(0).visible, "entering player light does not pop the body into existence")
 	# A Snuffer puts a burning lantern out.
 	clear_combat()
 	var target = room.lantern_near(Vector2.ZERO, 999.0, true)
@@ -208,6 +213,24 @@ func test_light() -> void:
 	# With every lantern out there is nothing for the shadow lamp to hang on.
 	for i in room.burning_indices(): room.set_lantern(i, false)
 	check(room.lamps.is_empty() and room.shadow_lamps.all(func(lamp): return not lamp.visible), "with no lantern burning the room has no lantern light")
+	var unlit = foe("spitter", dark_spot)
+	unlit.update_light_state()
+	check(not unlit.exposed and not unlit.shrouded and unlit.visual.get_child(0).visible,
+		"a room with every lantern extinguished still renders ordinary enemies")
+	# The crypt's ghost retains its light-dependent targetability, but its
+	# faint body remains visible rather than disappearing into unrelated rings.
+	game.player.place(Vector3(6, 0, 5))
+	var ghost = foe("mourner", Vector3(-6, 0, -5))
+	ghost.update_light_state()
+	var ghost_body: MeshInstance3D = ghost.visual.get_child(0)
+	check(ghost.shrouded and not ghost.targetable and ghost_body.visible
+		and ghost_body.material_override.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA,
+		"a mourner outside light stays a visible translucent ghost while untargetable")
+	game.player.place(ghost.global_position + Vector3(1, 0, 0))
+	ghost.update_light_state()
+	check(not ghost.shrouded and ghost.targetable and ghost_body.visible
+		and ghost_body.material_override.transparency == BaseMaterial3D.TRANSPARENCY_DISABLED,
+		"a mourner in player light becomes solid and targetable without mesh popping")
 	room.set_lantern(dead, true)
 	clear_combat(false)
 	step(2)
@@ -318,7 +341,8 @@ func test_residue() -> void:
 	# Moss drags at the feet.
 	residue.add("moss", Vector3(-6, 0, 4), 1.0)
 	check(is_equal_approx(residue.slows(Vector3(-6, 0, 4)), .75), "moss slows the player")
-	# Spores hide what is inside; poison runs through; fire sets them off.
+	# Spores soften the view without deleting bodies; poison runs through and
+	# fire still sets them off.
 	game.player.place(Vector3(6, 0, 5))
 	residue.add_cloud(Vector3(-4, 0, 3), 2.0)
 	var hidden = foe("mote", Vector3(-4, 0, 3))
@@ -328,7 +352,8 @@ func test_residue() -> void:
 		enemy.hp = 200.0
 		enemy.max_hp = 200.0
 	step(1)
-	check(hidden.shrouded and residue.slows(Vector3(-4, 0, 3)) < 1.0, "a spore cloud hides what is inside and drags at the feet")
+	check(not hidden.shrouded and hidden.visual.get_child(0).visible and residue.slows(Vector3(-4, 0, 3)) < 1.0,
+		"a spore cloud leaves enemy bodies visible and still drags at the feet")
 	hidden.apply_status({"poison": 1.0})
 	step(20)
 	check(residue.clouds[0].poisoned and neighbour.poison_time > 0, "poison spreads through a spore cloud")

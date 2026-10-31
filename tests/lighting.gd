@@ -116,7 +116,8 @@ func test_floor_light() -> void:
 	check(floors[0].vignette > floors[1].vignette and floors[1].vignette > floors[2].vignette, "the edge of the view closes in lower down")
 	check(floors[0].background.get_luminance() < floors[1].background.get_luminance() and floors[1].background.get_luminance() < floors[2].background.get_luminance(),
 		"the void between rooms lightens as the tower rises")
-	check(floors[0].foe_glow > floors[1].foe_glow and floors[0].foe_body > 0, "foes carry their own glow where it is darkest")
+	check(floors[0].foe_glow > floors[1].foe_glow and floors[0].foe_body > 0 and floors[0].foe_body <= .08,
+		"dark floors retain a small readability floor without overpowering real lights")
 	check(floors[0].doorway > floors[1].doorway and floors[1].doorway >= floors[2].doorway and floors[2].doorway > 0, "doorway outlines glow brightest where it is darkest")
 	for profile in floors:
 		check(profile.ambient < .36 and profile.key < .45 and profile.lamp < 2.0, "every floor keeps the shadow contrast")
@@ -169,7 +170,7 @@ func test_floor_light() -> void:
 		var foe = game.spawn_enemy(Vector3(3, 0, 0), "mote")
 		var body: MeshInstance3D = foe.visual.get_child(0)
 		check((body.material_override.emission_enabled and is_equal_approx(body.material_override.emission_energy_multiplier, profile.foe_body)) == (profile.foe_body > 0),
-			"floor %d foes glow only where it is dark" % floor)
+			"floor %d foes retain the bounded material readability floor" % floor)
 		game.enemies.erase(foe)
 		foe.free()
 	check(anchors > 2 and run.rng.state == rng_state, "lighting floors never touches the gameplay random stream")

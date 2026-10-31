@@ -4,8 +4,9 @@ class_name FloorLight
 ## climbed is brighter: more ambient and daylight, more lanterns still
 ## burning, warmer glass. Profile 0 is the title room; 1-3 are the bottom,
 ## middle and top of the tower, which every floor blends between by height.
-## Foes carry a faint glow of their own where it is darkest, to stay readable,
-## and the outline of every open doorway glows, brightest where it is darkest,
+## Foes carry only a small readability floor where it is darkest; real room
+## lights supply their shape and colour instead of a bright self-lit body.
+## The outline of every open doorway glows, brightest where it is darkest,
 ## so every way out shows.
 ##
 ## The brightest floor stays within the contrast the presentation suite holds
@@ -19,7 +20,7 @@ const PROFILES := {
 	1: {"ambient": .055, "ambient_color": Color("7b8ca6"), "key": .08, "key_color": Color("86a0c8"),
 		"background": Color("070b10"), "fog_color": Color("0a1118"), "fog_density": .006,
 		"lamp": .42, "lamp_color": Color("ff9a52"), "shadow": 1.0, "glow": .65, "lit": .5, "vignette": .64,
-		"foe_body": .38, "foe_glow": .42, "doorway": 1.0},
+		"foe_body": .08, "foe_glow": .12, "doorway": 1.0},
 	# Halfway up: about as lit as every floor used to be.
 	2: {"ambient": .12, "ambient_color": Color("9aaec2"), "key": .22, "key_color": Color("99b4cf"),
 		"background": Color("111d26"), "fog_color": Color("142330"), "fog_density": .002,
@@ -58,7 +59,7 @@ static func for_floor(height: float, theme: Dictionary, twist := "") -> Dictiona
 	if twist == "dim":
 		result.lit *= .5
 		result.ambient *= .75
-		result.foe_glow = maxf(result.foe_glow, .3)
+		result.foe_glow = maxf(result.foe_glow, .12)
 	return result
 
 ## Floor-wide light: the environment, the directional key and the vignette.

@@ -329,7 +329,8 @@ func test_foes() -> void:
 	var mourner = spawn("mourner", Vector3(6, 0, -4))
 	for i in game.room.lanterns.size(): game.room.set_lantern(i, false)
 	step(2)
-	check(not mourner.targetable and mourner.shrouded, "a mourner outside light cannot be seen or struck")
+	check(not mourner.targetable and mourner.shrouded and mourner.visual.get_child(0).visible,
+		"a mourner outside light stays faintly visible but cannot be struck")
 	mourner.place(game.player.global_position + Vector3(1.4, 0, 0))
 	step(2)
 	check(mourner.targetable, "a mourner in the player's glow can be struck")

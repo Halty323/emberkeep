@@ -370,18 +370,15 @@ func shoot_fan(direction: Vector3, count: int, spread: float, shot_speed := 5.0)
 		var d = direction.rotated(Vector3.UP, angle)
 		game.spawn_shot(global_position + Vector3.UP * .6 + d * (radius + .2), d, 1, shot_speed, {}, Color("f29d8c"), false)
 
-## Light and darkness: a foe in a burning lantern's pool is exposed; with a
-## dead lantern in the room, one outside every light shows only its eyes.
+## Lantern light still exposes a foe to extra damage. Ordinary bodies remain
+## in the scene, so the room's actual lights and shadows determine their look;
+## crossing a light radius or a cloud must never make the mesh disappear.
 func update_light_state() -> void:
-	var lit: bool = game.room.lit_at(global_position)
-	exposed = lit
-	var hidden = false
-	if game.residue and game.residue.cloud_at(global_position) >= 0 and global_position.distance_to(game.player.global_position) > 1.6:
-		hidden = true
-	elif game.room.has_dark() and not lit and global_position.distance_to(game.player.global_position) > game.player_light_radius():
-		hidden = true
-	set_shrouded(hidden)
+	exposed = game.room.lit_at(global_position)
+	set_shrouded(false)
 
+## Reserved for kinds with an explicit concealment mechanic, such as the
+## Mourner. Submerged or ceiling foes keep their own independent visibility.
 func set_shrouded(value: bool) -> void:
 	if value == shrouded: return
 	shrouded = value

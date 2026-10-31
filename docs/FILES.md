@@ -205,6 +205,8 @@ shaders/halo.gdshader
 shaders/halo.gdshader.uid
 shaders/light_shaft.gdshader
 shaders/light_shaft.gdshader.uid
+shaders/mist.gdshader
+shaders/mist.gdshader.uid
 shaders/post.gdshader
 shaders/post.gdshader.uid
 shaders/residue.gdshader
@@ -225,6 +227,8 @@ shaders/water.gdshader
 shaders/water.gdshader.uid
 tests/catalog.gd
 tests/catalog.gd.uid
+tests/cloud_surfaces.gd
+tests/cloud_surfaces.gd.uid
 tests/collection.gd
 tests/collection.gd.uid
 tests/combat.gd
@@ -251,6 +255,8 @@ tests/render_stress.gd
 tests/render_stress.gd.uid
 tests/render_ui.gd
 tests/render_ui.gd.uid
+tests/render_visibility.gd
+tests/render_visibility.gd.uid
 tests/secret_codes.gd
 tests/secret_codes.gd.uid
 tests/settings.gd
@@ -272,6 +278,7 @@ tools/render_lighting.sh
 tools/render_mobile_startup.sh
 tools/render_stress.sh
 tools/render_ui.sh
+tools/render_visibility.sh
 tools/test.sh
 tools/test_import_paintings.py
 tools/verify_android_apk.py

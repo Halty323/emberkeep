@@ -18,9 +18,9 @@ const CLOUD_LIFE := 6.5
 const CLOUD_BLAST := 22.0
 # Per kind: colour (alpha is its opacity), glow so it shows in the dark,
 # shimmer, roughness and height above the floor.
-const LOOKS := {"wax": [Color(.86, .78, .6, .9), .12, 0.0, .45, .025], "ice": [Color(.7, .87, .97, .82), .35, 0.0, .15, .03],
+const LOOKS := {"wax": [Color(.86, .78, .6, .9), .12, 0.0, .45, .025], "ice": [Color(.55, .72, .81, .72), .04, 0.0, .22, .03],
 	"fire": [Color(1.0, .55, .2, .95), 1.6, 1.0, .9, .035], "moss": [Color(.42, .62, .33, .92), .08, 0.0, .9, .028],
-	"glass": [Color(.82, .94, 1.0, .62), .4, 0.0, .1, .032], "water": [Color(.2, .4, .5, .72), .18, 0.0, .05, .022],
+	"glass": [Color(.82, .94, 1.0, .62), .4, 0.0, .1, .032], "water": [Color(.2, .4, .5, .72), .02, 0.0, .05, .022],
 	"ink": [Color(.1, .08, .14, .88), .05, 0.0, .3, .026]}
 const STEAM_LIFE := 3.5
 const WATERY := ["water", "ice"]
@@ -41,6 +41,10 @@ var geometry: RoomGeometry
 # Vector2i tile -> {"kind", "age", "life", "spread", "under"}.
 var tiles: Dictionary = {}
 var clouds: Array = []
+# All clouds share one lit sheet. Its density is a max-union, so neither
+# overlapping clouds nor the front/back of old sphere meshes stack white.
+var cloud_view: MeshInstance3D
+var mist_material: ShaderMaterial
 # Per kind: {"view", "image", "texture"}; one texel per tile over the room.
 var views: Dictionary = {}
 var grid_origin := Vector2i.ZERO
@@ -93,6 +97,51 @@ func setup(owner_game: Node3D, room_geometry: RoomGeometry) -> void:
 		add_child(view)
 		views[kind] = {"view": view, "image": image, "texture": texture, "count": 0, "material": mat}
 	drizzle.seed = Content.stable_hash("drizzle:%d" % grid_origin.x)
+	setup_cloud_surface()
+
+func setup_cloud_surface() -> void:
+	cloud_view = MeshInstance3D.new()
+	cloud_view.name = "MistSurface"
+	cloud_view.mesh = PlaneMesh.new()
+	mist_material = ShaderMaterial.new()
+	mist_material.shader = preload("res://shaders/mist.gdshader")
+	mist_material.set_shader_parameter("detail", Look.detail())
+	cloud_view.material_override = mist_material
+	# Receive existing dungeon lighting, without reflection or shadow passes.
+	cloud_view.layers = 8
+	cloud_view.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	cloud_view.visible = false
+	add_child(cloud_view)
+
+## Only one transparent surface is drawn, even when several clouds meet.
+## Fade uses simulation age; pausing cannot consume a cloud's lifetime.
+func refresh_cloud_surface() -> void:
+	if not is_instance_valid(cloud_view): return
+	cloud_view.visible = not clouds.is_empty()
+	if clouds.is_empty(): return
+	var fields = PackedVector4Array()
+	var tints = PackedColorArray()
+	var area := Rect2()
+	for i in clouds.size():
+		var cloud: Dictionary = clouds[i]
+		var at = Vector2(cloud.at.x, cloud.at.z)
+		var fade = smoothstep(0.0, .18, float(cloud.age)) * smoothstep(0.0, .85, float(cloud.life - cloud.age))
+		fields.append(Vector4(at.x, at.y, cloud.radius, fade))
+		if cloud.kind == "steam": tints.append(Color(.57, .66, .69, .2))
+		else: tints.append(Color(.34, .56, .23, .23) if cloud.poisoned else Color(.48, .55, .34, .22))
+		var patch = Rect2(at - Vector2.ONE * cloud.radius * 1.15, Vector2.ONE * cloud.radius * 2.3)
+		area = patch if i == 0 else area.merge(patch)
+	while fields.size() < MAX_CLOUDS:
+		fields.append(Vector4.ZERO)
+		tints.append(Color.TRANSPARENT)
+	var center = area.get_center()
+	var plane: PlaneMesh = cloud_view.mesh
+	if plane.size != area.size: plane.size = area.size
+	cloud_view.position = Vector3(center.x, .62, center.y)
+	mist_material.set_shader_parameter("sheet_origin", center)
+	mist_material.set_shader_parameter("cloud_fields", fields)
+	mist_material.set_shader_parameter("cloud_tints", tints)
+	mist_material.set_shader_parameter("clock", clock)
 
 ## Rings spreading on water from a point (a shot landing, a foot wading).
 func ripple(at: Vector3, strength := 1.0) -> void:
@@ -266,26 +315,15 @@ func moss_linked(at: Vector3, reach: float, kinds := ["moss"]) -> Array:
 	return queue
 
 ## A cloud of spores (poison spreads through it, fire sets it off) or of
-## steam (it only hides what is inside, and soon thins away).
+## steam. A shared softly feathered surface carries their visual density.
 func add_cloud(at: Vector3, radius: float, kind := "spores") -> void:
 	if clouds.size() >= MAX_CLOUDS: remove_cloud(0)
 	var view = Node3D.new()
 	add_child(view)
 	view.position = Vector3(at.x, 0, at.z)
-	for i in 3:
-		var puff = Geo.sphere(view, Vector3(cos(i * 2.1) * radius * .35, .7 + i * .15, sin(i * 2.1) * radius * .35), radius * (.62 - i * .08), Color(.62, .7, .5))
-		puff.material_override = cloud_material(false, kind)
-		puff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	clouds.append({"at": Vector3(at.x, 0, at.z), "radius": radius, "age": 0.0, "poisoned": false, "view": view, "kind": kind,
 		"life": STEAM_LIFE if kind == "steam" else CLOUD_LIFE})
-
-static func cloud_material(poisoned: bool, kind := "spores") -> StandardMaterial3D:
-	var mat = StandardMaterial3D.new()
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	if kind == "steam": mat.albedo_color = Color(.86, .9, .94, .3)
-	else: mat.albedo_color = Color(.48, .78, .36, .34) if poisoned else Color(.62, .66, .5, .3)
-	return mat
+	refresh_cloud_surface()
 
 func cloud_at(at: Vector3) -> int:
 	for i in clouds.size():
@@ -295,13 +333,14 @@ func cloud_at(at: Vector3) -> int:
 func remove_cloud(index: int) -> void:
 	if is_instance_valid(clouds[index].view): clouds[index].view.queue_free()
 	clouds.remove_at(index)
+	refresh_cloud_surface()
 
 func poison_cloud(index: int) -> void:
 	var cloud: Dictionary = clouds[index]
 	if cloud.kind == "spores" and not cloud.poisoned:
 		cloud.poisoned = true
 		cloud.age = minf(cloud.age, CLOUD_LIFE * .4)
-		for puff in cloud.view.get_children(): puff.material_override = cloud_material(true)
+		refresh_cloud_surface()
 
 ## Fire sets spores off: everything inside is struck, and the blast lights
 ## what lies beneath.
@@ -367,6 +406,7 @@ func update_sim(delta: float) -> void:
 	for kind in dirty.keys():
 		if views.has(kind): rebuild(kind)
 	dirty.clear()
+	if not clouds.is_empty() or (is_instance_valid(cloud_view) and cloud_view.visible): refresh_cloud_surface()
 
 ## Redraws one kind's mask; a kind with nothing on the floor is not drawn.
 func rebuild(kind: String) -> void:
