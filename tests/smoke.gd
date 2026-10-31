@@ -17,9 +17,24 @@ func check(condition: bool, description: String) -> void:
 func test_all() -> void:
 	run = root.get_node("Run")
 	catalog = root.get_node("Content")
-	check(catalog.items.size() == 60, "60 relics loaded")
-	check(catalog.weapons.size() == 11, "11 weapons loaded: ten starters and the Paint Sprayer")
-	check(catalog.weapons.filter(func(w): return w.has("pigments")).map(func(w): return w.id) == ["paint_sprayer"], "only the Paint Sprayer cycles pigments")
+	check(catalog.items.filter(func(item): return item.rarity != "dark").size() == 60, "60 relics loaded")
+	check(catalog.items.filter(func(item): return item.rarity == "dark").size() == 8, "8 dark relics loaded")
+	# Ten starters plus Paint Sprayer, which only the painting collection unlocks.
+	check(catalog.weapons.size() == 11, "11 weapons loaded")
+	var collection = root.get_node("Collection")
+	check(catalog.weapons.filter(func(w): return not w.has("requires")).size() == 10, "ten weapons need no unlock")
+	check(not collection.weapon_available("paint_sprayer") or "paint_sprayer" in run.profile.unlocks, "Paint Sprayer is locked until earned")
+	# Godot reads a forward loop through loop_end inclusive: it must be a real
+	# frame, or every wrap reads past the sample data (an Android crash).
+	var audio = root.get_node("Audio")
+	var streams: Array = audio.sounds.values() + [audio.music_player.stream]
+	for stream in streams:
+		var frames: int = stream.data.size() / 2
+		if stream.loop_mode == AudioStreamWAV.LOOP_DISABLED: continue
+		check(stream.loop_begin >= 0 and stream.loop_begin < stream.loop_end and stream.loop_end <= frames - 1,
+			"looping audio stays inside its %d frames (loop_end %d)" % [frames, stream.loop_end])
+		var seam = absi(stream.data.decode_s16(stream.loop_end * 2) - stream.data.decode_s16(stream.loop_begin * 2))
+		check(seam <= 2, "the music loop wraps without a click (seam %d)" % seam)
 	var valid_stats: Dictionary = catalog.base_stats()
 	for item in catalog.items:
 		for key in item.effects:
@@ -29,15 +44,20 @@ func test_all() -> void:
 		for floor_value in range(1, 4):
 			run.floor_number = floor_value
 			run.generate_floor()
-			var visited := {"0,0": true}
-			var queue: Array = ["0,0"]
-			while not queue.is_empty():
-				var key: String = queue.pop_front()
-				for next in run.neighbors(key):
-					if not visited.has(next):
-						visited[next] = true
-						queue.append(next)
-			check(visited.size() == run.rooms.size(), "all rooms reachable")
+			# Required rooms never depend on a secret; the optional secret room is
+			# reachable once its concealed passage counts.
+			for include_secrets in [false, true]:
+				var visited := {"0,0": true}
+				var queue: Array = ["0,0"]
+				while not queue.is_empty():
+					var key: String = queue.pop_front()
+					for next in run.neighbors(key, include_secrets):
+						if not visited.has(next):
+							visited[next] = true
+							queue.append(next)
+				var expected = run.rooms.values().filter(func(room): return include_secrets or not room.get("secret", false)).size()
+				check(visited.size() == expected, "all rooms reachable" + (" through secrets" if include_secrets else " without secrets"))
+			check(run.rooms.values().filter(func(room): return room.get("secret", false)).size() == 1, "one optional secret room per floor")
 			for kind in ["boss", "treasure", "shop", "rest"]:
 				var count := 0
 				for room in run.rooms.values():
@@ -98,9 +118,11 @@ func test_all() -> void:
 		game.player.fire()
 	check(game.shots.size() > 20, "all weapons instantiate projectiles")
 	# Exercise room combat, rewards and progression, without touching live data.
+	# These checks use single-cell coordinates; multi-cell rooms are covered
+	# by tests/dungeon.gd.
 	var combat_key := ""
 	for key in run.rooms:
-		if run.rooms[key].type == "combat": combat_key = key; break
+		if run.rooms[key].type == "combat" and run.rooms[key].cells.size() == 1: combat_key = key; break
 	run.current_room = combat_key
 	game.enter_room(Vector3(0, 0, 4))
 	check(not game.room.open and game.enemies.size() > 0, "combat room locks with enemies")
@@ -121,8 +143,8 @@ func test_all() -> void:
 	game.choose_offer(0)
 	check(run.inventory.size() == before_count + 1, "reward cannot be claimed twice")
 	# Drops survive both room reconstruction and a disk save/load roundtrip.
-	game.spawn_pickup(Vector3(4, 0, 2), "coin", 5)
-	var drop_id: int = game.pickups.back().drop_id
+	game.spawn_pickup(Vector3(4, 0, 2), "silver_coin")
+	var drop_id: String = game.pickups.back().drop_id
 	run.save_run()
 	game.enter_room(Vector3(0, 0, 4))
 	var restored = game.pickups.filter(func(p): return p.drop_id == drop_id)
@@ -160,7 +182,8 @@ func test_all() -> void:
 	game.chosen_reward_shop = false
 	game.choose_offer(0)
 	game.enter_room(Vector3(0, 0, 4))
-	check(game.marker.get_meta("kind") == "exit", "claimed boss reward becomes floor exit")
+	check(game.marker == null and is_instance_valid(game.stairs) and game.stairs.built and game.interactions.targets.get("stairs", {}).get("kind", "") == "exit",
+		"a claimed boss reward leaves the standing stair as the floor exit")
 	# Independent multitouch streams do not cancel one another.
 	game.ui.show_screen("play")
 	var finger_left := InputEventScreenTouch.new()

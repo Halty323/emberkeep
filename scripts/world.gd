@@ -1,330 +1,230 @@
 class_name DungeonRoom
 extends Node3D
+## View of one logical room. Floors and walls are built from the union of its
+## footprint cells; walls exist only on exposed edges and every edge keeps its
+## doorway socket, filled either by a portal's gate or by a wall plug.
 const MAX_LANTERN_SHADOWS = 1
+const MAX_ACTIVE_FILLS = 5
+const FILL_HYSTERESIS = 3.0
 const WALL_BACK_HEIGHT = 2.8
 const WALL_FRONT_HEIGHT = 1.8
 const WALL_CUTAWAY_HEIGHT = .45
+const CUTAWAY_REACH = 3.0
+const PALETTE = [Color("49433d"), Color("45413b"), Color("4d463e"), Color("413e39"), Color("50473e")]
 var game: Node3D
+var data: Dictionary = {}
+var geometry: RoomGeometry
 var decor_rng = RandomNumberGenerator.new()
+# Selected warm fill lights; large rooms move a small pool between lanterns.
 var lamps: Array[OmniLight3D] = []
+var lantern_points: Array[Vector3] = []
+# Every lantern, burning or dead: {"at", "burning", "glass", "pool", "glow"}.
+# Shooting a dead one relights it; snuffing puts one out. Burning ones make up
+# lantern_points and feed the fill lights.
+var lanterns: Array = []
+# Other light a fight carries (a dropped lantern): nodes with a "reach" meta.
+var extra_lights: Array = []
+var lanterns_changed = false
+const LANTERN_POOL := 4.4
+# This floor theme's stone, walls and motes (content/floors.json); empty in
+# the title room, which keeps the default stone.
+var look: Dictionary = {}
+var lamp_assignment: Array[int] = []
 var shadow_lamps: Array[SpotLight3D] = []
+# This floor's light (FloorLight): lantern warmth, glow and how many still burn.
+var light: Dictionary = FloorLight.profile(0)
 var _quality_enabled = null
 var gates: Array[Node3D] = []
+var sockets: Dictionary = {}
 var open = true
 var time = 0.0
-## The ambient batch of this room's effect pool (embers, wisps, dust).
 var ember_mesh: MultiMeshInstance3D
-var effects: EffectPool
-var candle_points: Array = []
+var ember_origins: Array[Vector3] = []
 var obstacles: Array[Dictionary] = []
 var front_walls: Array[Dictionary] = []
-const LIGHT_POOL = 4
-var geometry := RoomGeometry.new()
-var navigation: RoomNavigation
-var sockets: Array = []
-var lantern_points: Array[Vector3] = []
-var lamp_targets: Array[int] = []
-## Saved furniture by prop id: {node, collider, obstacle, record}.
+var navigators: Dictionary = {}
+var pedestal := Vector3.ZERO
+# Live view of each prop: {"record", "definition", "node", "base", "health"}.
 var props: Dictionary = {}
-## Walls and hint debris standing in a concealed doorway, by portal id.
-var concealed: Dictionary = {}
-var _room: Dictionary = {}
+var occluders: Array = []
+var detail_meshes: Array = []
+var effects: EffectsPool
+var cloths: Array = []
+var paintings: Dictionary = {}
+var candle_points: Array[Vector3] = []
 
-func build(owner_game: Node3D, room: Dictionary, preview := false, layout := {}) -> void:
+func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 	game = owner_game
-	_room = room
+	data = room
 	decor_rng.seed = int(room.get("seed", 53))
-	geometry = RoomGeometry.new(layout.get("cells", [Vector2i.ZERO]))
-	# Every glow built for this room (and its actors) clips to its footprint.
-	Geo.footprint = geometry.shader_rects()
-	effects = EffectPool.new()
+	light = FloorLight.profile(0) if preview else FloorLight.current()
+	# Each floor theme has its own stone, walls and drifting motes.
+	look = {} if preview else Run.theme().get("look", {})
+	effects = EffectsPool.new()
 	add_child(effects)
-	effects.setup(owner_game, geometry, int(room.get("seed", 53)))
-	sockets = layout.get("sockets", [])
-	if preview and sockets.is_empty():
-		for direction in RoomGeometry.DIRECTIONS:
-			sockets.append({"portal": "", "cell": Vector2i.ZERO, "dir": direction, "other": "", "state": "open"})
-	var palette = [Color("49433d"), Color("45413b"), Color("4d463e"), Color("413e39"), Color("50473e")]
-	for color_index in palette.size():
-		var points: Array[Vector3] = []
-		for cell in geometry.cells:
-			var center := geometry.cell_center(cell)
-			for x in range(-9, 9):
-				for z in range(-7, 7):
-					var gx := x + cell.x * 18
-					var gz := z + cell.y * 14
-					if posmod(gx * 37 + gz * 19 + gx * gz, 5) == color_index:
-						points.append(Vector3(center.x + x + .5, -.16, center.y + z + .5))
-		var mm = MultiMesh.new()
-		mm.transform_format = MultiMesh.TRANSFORM_3D
-		var tile = BoxMesh.new()
-		tile.size = Vector3(.975, .25, .975)
-		mm.mesh = tile
-		mm.instance_count = points.size()
-		for i in points.size():
-			mm.set_instance_transform(i, Transform3D(Basis.IDENTITY, points[i]))
-		var mesh = MultiMeshInstance3D.new()
-		mesh.multimesh = mm
-		mesh.material_override = Geo.material(palette[color_index])
-		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		add_child(mesh)
-	for cell in geometry.cells:
-		var center := geometry.cell_center(cell)
-		Geo.box(self, Vector3(center.x, -.55, center.y), Vector3(18.6, .7, 14.6), Color("242d31"))
-		Geo.box(self, Vector3(center.x, -.96, center.y), Vector3(17.9, .25, 13.9), Color("19232b"))
-	# Walls only on exposed edges; open seams inside one room have no wall.
-	# The near sides cut away when an actor is behind them.
-	for side in geometry.exposed_sides():
-		build_side(side)
-	# Lanterns stand against walls; corners that open onto the room have none.
-	for p in Furnishing.lantern_points(geometry):
-		lantern_points.append(Vector3(p.x, 0, p.y))
-	for p in lantern_points:
-		make_lantern(p)
-	for i in mini(LIGHT_POOL, lantern_points.size()):
-		# A fixed pool of unshadowed fills follows the player across large rooms.
-		lamps.append(Geo.light(self, lantern_points[i] + Vector3(0, 2.2, 0), Color("ffbc71"), .6, 7.0))
-		lamp_targets.append(i)
-	if not lantern_points.is_empty():
-		make_shadow_light(lantern_points[0])
+	geometry = RoomGeometry.new(Run.local_cells(room) if room.has("cells") else [Vector2i.ZERO])
+	geometry.apply_shader_mask()
+	if room.has("pedestal"):
+		pedestal = Vector3(float(room.pedestal[0]), 0, float(room.pedestal[1]))
+	collect_sockets(room, preview)
+	build_floor()
+	build_walls()
+	var points: Array = room.get("lights", default_lights())
+	var burning: Array = FloorLight.lit_lanterns(points.size(), light, int(room.get("seed", 53)))
+	# A room remembers lanterns relit or put out once its fight was over.
+	if room.has("lit") and not preview: burning = room.lit.map(func(i): return int(i))
+	# The dark store keeps its lanterns dead: only the altar's flame burns.
+	elif room.get("type", "") == "dark": burning = []
+	for i in points.size():
+		make_lantern(Vector3(float(points[i][0]), 0, float(points[i][1])), i in burning)
+	make_fill_lights()
 	var room_type: String = room.get("type", "combat")
-	if room_type in ["start", "treasure", "rest", "shop"] or preview:
-		Geo.box(self, Vector3(0, -.003, 0), Vector3(6.2, .03, 4.6), Color("514450") if room_type == "shop" else Color("5d4c3e"))
-		Geo.ring(self, Vector3(0, .035, 0), 1.65, Color("9e875c"), .025)
-		Geo.ring(self, Vector3(0, .035, 0), 1.45, Color("7c7359"), .018)
-	if room.has("props") and not preview:
-		for record in room.props:
-			if not record.get("destroyed", false):
-				build_prop(record)
-	elif room_type in ["combat", "boss"] and not preview:
-		for index in geometry.cells.size():
-			var cell: Vector2i = geometry.cells[index]
-			var center := geometry.cell_center(cell)
-			var points = [Vector3(-3.5, 0, -2.7), Vector3(3.5, 0, 2.7)]
-			if (int(room.seed) + index) % 2 == 0:
-				points = [Vector3(-3.8, 0, 2.7), Vector3(3.8, 0, -2.7)]
-			for local in points:
-				var p: Vector3 = local + Vector3(center.x, 0, center.y)
-				var dims = Vector3(1.2, 1.2, 1.2)
-				Geo.box(self, p + Vector3(0, .6, 0), dims, Color("4f5855"))
-				Geo.box(self, p + Vector3(0, 1.22, 0), Vector3(1.35, .14, 1.35), Color("747b68"))
-				Geo.collider(self, p + Vector3(0, 1.0, 0), Vector3(1.3, 2.0, 1.3))
-				obstacles.append({"position": p, "radius": 1.05})
-				make_candle(p + Vector3(0, 1.32, 0), .6)
-	# Small details: decorative candles only; collision and layout never change.
-	for cell in geometry.cells:
-		var center := geometry.cell_center(cell)
-		for i in [4, 10, 14][Settings.detail_level()]:
-			var side = -1 if i % 2 == 0 else 1
-			var p = Vector3(decor_rng.randf_range(-6.5, 6.5), 0, side * 6.2)
-			if absf(p.x) < 1.7:
-				p.x += 3.0
-			if geometry.has_cell(cell + Vector2i(0, side)):
-				continue
-			if blocked_at(Vector2(p.x + center.x, p.z + center.y), .3, true):
-				continue
-			make_candle(p + Vector3(center.x, 0, center.y), decor_rng.randf_range(.45, .85))
-	if room.has("mount") and room.has("painting") and not preview:
-		build_painting(room.mount, room.painting)
-	var shelves: Array = []
-	for id in props:
-		if props[id].record.def in ["bookcase", "shelf"]:
-			var rect := Furnishing.record_rect(props[id].record)
-			shelves.append(Vector3(rect.get_center().x, 0, rect.get_center().y))
-	effects.populate_ambient(candle_points, lantern_points, shelves)
-	ember_mesh = effects.ambient_mesh
-	if geometry.cells.size() > 1 or not props.is_empty():
-		navigation = RoomNavigation.new(geometry, obstacles)
+	if room_type in ["start", "treasure", "rest", "shop", "dark"] or preview:
+		Geo.box(self, pedestal + Vector3(0, -.003, 0), Vector3(6.2, .03, 4.6), {"shop": Color("514450"), "dark": Color("2a1a26")}.get(room_type, Color("5d4c3e")))
+		Geo.ring(self, pedestal + Vector3(0, .035, 0), 1.65, Color("9e875c"), .025)
+		Geo.ring(self, pedestal + Vector3(0, .035, 0), 1.45, Color("7c7359"), .018)
+	var records: Array = room.get("props", [])
+	if not room.has("props") and room_type in ["combat", "boss"] and not preview:
+		# Rooms saved before resolved dressing derive the same pillars.
+		var pillars = FloorGenerator.pillar_points(geometry.cells, int(room.seed), Vector2(pedestal.x, pedestal.z))
+		for i in pillars.size():
+			records.append({"id": "%s:p%d" % [room.get("id", ""), i], "kind": "pillar", "position": [pillars[i].x, pillars[i].y], "rotation": 0, "size": [1.3, 1.3]})
+	build_props(records)
+	# Containers are solid: navigation and spawns route around them.
+	for chest in room.get("chests", []):
+		var at = Vector2(float(chest.position[0]), float(chest.position[1]))
+		obstacles.append({"position": Vector3(at.x, 0, at.y), "radius": .7, "rect": Rect2(at - Vector2(.5, .33), Vector2(1.0, .66))})
+	build_paintings()
+	make_candles()
+	make_embers()
+	add_ambient_emitters()
 	set_open(true)
 	apply_lighting_quality()
 
-func build_prop(record: Dictionary) -> void:
-	var def: Dictionary = Content.get_def("furniture", record.def)
-	if def.is_empty():
+static func default_lights() -> Array:
+	return Content.record("rooms", "hearth_1x1").lights.map(func(anchor):
+		var at = RoomGeometry.resolve_anchor([Vector2i.ZERO], 0, anchor)
+		return [at.x, at.y])
+
+func collect_sockets(room: Dictionary, preview: bool) -> void:
+	for edge in geometry.exposed_edges():
+		sockets[socket_key(edge.cell, edge.dir)] = {"cell": edge.cell, "dir": edge.dir, "portal": "", "state": "wall"}
+	if preview:
+		for direction in RoomGeometry.DIRECTIONS:
+			sockets[socket_key(Vector2i.ZERO, direction)].state = "open"
 		return
-	var node := PropBuilder.build(self, def, record, Settings.detail_level())
-	var entry := {"node": node, "record": record}
-	var rect := Furnishing.record_rect(record)
-	if record.def == "pillar":
-		make_candle(Vector3(rect.get_center().x, 1.32, rect.get_center().y), .6)
-	if def.blocks:
-		var height := maxf(.4, float(def.height))
-		var body := Geo.collider(self, Vector3(rect.get_center().x, height / 2.0, rect.get_center().y), Vector3(rect.size.x, height, rect.size.y))
-		body.set_meta("prop_id", record.id)
-		entry.collider = body
-		entry.obstacle = {"position": Vector3(rect.get_center().x, 0, rect.get_center().y), "radius": minf(rect.size.x, rect.size.y) / 2.0, "rect": rect}
-		obstacles.append(entry.obstacle)
-	props[record.id] = entry
+	for portal_id in room.get("portals", []):
+		var side = Run.portal_side(portal_id, room.id)
+		var key = socket_key(side.cell, side.dir)
+		if sockets.has(key):
+			sockets[key].portal = portal_id
+			sockets[key].state = Run.portals[portal_id].state
 
-## A wall-mounted painting: procedural frame, the real reproduction scaled to
-## fit without cropping or stretching, and a plaque. While an image is still
-## pending import, a plainly marked plate stands in; never substitute art.
-func build_painting(mount: Dictionary, id: String) -> void:
-	var record := Gallery.painting(id)
-	if record.is_empty():
-		return
-	var node := Node3D.new()
-	add_child(node)
-	node.name = "Painting"
-	node.set_meta("painting", id)
-	var dir := Vector2(mount.dir[0], mount.dir[1])
-	node.position = Vector3(mount.position[0], Furnishing.MOUNT_HEIGHT, mount.position[1])
-	node.rotation.y = atan2(-dir.x, -dir.y)
-	var area := Vector2(mount.size[0], mount.size[1]) - Vector2(.3, .3)
-	var aspect: float = float(record.aspect)
-	var size := Vector2(area.x, area.x / aspect) if area.x / aspect <= area.y else Vector2(area.y * aspect, area.y)
-	var frame := Color("8a6a3c") if record.kind != "wall painting" else Color("6d6a62")
-	for side in [-1, 1]:
-		Geo.box(node, Vector3(side * (size.x / 2 + .07), 0, .03), Vector3(.14, size.y + .28, .08), frame)
-		Geo.box(node, Vector3(0, side * (size.y / 2 + .07), .03), Vector3(size.x + .28, .14, .08), frame)
-	var canvas := MeshInstance3D.new()
-	var quad := QuadMesh.new()
-	quad.size = size
-	canvas.mesh = quad
-	canvas.position = Vector3(0, 0, .04)
-	var mat := StandardMaterial3D.new()
-	mat.roughness = .9
-	var tex := Gallery.texture(id)
-	if tex:
-		mat.albedo_texture = tex
-		# A little self-light keeps the work readable in a dim room without
-		# adding a light (the local light budget stays unchanged).
-		mat.emission_enabled = true
-		mat.emission_texture = tex
-		mat.emission_energy_multiplier = .25
-	else:
-		mat.albedo_color = Color("2b2a27")
-		var note := Label3D.new()
-		note.text = "IMAGE PENDING\n" + record.title
-		note.font_size = 28
-		note.pixel_size = .006
-		note.modulate = Color("c4bda7")
-		note.position = Vector3(0, 0, .05)
-		node.add_child(note)
-	canvas.material_override = mat
-	canvas.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	canvas.name = "Canvas"
-	node.add_child(canvas)
-	Geo.box(node, Vector3(0, -size.y / 2 - .32, .05), Vector3(.7, .16, .04), Color("b1925c"), .15)
+static func socket_key(cell: Vector2i, direction: Vector2i) -> String:
+	return "%d,%d,%d,%d" % [cell.x, cell.y, direction.x, direction.y]
 
-## True when p (XZ) is within `margin` of a blocking prop (or any prop).
-func blocked_at(p: Vector2, margin := .5, include_decor := false) -> bool:
-	for id in props:
-		var entry: Dictionary = props[id]
-		if not entry.has("obstacle") and not include_decor: continue
-		if Furnishing.record_rect(entry.record).grow(margin).has_point(p):
-			return true
-	return false
+func build_floor() -> void:
+	# Batches are chunked per cell so a large room's floor is not one giant
+	# mesh receiving every distant lantern's lighting pass.
+	for cell in geometry.cells:
+		var center = RoomGeometry.cell_center(cell)
+		var palette: Array = look.get("floor", []).map(func(hex): return Color(hex)) if look.has("floor") else PALETTE
+		for color_index in palette.size():
+			var points: Array[Vector3] = []
+			for x in range(int(center.x) - 9, int(center.x) + 9):
+				for z in range(int(center.y) - 7, int(center.y) + 7):
+					if posmod(x * 37 + z * 19 + x * z, 5) == color_index:
+						points.append(Vector3(x + .5, -.16, z + .5))
+			var mm = MultiMesh.new()
+			mm.transform_format = MultiMesh.TRANSFORM_3D
+			mm.mesh = Geo.shared_box(Vector3(.975, .25, .975))
+			mm.instance_count = points.size()
+			for i in points.size():
+				mm.set_instance_transform(i, Transform3D(Basis.IDENTITY, points[i]))
+			var mesh = MultiMeshInstance3D.new()
+			mesh.multimesh = mm
+			mesh.material_override = Geo.material(palette[color_index])
+			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(mesh)
+		Geo.box(self, Vector3(center.x, -.55, center.y), Vector3(18.6, .7, 14.6), Color(look.get("base", "242d31")))
+		Geo.box(self, Vector3(center.x, -.96, center.y), Vector3(17.9, .25, 13.9), Color(look.get("under", "19232b")))
 
-## Remove a broken prop's visuals, collision and navigation block once.
-func remove_prop(id: String) -> void:
-	if not props.has(id):
-		return
-	var entry: Dictionary = props[id]
-	props.erase(id)
-	if is_instance_valid(entry.node): entry.node.queue_free()
-	if entry.has("collider") and is_instance_valid(entry.collider):
-		entry.collider.queue_free()
-	if entry.has("obstacle"):
-		obstacles.erase(entry.obstacle)
-		navigation = RoomNavigation.new(geometry, obstacles)
+func build_walls() -> void:
+	for segment in geometry.wall_segments():
+		var box = RoomGeometry.segment_box(segment)
+		var front = RoomGeometry.is_front(segment.dir)
+		var height = WALL_FRONT_HEIGHT if front else WALL_BACK_HEIGHT
+		make_wall(Vector3(box.center.x, height / 2, box.center.y), Vector3(box.size.x, height, box.size.y),
+			segment.dir if front else Vector2i.ZERO, segment.line, segment.from, segment.to)
+	for key in sockets:
+		var socket: Dictionary = sockets[key]
+		if socket.state in ["open", "locked", "revealed"]:
+			make_gate(socket)
+		else:
+			make_plug(socket)
 
-## Miner's Lantern: make every concealed seam in this room glow for a while.
-## The hint only points; the wall still needs a bomb or breach to open.
-func highlight_seams(duration: float) -> Array:
-	var lit: Array = []
-	for socket in sockets:
-		if not concealed.has(socket.portal): continue
-		var center := geometry.cell_center(socket.cell)
-		var direction: Vector2i = socket.dir
-		var at := Vector3(center.x + direction.x * 9.15, 0, center.y + direction.y * 7.15) - Vector3(direction.x, 0, direction.y) * .3
-		var glow := Geo.halo(self, at + Vector3(0, .04, 0), 3.0, Color(.95, .78, .45, .5))
-		var seam := Geo.box(self, at + Vector3(0, .9, 0), Vector3(.06, 1.6, .06), Color("f1cc8a"), 2.4)
-		for node in [glow, seam]:
-			node.name = "SeamHint"
-			concealed[socket.portal].append(node)
-			get_tree().create_timer(duration).timeout.connect(func(): if is_instance_valid(node): node.queue_free())
-		lit.append(socket.portal)
-	return lit
+func make_plug(socket: Dictionary) -> void:
+	var direction: Vector2i = socket.dir
+	if socket.state == "concealed":
+		make_seam_hints(socket)
+	var front = RoomGeometry.is_front(direction)
+	var height = WALL_FRONT_HEIGHT if front else WALL_BACK_HEIGHT
+	var point = RoomGeometry.socket_point(socket.cell, direction)
+	var at = point + Vector2(direction) * .15
+	var line = point.dot(Vector2(direction).abs())
+	var along = point.dot(Vector2(absi(direction.y), absi(direction.x)))
+	socket["walls"] = make_wall(Vector3(at.x, height / 2, at.y), Vector3(.45, height, 2.5) if direction.x != 0 else Vector3(2.5, height, .45),
+		direction if front else Vector2i.ZERO, line, along - 1.25, along + 1.25)
 
-## Open a concealed doorway in place: drop the wall and debris, build a gate.
-func reveal_socket(portal: String) -> void:
-	for socket in sockets:
-		if socket.portal == portal:
-			socket.state = "open"
-			if concealed.has(portal):
-				for node in concealed[portal]:
-					if is_instance_valid(node): node.queue_free()
-				front_walls = front_walls.filter(func(w): return is_instance_valid(w.body) and not w.body in concealed[portal])
-				concealed.erase(portal)
-			var center := geometry.cell_center(socket.cell)
-			var direction: Vector2i = socket.dir
-			var sign_value := float(direction.x + direction.y)
-			make_gate(socket, Vector3(center.x + direction.x * 9.15, 0, center.y + direction.y * 7.15), direction, sign_value)
-			set_open(open)
-
-func socket_for(cell: Vector2i, direction: Vector2i) -> Dictionary:
-	for socket in sockets:
-		if socket.cell == cell and socket.dir == direction:
-			return socket
-	return {}
-
-## World-space doorway point for a socket (on the cell edge).
-func socket_position(socket: Dictionary) -> Vector3:
-	var p := geometry.socket_point(socket.cell, socket.dir)
-	return Vector3(p.x, 0, p.y)
-
-func build_side(side: Dictionary) -> void:
-	var cell: Vector2i = side.cell
-	var direction: Vector2i = side.dir
-	var center := geometry.cell_center(cell)
-	var horizontal = direction.y != 0
-	var sign_value := float(direction.x + direction.y)
-	var height = WALL_BACK_HEIGHT if sign_value < 0 else WALL_FRONT_HEIGHT
-	var length = 9.0 if horizontal else 7.0
-	var front_side = direction if sign_value > 0 else Vector2i.ZERO
-	for part in [-1, 1]:
-		var along = float(part) * (length + 1.2) / 2.0
-		var pos = Vector3(center.x + along, height / 2.0, center.y + sign_value * 7.2) if horizontal else Vector3(center.x + sign_value * 9.2, height / 2.0, center.y + along)
-		var dims = Vector3(length - 1.2, height, .45) if horizontal else Vector3(.45, height, length - 1.2)
-		make_wall(pos, dims, front_side)
-	var socket := socket_for(cell, direction)
-	var at = Vector3(center.x + direction.x * 9.15, 0, center.y + direction.y * 7.15)
-	if not socket.is_empty() and socket.get("state", "open") != "concealed":
-		make_gate(socket, at, direction, sign_value)
-	else:
-		var nodes := make_wall(at + Vector3(0, height / 2, 0), Vector3(.45, height, 2.5) if direction.x != 0 else Vector3(2.5, height, .45), front_side)
-		if not socket.is_empty():
-			# A concealed seam: cracked mortar, a draft of dust and loose rubble.
-			nodes.append_array(make_seam_hint(at, direction, height))
-			concealed[socket.portal] = nodes
-
-func make_seam_hint(at: Vector3, direction: Vector2i, height: float) -> Array:
-	var nodes: Array = []
-	var inward := -Vector3(direction.x, 0, direction.y)
-	var along := Vector3(absf(direction.y), 0, absf(direction.x))
-	var face := at + inward * .24
-	for i in 4:
-		var crack := Geo.box(self, face + along * (sin(i * 2.1) * .5) + Vector3(0, .35 + i * height * .18, 0),
-			Vector3(.04, .32, .04), Color("23292d"))
-		crack.rotation = Vector3(0, 0, .5 * sin(i * 1.3)) if direction.y != 0 else Vector3(.5 * sin(i * 1.3), 0, 0)
-		crack.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		nodes.append(crack)
+## Subtle tells of a concealed passage: cracked mortar on the inner face, a
+## little rubble at its foot and a faint draft of dust.
+func make_seam_hints(socket: Dictionary) -> void:
+	var direction: Vector2i = socket.dir
+	var inward = -Vector2(direction)
+	var point = RoomGeometry.socket_point(socket.cell, direction) + inward * .02
+	var across = Vector2(absi(direction.y), absi(direction.x))
+	var hints = Node3D.new()
+	hints.name = "SeamHints"
+	add_child(hints)
+	var crack_color = Color("23292d")
 	for i in 5:
-		var rubble := Geo.box(self, face + inward * (.25 + .18 * (i % 3)) + along * ((i - 2) * .32) + Vector3(0, .06, 0),
-			Vector3.ONE * (.1 + .04 * (i % 2)), Color("4c4a44"))
-		rubble.rotation.y = i * .9
+		var along = (i - 2) * .32
+		var at = point + across * along
+		var crack = Geo.box(hints, Vector3(at.x, .5 + i * .27, at.y), Vector3(.05 + across.x * .22, .04, .05 + across.y * .22), crack_color)
+		crack.rotation.y = .5 * (1 if i % 2 == 0 else -1)
+		crack.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	for i in 4:
+		var at = point + inward * (.25 + .12 * (i % 2)) + across * ((i - 1.5) * .35)
+		var rubble = Geo.box(hints, Vector3(at.x, .05, at.y), Vector3(.14, .1, .12) * (1.0 + .3 * (i % 3)), Color("5a5d58"))
+		rubble.rotation.y = i * .8
 		rubble.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		nodes.append(rubble)
-	return nodes
+	socket["hints"] = hints
 
-func make_gate(socket: Dictionary, at: Vector3, direction: Vector2i, sign_value: float) -> void:
+## Opens a revealed passage in the live room: the plug and its tells go, a
+## doorway takes their place. Collision changes with the visible wall.
+func reveal_socket(portal_id: String) -> void:
+	for key in sockets:
+		var socket: Dictionary = sockets[key]
+		if socket.portal != portal_id or socket.state != "concealed": continue
+		socket.state = "revealed"
+		var walls: Dictionary = socket.get("walls", {})
+		for part in ["body", "cap", "collider", "shadow_caster"]:
+			if walls.has(part) and is_instance_valid(walls[part]): walls[part].queue_free()
+		front_walls.erase(walls)
+		if socket.has("hints"): socket.hints.queue_free()
+		make_gate(socket)
+		set_open(open)
+		var at = RoomGeometry.socket_point(socket.cell, socket.dir)
+		Effects.burst(self, Vector3(at.x, .8, at.y), Color("8f8a7c"), 12, 1.4)
+
+func make_gate(socket: Dictionary) -> void:
+	var direction: Vector2i = socket.dir
+	var at = RoomGeometry.socket_point(socket.cell, direction) + Vector2(direction) * .15
 	var gate = Node3D.new()
 	add_child(gate)
-	gate.position = at
-	gate.set_meta("portal", socket.portal)
+	gate.position = Vector3(at.x, 0, at.y)
 	var rotated = direction.x != 0
-	var post_height = WALL_BACK_HEIGHT - .25 if sign_value < 0 else 1.5
+	var post_height = WALL_BACK_HEIGHT - .25 if direction.x + direction.y < 0 else 1.5
 	Geo.box(gate, Vector3(0, -.015, 0), Vector3(.8, .08, 2.25) if rotated else Vector3(2.25, .08, .8), Color("b69c6a"))
 	for s in [-1, 1]:
 		Geo.box(gate, Vector3(0, post_height / 2, s * 1.1) if rotated else Vector3(s * 1.1, post_height / 2, 0), Vector3(.25, post_height, .25), Color("797263"))
@@ -333,37 +233,58 @@ func make_gate(socket: Dictionary, at: Vector3, direction: Vector2i, sign_value:
 	var barrier = Geo.box(gate, Vector3(0, .75, 0), Vector3(.16, 1.45, 2.0) if rotated else Vector3(2.0, 1.45, .16), Color("b85e4c"), .7)
 	barrier.name = "Barrier"
 	Geo.halo(gate, Vector3(0, .035, 0), 3.5, Color(.92, .62, .25, .28))
+	# An open doorway's outline glows (posts, sill and any lintel), brightest
+	# where the floor is darkest, so every way out shows.
+	var outline = Node3D.new()
+	outline.name = "Outline"
+	gate.add_child(outline)
+	var glow = Color(1.0, .7, .36) * light.doorway
+	var inner = 1.1 - .125 - .035
+	var side = post_height - (.09 if post_height > 1.5 else 0.0)
+	for s in [-1, 1]:
+		Geo.glow_box(outline, Vector3(0, side / 2, s * inner) if rotated else Vector3(s * inner, side / 2, 0),
+			Vector3(.28, side, .07) if rotated else Vector3(.07, side, .28), glow)
+	var across = [.04] + ([post_height - .12] if post_height > 1.5 else [])
+	for y in across:
+		Geo.glow_box(outline, Vector3(0, y, 0), Vector3(.28, .06, inner * 2.0) if rotated else Vector3(inner * 2.0, .06, .28), glow)
+	gate.set_meta("portal", socket.portal)
+	socket["gate"] = gate
 	gates.append(gate)
 
-func make_wall(at: Vector3, dimensions: Vector3, front_side := Vector2i.ZERO) -> Array:
-	var body = Geo.box(self, at, dimensions, Color("394148"))
-	var cap = Geo.box(self, at + Vector3(0, dimensions.y / 2 + .035, 0), Vector3(dimensions.x + .06, .09, dimensions.z + .06), Color("656358"))
+func make_wall(at: Vector3, dimensions: Vector3, front_side := Vector2i.ZERO, line := 0.0, from := 0.0, to := 0.0) -> Dictionary:
+	var body = Geo.box(self, at, dimensions, Color(look.get("wall", "394148")))
+	var cap = Geo.box(self, at + Vector3(0, dimensions.y / 2 + .035, 0), Vector3(dimensions.x + .06, .09, dimensions.z + .06), Color(look.get("cap", "656358")))
 	var collider = Geo.collider(self, at, dimensions + Vector3(0, 2, 0))
-	var nodes: Array = [body, cap, collider]
+	var entry = {"body": body, "cap": cap, "collider": collider}
 	if front_side != Vector2i.ZERO:
 		# Keep a static full-height occluder while the visible wall cuts away.
 		# This avoids transparent wall passes and moving shadow-map casters.
 		body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		cap.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		var caster = Geo.box(self, at, dimensions, Color("394148"))
+		var caster = Geo.box(self, at, dimensions, Color(look.get("wall", "394148")))
 		caster.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
-		var along_x := front_side.y != 0
-		var span := Vector2(at.x - dimensions.x / 2, at.x + dimensions.x / 2) if along_x else Vector2(at.z - dimensions.z / 2, at.z + dimensions.z / 2)
-		front_walls.append({"body": body, "cap": cap, "shadow_caster": caster,
-			"collider": collider, "side": front_side, "height": dimensions.y,
-			"plane": at.z if along_x else at.x, "span": span})
-		nodes.append(caster)
-	return nodes
+		entry.merge({"shadow_caster": caster, "side": front_side, "height": dimensions.y,
+			"line": line, "from": from, "to": to})
+		front_walls.append(entry)
+	return entry
 
-## Lower a foreground wall when the player or an enemy stands just inside it,
-## using the wall's own boundary normal and extent rather than room-wide axes.
+## Front segments lower when an actor stands within reach of their inner face
+## along the boundary normal; collision and shadow occluders never move.
+func wall_obstructs(wall: Dictionary, point: Vector3) -> bool:
+	var side: Vector2i = wall.side
+	var across = point.x if side.x != 0 else point.z
+	var along = point.z if side.x != 0 else point.x
+	var inward = wall.line - across
+	return inward > -1.0 and inward < CUTAWAY_REACH and along > wall.from - CUTAWAY_REACH and along < wall.to + CUTAWAY_REACH
+
 func update_wall_visibility(focus: Vector3, delta: float, others: Array = []) -> void:
 	for wall in front_walls:
-		var near = _behind_wall(wall, focus)
-		for actor in others:
-			if _behind_wall(wall, actor):
-				near = true
-				break
+		var near = wall_obstructs(wall, focus)
+		if not near:
+			for actor in others:
+				if wall_obstructs(wall, actor):
+					near = true
+					break
 		var target = WALL_CUTAWAY_HEIGHT if near else WALL_FRONT_HEIGHT
 		var height = target if delta <= 0 else move_toward(wall.height, target, delta * 7.0)
 		if is_equal_approx(height, wall.height): continue
@@ -371,56 +292,210 @@ func update_wall_visibility(focus: Vector3, delta: float, others: Array = []) ->
 		wall.body.scale.y = height / WALL_FRONT_HEIGHT
 		wall.body.position.y = height / 2
 		wall.cap.position.y = height + .035
+	# Free-standing pieces lower when they actually stand between the camera
+	# and an actor; their collision and shadow occluder stay on the base.
+	for occluder in occluders:
+		var hidden = prop_obstructs(occluder, focus)
+		if not hidden:
+			for actor in others:
+				if prop_obstructs(occluder, actor):
+					hidden = true
+					break
+		var goal = .35 if hidden else 1.0
+		var value = goal if delta <= 0 else move_toward(occluder.current, goal, delta * 5.0)
+		if is_equal_approx(value, occluder.current): continue
+		occluder.current = value
+		occluder.node.scale.y = value
 
-func _behind_wall(wall: Dictionary, p: Vector3) -> bool:
-	var depth: float = p.z if wall.side.y > 0 else p.x
-	var along: float = p.x if wall.side.y > 0 else p.z
-	return depth > wall.plane - 3.2 and depth < wall.plane + 1.0 and along > wall.span.x - 2.0 and along < wall.span.y + 2.0
+const VIEW_GROUND = Vector2(-0.6332378, -0.7739573)
 
-func make_lantern(p: Vector3) -> void:
+func prop_obstructs(occluder: Dictionary, point: Vector3) -> bool:
+	var offset = Vector2(point.x, point.z) - occluder.position
+	var behind = offset.dot(VIEW_GROUND)
+	var across = Vector2(-VIEW_GROUND.y, VIEW_GROUND.x)
+	var reach = absf(across.x) * occluder.half.x + absf(across.y) * occluder.half.y + .6
+	return behind > 0 and behind < 2.6 and absf(offset.dot(across)) < reach
+
+## Builds every intact prop. Small details at Low hide decorative pieces only;
+## collision, breakables and layout are identical at every detail level.
+func build_props(records: Array) -> void:
+	var batch = DetailBatch.new()
+	var detail: int = Settings.detail_level()
+	var rng = RandomNumberGenerator.new()
+	rng.seed = int(data.get("seed", 53)) + 4049
+	for record in records:
+		var definition: Dictionary = Content.record("furniture", record.kind)
+		if definition.is_empty() or record.get("destroyed", false):
+			continue
+		if definition.detail == "decor" and detail == 0:
+			continue
+		var at = Vector2(float(record.position[0]), float(record.position[1]))
+		var built = PropVisuals.build(self, record, definition, detail, batch, geometry.cell_at(at), rng)
+		props[record.id] = {"record": record, "definition": definition, "node": built.node, "base": built.base,
+			"health": float(definition.get("breakable", {}).get("health", 0))}
+		if definition.recipe == "pillar":
+			make_candle(Vector3(at.x, 1.32, at.y), .6)
+		var cloth = built.node.get_node_or_null("Cloth")
+		if cloth: cloths.append(cloth)
+		if definition.get("solid", false):
+			var size = Vector2(float(record.size[0]), float(record.size[1]))
+			obstacles.append({"id": record.id, "position": Vector3(at.x, 0, at.y), "radius": maxf(size.x, size.y) * .5 + .4,
+				"rect": Rect2(at - size / 2.0, size)})
+		if not built.occluder.is_empty():
+			built.occluder["id"] = record.id
+			built.occluder["current"] = 1.0
+			occluders.append(built.occluder)
+	detail_meshes = batch.build(self)
+
+func prop_count(kind := "") -> int:
+	return props.values().filter(func(entry): return kind == "" or entry.record.kind == kind).size()
+
+## Returns true when this hit broke the prop.
+func damage_prop(id: String, amount: float) -> bool:
+	if not props.has(id) or not props[id].definition.has("breakable"):
+		return false
+	props[id].health -= amount
+	var node: Node3D = props[id].node
+	node.scale = Vector3(1.08, .93, 1.08)
+	create_tween().tween_property(node, "scale", Vector3.ONE, .12)
+	return props[id].health <= 0
+
+## Removes a broken prop's view, collision and navigation blocker once.
+func break_prop(id: String) -> void:
+	if not props.has(id):
+		return
+	var entry: Dictionary = props[id]
+	props.erase(id)
+	entry.node.queue_free()
+	entry.base.queue_free()
+	obstacles = obstacles.filter(func(obstacle): return obstacle.get("id", "") != id)
+	occluders = occluders.filter(func(occluder): return occluder.id != id)
+	for navigator in navigators.values():
+		navigator.remove_blocker(id)
+
+## A dead lantern keeps its post and cold glass but gives no light or glow,
+## and never joins the fill-light pool.
+func make_lantern(p: Vector3, burning := true) -> void:
 	Geo.box(self, p + Vector3(0, .28, 0), Vector3(.85, .55, .85), Color("424d4c"))
 	Geo.box(self, p + Vector3(0, .61, 0), Vector3(1.0, .12, 1.0), Color("716f5d"))
 	Geo.cylinder(self, p + Vector3(0, 1.03, 0), .14, .8, Color("ac9061"))
-	Geo.box(self, p + Vector3(0, 1.6, 0), Vector3(.5, .55, .5), Color("f7bb6d"), 1.05)
+	var glass = Geo.box(self, p + Vector3(0, 1.6, 0), Vector3(.5, .55, .5), Color("f7bb6d"), 1.05)
 	Geo.box(self, p + Vector3(0, 1.94, 0), Vector3(.68, .12, .68), Color("826d51"))
 	for x in [-.22, .22]:
 		for z in [-.22, .22]:
 			var bar = Geo.box(self, p + Vector3(x, 1.6, z), Vector3(.035, .65, .035), Color("6e6654"))
 			bar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	Geo.halo(self, p + Vector3(0, .03, 0), 7.5, Color(1, .57, .17, .2))
-	var glow = Geo.halo(self, p + Vector3(0, 1.65, 0), 2.0, Color(1, .6, .2, .4))
+	var pool = Geo.halo(self, p + Vector3(0, .03, 0), 7.5, Color(1, .57, .17, .2 * light.glow))
+	var glow = Geo.halo(self, p + Vector3(0, 1.65, 0), 2.0, Color(1, .6, .2, .4 * light.glow))
 	glow.rotation_degrees.x = 58
+	lanterns.append({"at": p, "burning": burning, "glass": glass, "pool": pool, "glow": glow})
+	show_lantern(lanterns.back())
+	if burning: lantern_points.append(p)
 
-## Move the pooled fills to the lanterns nearest `focus`. Lights move only when
-## the selection actually changes, with hysteresis against flicker at borders.
-func update_light_selection(focus: Vector3) -> void:
+func show_lantern(lantern: Dictionary) -> void:
+	lantern.glass.material_override = Geo.material(Color("f7bb6d"), 1.05) if lantern.burning else Geo.material(Color("3d3a35"))
+	lantern.pool.visible = lantern.burning
+	lantern.glow.visible = lantern.burning
+
+## Relights or puts out one lantern; the fill lights follow the burning ones.
+func set_lantern(index: int, burning: bool) -> bool:
+	if index < 0 or index >= lanterns.size() or lanterns[index].burning == burning: return false
+	lanterns[index].burning = burning
+	lanterns_changed = true
+	show_lantern(lanterns[index])
+	lantern_points.clear()
+	for lantern in lanterns:
+		if lantern.burning: lantern_points.append(lantern.at)
+	refresh_fill_lights()
+	var at: Vector3 = lanterns[index].at + Vector3(0, 1.6, 0)
+	Effects.burst(self, at, Color("ffd08a") if burning else Color("5a5650"), 10 if burning else 6, 1.2)
+	return true
+
+func burning_indices() -> Array:
+	return range(lanterns.size()).filter(func(i): return lanterns[i].burning)
+
+func has_dark() -> bool:
+	return lantern_points.size() < lanterns.size()
+
+## Whether a point stands in a burning lantern's pool or another fight light.
+func lit_at(p: Vector3) -> bool:
+	for point in lantern_points:
+		if Vector2(point.x - p.x, point.z - p.z).length() < LANTERN_POOL: return true
+	for node in extra_lights:
+		if is_instance_valid(node) and Vector2(node.global_position.x - p.x, node.global_position.z - p.z).length() < float(node.get_meta("reach", 3.0)): return true
+	return false
+
+## The lantern (burning or dead, as asked) nearest a floor point within reach.
+func lantern_near(flat: Vector2, reach: float, burning: bool) -> int:
+	var best = -1
+	for i in lanterns.size():
+		if lanterns[i].burning != burning: continue
+		var d = Vector2(lanterns[i].at.x, lanterns[i].at.z).distance_to(flat)
+		if d < reach and (best < 0 or d < Vector2(lanterns[best].at.x, lanterns[best].at.z).distance_to(flat)):
+			best = i
+	return best
+
+func make_fill_lights() -> void:
+	# Unshadowed fills preserve warm lantern pools in both quality modes. A
+	# small pool serves big rooms; it moves only when the selection changes.
+	for i in mini(MAX_ACTIVE_FILLS, lantern_points.size()):
+		lamps.append(Geo.light(self, lantern_points[i] + Vector3(0, 2.2, 0), light.lamp_color, light.lamp, 7.0))
+		lamp_assignment.append(i)
+	# Keep one warm key shadow; the other lanterns are inexpensive fills. Four
+	# overlapping shadow lights still cost too much on mobile GLES3 renderers.
+	if not lantern_points.is_empty() and shadow_lamps.size() < MAX_LANTERN_SHADOWS:
+		make_shadow_light(lantern_points[0])
+
+## After a lantern changes: as many fills as burning lanterns allow, the
+## shadow lamp on a burning one or dark when none burn.
+func refresh_fill_lights() -> void:
+	var wanted = mini(MAX_ACTIVE_FILLS, lantern_points.size())
+	while lamps.size() > wanted:
+		lamps.pop_back().queue_free()
+	while lamps.size() < wanted:
+		lamps.append(Geo.light(self, Vector3.ZERO, light.lamp_color, light.lamp, 7.0))
+	lamp_assignment.clear()
+	for slot in wanted:
+		lamp_assignment.append(slot)
+		lamps[slot].position = lantern_points[slot] + Vector3(0, 2.2, 0)
+	if not lantern_points.is_empty():
+		if shadow_lamps.is_empty(): make_shadow_light(lantern_points[0])
+		else: place_shadow_light(shadow_lamps[0], lantern_points[0])
+	_quality_enabled = null
+	apply_lighting_quality()
+
+func lantern_distance(index: int, flat: Vector2) -> float:
+	return Vector2(lantern_points[index].x, lantern_points[index].z).distance_to(flat)
+
+## Chooses the lanterns nearest the view. A lantern replaces a selected one
+## only when it is clearly closer, so lights do not flap at the boundary.
+func update_light_selection(focus: Vector3) -> bool:
 	if lantern_points.size() <= lamps.size():
-		return
-	var order: Array = range(lantern_points.size())
-	order.sort_custom(func(a, b): return lantern_points[a].distance_squared_to(focus) < lantern_points[b].distance_squared_to(focus))
-	var wanted: Array = order.slice(0, lamps.size())
-	for slot in lamps.size():
-		if lamp_targets[slot] in wanted:
-			wanted.erase(lamp_targets[slot])
-	for slot in lamps.size():
-		if wanted.is_empty():
-			break
-		var current: int = lamp_targets[slot]
-		if current in order.slice(0, lamps.size()):
-			continue
-		var candidate: int = wanted[0]
-		if lantern_points[current].distance_to(focus) - lantern_points[candidate].distance_to(focus) < 2.0:
-			continue
-		wanted.pop_front()
-		lamp_targets[slot] = candidate
-		lamps[slot].position = lantern_points[candidate] + Vector3(0, 2.2, 0)
+		return false
+	var flat = Vector2(focus.x, focus.z)
+	var changed = false
+	for candidate in lantern_points.size():
+		if candidate in lamp_assignment: continue
+		var worst = 0
+		for slot in lamp_assignment.size():
+			if lantern_distance(lamp_assignment[slot], flat) > lantern_distance(lamp_assignment[worst], flat): worst = slot
+		if lantern_distance(candidate, flat) + FILL_HYSTERESIS < lantern_distance(lamp_assignment[worst], flat):
+			lamp_assignment[worst] = candidate
+			lamps[worst].position = lantern_points[candidate] + Vector3(0, 2.2, 0)
+			changed = true
+	if changed and not shadow_lamps.is_empty():
+		var nearest = lamp_assignment[0]
+		for index in lamp_assignment:
+			if lantern_distance(index, flat) < lantern_distance(nearest, flat): nearest = index
+		place_shadow_light(shadow_lamps[0], lantern_points[nearest])
+	return changed
 
 func make_shadow_light(p: Vector3) -> void:
 	# A fixed inward-facing spotlight needs one map instead of six cube faces.
 	var shadow_light = SpotLight3D.new()
-	shadow_light.light_color = Color("ffbc71")
+	shadow_light.light_color = light.lamp_color
 	shadow_light.light_cull_mask = 1
-	shadow_light.light_energy = 1.5
+	shadow_light.light_energy = light.shadow
 	shadow_light.spot_range = 13.0
 	shadow_light.spot_angle = 58.0
 	shadow_light.spot_angle_attenuation = 1.5
@@ -429,22 +504,131 @@ func make_shadow_light(p: Vector3) -> void:
 	shadow_light.shadow_opacity = 1.0
 	shadow_light.visible = false
 	add_child(shadow_light)
-	shadow_light.position = p + Vector3(0, 2.2, 0)
-	shadow_light.look_at(Vector3(p.x * .3, 0, p.z * .3))
+	place_shadow_light(shadow_light, p)
 	shadow_lamps.append(shadow_light)
+
+func place_shadow_light(shadow_light: SpotLight3D, p: Vector3) -> void:
+	# Aim inward toward the lantern's own cell, as the 1x1 room always did.
+	var center = RoomGeometry.cell_center(geometry.cell_at(Vector2(p.x, p.z)))
+	shadow_light.position = p + Vector3(0, 2.2, 0)
+	shadow_light.look_at(Vector3(center.x + (p.x - center.x) * .3, 0, center.y + (p.z - center.y) * .3))
 
 func make_candle(p: Vector3, height: float) -> void:
 	var wax = Geo.cylinder(self, p + Vector3(0, height / 2, 0), .12, height, Color("c9ad7e"))
 	wax.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# A little pool of melted wax at the base.
+	var pool = Geo.cylinder(self, p + Vector3(0, .01, 0), .2, .02, Color("d9c08f"))
+	pool.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	candle_points.append(p + Vector3(0, height + .2, 0))
 	var flame = Geo.sphere(self, p + Vector3(0, height + .1, 0), .11, Color("ffe0a1"), 2.0)
 	flame.scale = Vector3(.7, 1.5, .7)
-	candle_points.append(p + Vector3(0, height + .12, 0))
 	Geo.halo(self, p + Vector3(0, .025, 0), 2.3, Color(1, .5, .13, .14))
+
+func make_candles() -> void:
+	# Candles line the exposed rear and front walls, alternating between them.
+	var edges = geometry.exposed_edges().filter(func(edge): return edge.dir.x == 0)
+	var rear = edges.filter(func(edge): return edge.dir.y < 0)
+	var front = edges.filter(func(edge): return edge.dir.y > 0)
+	var ordered: Array = []
+	for i in maxi(rear.size(), front.size()):
+		if i < rear.size(): ordered.append(rear[i])
+		if i < front.size(): ordered.append(front[i])
+	for i in roundi(5 * ordered.size() * float(look.get("candles", 1.0))):
+		var edge: Dictionary = ordered[i % ordered.size()]
+		var center = RoomGeometry.cell_center(edge.cell)
+		var p = Vector3(decor_rng.randf_range(-6.5, 6.5), 0, edge.dir.y * 6.2)
+		if absf(p.x) < 1.7:
+			p.x += 3.0
+		make_candle(p + Vector3(center.x, 0, center.y), decor_rng.randf_range(.45, .85))
+
+func make_embers() -> void:
+	ember_mesh = MultiMeshInstance3D.new()
+	var mm = MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	var mesh = SphereMesh.new()
+	mesh.radius = .025
+	mesh.height = .05
+	mesh.radial_segments = 4
+	mesh.rings = 3
+	mm.mesh = mesh
+	# Drifting embers spend part of the room's ambient budget; the rest is
+	# left to the pool's emitters.
+	var count = int(Settings.effect_budget("ambient") * .55)
+	effects.configure(count)
+	mm.instance_count = count
+	for i in count:
+		var floor_point = geometry.random_point(decor_rng, .2)
+		ember_origins.append(Vector3(floor_point.x, decor_rng.randf_range(.1, 4.0), floor_point.y))
+	ember_mesh.multimesh = mm
+	ember_mesh.material_override = Geo.material(Color(look.get("motes", "efbc78")), 1.2)
+	ember_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(ember_mesh)
+
+func build_paintings() -> void:
+	for mount in data.get("mounts", []):
+		var painting: Dictionary = Content.record("paintings", mount.get("painting", ""))
+		if painting.is_empty():
+			continue
+		paintings[mount.id] = PaintingView.build(self, mount, painting, PaintingLibrary.wall_texture(painting.id))
+		paintings[mount.id]["painting"] = painting.id
+
+## A few deliberate atmosphere sources rather than every object at once.
+func add_ambient_emitters() -> void:
+	for i in range(0, candle_points.size(), 4):
+		effects.add_emitter("candle_wisp", candle_points[i], .05)
+	for i in mini(2, lantern_points.size()):
+		effects.add_emitter("firefly", lantern_points[i * 2 % lantern_points.size()] + Vector3(0, 1.6, 0), .9)
+	var dusty = 0
+	for entry in props.values():
+		match entry.definition.recipe:
+			"brazier": effects.add_emitter("brazier_spark", entry.node.position + Vector3(0, 1.1, 0), .12)
+			"bookcase", "wall_shelf", "cupboard":
+				if dusty < 3:
+					effects.add_emitter("shelf_dust", entry.node.position + Vector3(0, 1.6, 0), .6)
+					dusty += 1
+
+## Lazily built navigation per actor clearance class.
+## Something solid placed after the room was built (the stair, a stairwell):
+## spawn points and paths respect it from now on.
+func add_obstacle(id: String, at: Vector2, radius: float) -> void:
+	obstacles.append({"id": id, "position": Vector3(at.x, 0, at.y), "radius": radius,
+		"rect": Rect2(at - Vector2.ONE * radius, Vector2.ONE * radius * 2.0)})
+	navigators.clear()
+
+func navigation(clearance := .5) -> RoomNavigation:
+	var key = snappedf(clearance, .05)
+	if not navigators.has(key):
+		var blockers := {}
+		for i in obstacles.size():
+			blockers[obstacles[i].get("id", "obstacle%d" % i)] = obstacles[i].rect
+		navigators[key] = RoomNavigation.new(geometry, clearance, blockers)
+	return navigators[key]
+
+## A concealed doorway in this room that a Miner's Lantern could point at.
+func hidden_seam() -> Dictionary:
+	for key in sockets:
+		if sockets[key].state == "concealed": return sockets[key]
+	return {}
+
+func show_seam_hint(seam: Dictionary, duration: float) -> void:
+	var at = RoomGeometry.socket_point(seam.cell, seam.dir) - Vector2(seam.dir) * .35
+	var hint = Geo.halo(self, Vector3(at.x, .05, at.y), 3.2, Color(1.0, .82, .45, .55))
+	var glint = Geo.sphere(self, Vector3(at.x, 1.1, at.y), .12, Color("ffe2a0"), 2.6)
+	var tween = create_tween()
+	tween.tween_interval(duration)
+	tween.tween_callback(hint.queue_free)
+	tween.tween_callback(glint.queue_free)
+
+func blocked_at(point: Vector2) -> bool:
+	for obstacle in obstacles:
+		if obstacle.rect.grow(.4).has_point(point): return true
+	return false
 
 func set_open(value: bool) -> void:
 	open = value
 	for gate in gates:
 		gate.get_node("Barrier").visible = not value
+		gate.get_node("Outline").visible = value
 
 func apply_lighting_quality() -> void:
 	var enabled: bool = Settings.values.shadows
@@ -453,12 +637,19 @@ func apply_lighting_quality() -> void:
 	_quality_enabled = enabled
 	for light in shadow_lamps:
 		light.shadow_enabled = enabled
-		light.visible = enabled
+		# With every lantern out there is nothing for it to hang on.
+		light.visible = enabled and not lantern_points.is_empty()
 
 func _process(delta: float) -> void:
 	time += delta
 	apply_lighting_quality()
-	if is_instance_valid(game) and "player" in game and is_instance_valid(game.player) and game.player.get_parent() == get_parent():
-		update_light_selection(game.player.position)
 	for i in lamps.size():
-		lamps[i].light_energy = .6 + sin(time * 3.1 + i * 2.4) * .025 + sin(time * 7.2 + i) * .012
+		lamps[i].light_energy = light.lamp * (1.0 + sin(time * 3.1 + i * 2.4) * .042 + sin(time * 7.2 + i) * .02)
+	for i in cloths.size():
+		cloths[i].rotation.x = sin(time * 1.3 + i * 1.7) * .09
+	if ember_mesh:
+		for i in ember_origins.size():
+			var p: Vector3 = ember_origins[i]
+			p.y = fposmod(p.y + time * .16, 4.0)
+			p.x += sin(time * .35 + i) * .25
+			ember_mesh.multimesh.set_instance_transform(i, Transform3D(Basis.IDENTITY, p))

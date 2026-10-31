@@ -3,7 +3,8 @@
   "collections": [
     {
       "id": "world_classics_12_v1",
-      "name": "World Classics",
+      "name": "Twelve Classics",
+      "frozen": true,
       "paintings": [
         "mona_lisa",
         "last_supper",
@@ -13,14 +14,15 @@
         "las_meninas",
         "starry_night",
         "impression_sunrise",
-        "water_lilies_1906",
+        "woman_with_parasol",
         "kiss_1907",
         "scream_1893",
         "arnolfini_portrait"
       ],
       "unlocks": {
         "weapon": "paint_sprayer"
-      }
+      },
+      "note": "Water Lilies (1906) could not be verified per image, so its documented fallback, Woman with a Parasol, holds the ninth place. These twelve ids are the original requirement and are never enlarged."
     }
   ]
 }

@@ -1,14 +1,17 @@
 extends SceneTree
-## Phase 4 gate: the full footprint set, themed furniture layouts, persistent
-## breakables and secret rooms. Mandatory progression never needs a secret,
-## every required object stays reachable, and destroyed/revealed state
-## survives reload.
+## Furniture layouts, breakables, painting mounts and secret rooms.
+## Run through tools/test.sh with disposable storage.
 var checks = 0
 var failures = 0
 var run
+var catalog
+var settings
 var game
-var F
-var Items
+var Generator
+var Geometry
+var Navigation
+var Furnish
+var Visuals
 
 func _initialize() -> void:
 	call_deferred("test_furniture")
@@ -19,272 +22,321 @@ func check(condition: bool, description: String) -> void:
 		failures += 1
 		push_error("FAIL: " + description)
 
-func saved() -> Dictionary:
-	return JSON.parse_string(FileAccess.get_file_as_string(run.SAVE_PATH))
-
-func step(seconds: float, delta := .05) -> void:
-	for i in roundi(seconds / delta):
-		game._physics_process(delta)
-
-func test_catalog() -> void:
-	var content = root.get_node("Content")
-	check(content.errors.is_empty(), "the furniture catalog validates: " + ", ".join(content.errors))
-	var problems: Array[String] = []
-	content._validate_furniture(problems, {"id": "ghost", "recipe": "crate", "size": [1, 1], "height": 1, "blocks": false, "placement": "corner", "breakable": {"hp": 5, "table": "prop_small"}})
-	check(problems.any(func(m): return m.contains("no collision")), "a breakable without collision is rejected")
-	problems = []
-	content._validate_layouts(problems, {"id": "odd", "roles": ["combat"], "weight": 1, "wall": ["throne"]})
-	check(problems.any(func(m): return m.contains("missing furniture")), "a layout naming missing furniture is rejected")
-	var templates = content.families.rooms.map(func(r): return r.id)
-	for id in ["hall_single", "hall_long", "hall_corner", "hall_grand"]:
-		check(id in templates, "the footprint set includes " + id)
-
-func layout_ok(label: String, key: String) -> void:
-	var room: Dictionary = run.rooms[key]
-	var layout: Dictionary = run.room_layout(key)
-	var geometry := RoomGeometry.new(layout.cells)
-	var props: Array = room.get("props", [])
-	var reserved: Array = F.reserved_circles(geometry, layout, room.get("chests", []))
-	var obstacles: Array = []
-	for i in props.size():
-		var record: Dictionary = props[i]
-		var def: Dictionary = root.get_node("Content").get_def("furniture", record.def)
-		var rect: Rect2 = F.record_rect(record)
-		for corner in [rect.position, rect.end, Vector2(rect.position.x, rect.end.y), Vector2(rect.end.x, rect.position.y)]:
-			if not geometry.contains(corner, .04):
-				check(false, label + ": %s sits on the floor" % record.id)
-				break
-		if record.def != "rug" and record.def != "pillar":
-			for circle in reserved:
-				if F._rect_hits_circle(rect, circle[0], circle[1]):
-					check(false, label + ": %s keeps door lanes, rewards and chests clear" % record.id)
-					break
-		if def.blocks:
-			obstacles.append({"rect": rect})
-			for j in range(i + 1, props.size()):
-				var other: Dictionary = props[j]
-				if root.get_node("Content").get_def("furniture", other.def).blocks and rect.intersects(F.record_rect(other)):
-					check(false, label + ": %s and %s do not overlap" % [record.id, other.id])
-	var nav := RoomNavigation.new(geometry, obstacles, F.CLEARANCE)
-	check(nav.connected(F.required_points(geometry, layout, room.get("chests", []))), label + ": every doorway, reward and chest is reachable")
-
-func test_generation() -> void:
-	var themes := {}
-	var templates := {}
-	var prop_kinds := {}
-	var breakables := 0
-	run.generator = run.GENERATOR_V2
-	for seed_value in range(1, 121):
-		run.seed_value = seed_value
-		run.floor_number = 1 + seed_value % 3
-		run.generate_floor()
-		for key in run.rooms:
-			var room: Dictionary = run.rooms[key]
-			templates[room.template] = true
-			themes[room.get("theme", "")] = true
-			check(room.has("props"), "seed %d: room %s has a resolved furnishing" % [seed_value, key])
-			for record in room.get("props", []):
-				prop_kinds[record.def] = true
-				if root.get_node("Content").get_def("furniture", record.def).has("breakable"): breakables += 1
-			layout_ok("seed %d room %s" % [seed_value, key], key)
-	for id in ["hall_single", "hall_long", "hall_corner", "hall_grand"]:
-		check(templates.has(id), "generation uses " + id)
-	for theme in root.get_node("Content").families.layouts:
-		check(themes.has(theme.id), "generation uses the %s theme" % theme.id)
-	check(prop_kinds.size() >= 14, "most furniture kinds appear (%d)" % prop_kinds.size())
-	check(breakables > 200, "floors offer breakables (%d)" % breakables)
-	run.seed_value = 77
-	run.floor_number = 2
-	run.generate_floor()
-	var first := JSON.stringify(run.rooms)
-	run.generate_floor()
-	check(first == JSON.stringify(run.rooms), "furnishing is deterministic")
-
-## A seed whose room has something matching `want`.
-func find(want: Callable) -> Array:
-	run.generator = run.GENERATOR_V2
-	for seed_value in range(1, 300):
-		run.seed_value = seed_value
-		run.floor_number = 1
-		run.generate_floor()
-		for key in run.rooms:
-			if want.call(key, run.rooms[key]): return [seed_value, key]
-	return []
-
-func enter(seed_value: int, key: String, clear := true) -> void:
-	game.start_run("candle", seed_value, false)
-	await process_frame
-	run.current_room = key
-	if clear: run.rooms[key].cleared = true
-	game.paused = false
-	game.enter_room(Vector3(0, 0, 0))
-	await physics_frame
-	await physics_frame
-
-func breakable_ids() -> Array:
-	return game.room.props.keys().filter(func(id): return root.get_node("Content").get_def("furniture", game.room.props[id].record.def).has("breakable"))
-
-func test_breakables() -> void:
-	var found: Array = find(func(_k, r): return r.type == "combat" and r.props.any(func(p): return p.def in ["crate", "barrel"]))
-	check(not found.is_empty(), "a seed has a combat room with a crate or barrel")
-	if found.is_empty(): return
-	await enter(found[0], found[1])
-	var key: String = found[1]
-	var ids: Array = breakable_ids()
-	check(not ids.is_empty(), "breakables are built in the room")
-	var id: String = ids[0]
-	var record: Dictionary = game.room.props[id].record
-	var obstacles_before: int = game.room.obstacles.size()
-	var drops_before: int = run.rooms[key].get("pickups", []).size()
-	game.damage_prop(id, 1.0)
-	check(not record.destroyed and game.prop_damage.get(id, 0) == 1.0, "a hit chips a breakable without breaking it")
-	game.damage_prop(id, 999.0)
-	check(record.destroyed and not game.room.props.has(id), "enough damage breaks it once")
-	check(game.room.obstacles.size() == obstacles_before - 1, "navigation and repulsion forget the broken piece")
-	check(not game.room.navigation.blocked.has(game.room.navigation.to_grid(Vector2(record.position[0], record.position[1]))), "the navigation grid reopens where it stood")
-	var drops_after: int = run.rooms[key].get("pickups", []).size()
-	check(not game.perform_action({"type": "BreakProp", "prop": id}).ok, "a broken piece cannot break again")
-	check(run.rooms[key].get("pickups", []).size() == drops_after, "breaking grants its drops once")
-	check(saved().rooms[key].props.any(func(p): return p.id == id and p.destroyed), "the destroyed state is saved")
-	var unbreakable: Array = game.room.props.keys().filter(func(i): return game.room.props[i].record.def == "pillar")
-	if not unbreakable.is_empty():
-		check(game.perform_action({"type": "BreakProp", "prop": unbreakable[0]}).reason == "unbreakable", "pillars cannot be broken")
-	# The loot stream belongs to the prop, not the run: same prop, same drops.
-	var loot := RandomNumberGenerator.new()
-	loot.seed = hash("%d:%s" % [run.seed_value, id])
-	var expected = Items.roll_table(root.get_node("Content").get_def("furniture", record.def).breakable.table, loot, run.stats.luck)
-	check(drops_after - drops_before == expected.size(), "drops come from the prop's own loot stream")
-	run.save_run()
-	game.continue_run()
-	await physics_frame
-	check(not game.room.props.has(id), "a broken piece stays broken after Continue")
-	check(run.rooms[key].get("pickups", []).size() == drops_after, "its drops are neither lost nor duplicated on reload")
-	# A friendly shot into a crate chips it; the next shots break it.
-	ids = breakable_ids()
-	if not ids.is_empty():
-		var target: String = ids[0]
-		var rect: Rect2 = F.record_rect(game.room.props[target].record)
-		var aim := Vector3(rect.get_center().x, .6, rect.get_center().y)
-		var from := aim + Vector3(0, 0, 2.2)
-		if not game.room.geometry.contains(from, .3): from = aim - Vector3(0, 0, 2.2)
-		var shot = game.spawn_shot(from, aim - from, 6.0, 12.0, {}, Color.WHITE, true)
-		for i in 30:
-			if not is_instance_valid(shot) or not shot.alive: break
-			shot.update_sim(1.0 / 60.0)
-		check(game.prop_damage.get(target, 0.0) > 0 or game.room.props.get(target, {}).get("record", {}).get("destroyed", true), "a friendly shot damages a breakable it hits")
-
-func test_detail_invariance() -> void:
-	var found: Array = find(func(_k, r): return r.props.size() > 6)
-	if found.is_empty(): return
-	var counts: Array = []
-	var settings = root.get_node("Settings")
-	for level in ["low", "high"]:
-		settings.values.small_details = level
-		await enter(found[0], found[1])
-		var colliders := 0
-		for node in game.room.get_children():
-			if node is StaticBody3D and node.has_meta("prop_id"): colliders += 1
-		counts.append([colliders, game.room.props.size(), game.room.obstacles.size()])
-	check(counts[0] == counts[1], "small details never change furniture collision or layout (%s)" % str(counts))
-	settings.values.small_details = "balanced"
-
-func test_spawns() -> void:
-	var found: Array = find(func(_k, r): return r.type == "combat" and r.props.filter(func(p): return p.def != "rug").size() > 6)
-	if found.is_empty(): return
-	await enter(found[0], found[1], false)
-	check(not game.enemies.is_empty(), "the furnished combat room has foes")
-	for enemy in game.enemies:
-		check(not game.room.blocked_at(Vector2(enemy.position.x, enemy.position.z), .2), "foes never spawn inside furniture")
-
-func secret_parent(key: String) -> String:
-	return run.neighbors(key, true)[0]
-
-func test_secrets() -> void:
-	var found: Array = find(func(k, r): return r.type == "secret" and run.rooms[secret_parent(k)].type in ["combat", "treasure", "rest", "shop"])
-	check(not found.is_empty(), "a seed has a secret room off an ordinary room")
-	if found.is_empty(): return
-	var secret: String = found[1]
-	var parent: String = secret_parent(secret)
-	var pid: String = run.room_portal_ids[secret][0]
-	await enter(found[0], parent)
-	check(game.room.concealed.has(pid), "the concealed seam shows a hint on the wall")
-	check(secret not in run.neighbors(parent) and secret not in game.ui.map_rooms(), "a hidden room leaks into neither neighbours nor the map")
-	var socket: Dictionary = game.room.sockets.filter(func(s): return s.portal == pid)[0]
-	check(game.perform_action({"type": "EnterPortal", "portal": pid}).reason == "concealed", "a concealed seam cannot be walked through")
-	# Bullets never reveal it.
-	var door: Vector3 = game.room.socket_position(socket)
-	var inward := -Vector3(socket.dir.x, 0, socket.dir.y)
-	var shot = game.spawn_shot(door + inward * 3.0 + Vector3.UP * .6, -inward, 50.0, 12.0, {}, Color.WHITE, true)
-	for i in 40:
-		if not is_instance_valid(shot) or not shot.alive: break
-		shot.update_sim(1.0 / 60.0)
-	check(run.portals[pid].state == "concealed", "an ordinary shot does not reveal the seam")
-	# A bomb against the seam opens it.
-	run.bombs = 1
-	game.player.position = door + inward * 1.2
-	check(game.perform_action({"type": "PlaceBomb"}).ok, "a bomb can be set against the seam")
-	game.player.position = Vector3.ZERO
-	game.player.last_valid = Vector3.ZERO
-	step(Items.BOMB_FUSE + .3)
-	check(run.portals[pid].state == "open", "the bomb reveals the seam")
-	check(not game.room.concealed.has(pid) and game.room.gates.any(func(g): return g.get_meta("portal") == pid), "the wall becomes a doorway in place")
-	check(saved().portals[pid].state == "open", "the reveal is saved before anything inside is claimed")
-	check(secret in run.neighbors(parent) and secret in game.ui.map_rooms(), "the revealed room appears on the map")
-	# Walk in and claim the cache without a key.
-	check(game.perform_action({"type": "EnterPortal", "portal": pid}).ok and run.current_room == secret, "the revealed doorway leads into the secret")
-	var chest: Dictionary = run.rooms[secret].chests[0]
-	check(not chest.locked and chest.table == "secret_cache", "a secret holds an open cache")
-	run.keys = 0
-	game.player.position = Vector3(chest.position[0], 0, chest.position[1] + 1.1)
-	check(game.perform_action({"type": "Interact", "target": "chest:" + chest.id}).ok and chest.opened, "the cache opens without a key")
-	run.save_run()
-	game.continue_run()
-	await physics_frame
-	check(run.portals[pid].state == "open" and run.rooms[secret].chests[0].opened, "reveal and claim survive Continue")
-	run.current_room = parent
-	game.enter_room(Vector3.ZERO)
-	check(not game.room.concealed.has(pid), "re-entering never reseals the wall")
-	check(game.interactions.get_target("chest:" + chest.id).is_empty(), "the cache does not replenish")
-
-func test_offscreen_breach() -> void:
-	var found: Array = find(func(k, r): return r.type == "secret" and run.rooms[secret_parent(k)].type == "combat")
-	if found.is_empty(): return
-	var secret: String = found[1]
-	var parent: String = secret_parent(secret)
-	var pid: String = run.room_portal_ids[secret][0]
-	game.start_run("candle", found[0], false)
-	await process_frame
-	game.paused = false
-	var layout: Dictionary = run.room_layout(parent)
-	var socket: Dictionary = layout.sockets.filter(func(s): return s.portal == pid)[0]
-	var at: Vector2 = RoomGeometry.new(layout.cells).entry_point(socket.cell, socket.dir, 1.0)
-	run.pending_bombs.append({"id": run.new_entity_id(), "room": parent, "position": [at.x, at.y], "fuse": .2, "floor": run.floor_number})
-	game.player.position = Vector3(0, 0, 2)
-	step(.5)
-	check(run.portals[pid].state == "open", "a bomb in an unloaded room still opens its seam from saved state")
-	check(run.pending_bombs.is_empty(), "the offscreen bomb resolves once")
-
 func test_furniture() -> void:
 	run = root.get_node("Run")
-	F = load("res://scripts/dungeon/furnishing.gd")
-	Items = load("res://scripts/items/item_system.gd")
+	catalog = root.get_node("Content")
+	settings = root.get_node("Settings")
+	Generator = load("res://scripts/dungeon/floor_generator.gd")
+	Geometry = load("res://scripts/dungeon/room_geometry.gd")
+	Navigation = load("res://scripts/dungeon/room_navigation.gd")
+	Furnish = load("res://scripts/dungeon/furnisher.gd")
+	Visuals = load("res://scripts/dungeon/prop_visuals.gd")
 	test_catalog()
-	test_generation()
+	test_layouts()
 	game = load("res://scenes/main.tscn").instantiate()
 	root.add_child(game)
 	current_scene = game
 	await process_frame
 	game.set_physics_process(false)
 	game.set_process(false)
+	await test_detail_levels()
 	await test_breakables()
-	await test_detail_invariance()
-	await test_spawns()
 	await test_secrets()
-	await test_offscreen_breach()
+	test_occluders()
 	game.end_run(false)
 	game.queue_free()
-	root.get_node("Audio").music_player.stop()
-	await process_frame
 	await process_frame
 	print("EMBERKEEP FURNITURE TEST RESULT: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
+
+func rejected(family: String, records: Array, label: String) -> void:
+	catalog.errors = PackedStringArray()
+	catalog.ingest(family, records)
+	var problems: PackedStringArray = catalog.errors
+	problems.append_array(catalog.validate())
+	check(not problems.is_empty(), "validator rejects " + label)
+	catalog.load_catalog()
+
+func test_catalog() -> void:
+	var families = catalog.families.furniture.filter(func(p): return p.id != "pillar")
+	check(families.size() >= 16, "about sixteen furniture families (%d)" % families.size())
+	check(Visuals.RECIPES == catalog.PROP_RECIPES, "every registered recipe has a visual")
+	check(catalog.families.layouts.size() >= 6, "themed layouts: reading, storage, workshop, quarters, shrine, gallery")
+	var decor = catalog.record("furniture", "book_pile").duplicate(true)
+	decor.solid = true
+	rejected("furniture", [decor], "solid decorative props, whose collision could vanish at Low detail")
+	var odd = catalog.record("furniture", "crate").duplicate(true)
+	odd.recipe = "teleporter"
+	rejected("furniture", [odd], "unknown visual recipes")
+	var lootless = catalog.record("furniture", "crate").duplicate(true)
+	lootless.breakable = {"health": 5, "drops": "nothing_here"}
+	rejected("furniture", [lootless], "breakables naming a missing drop table")
+	var ghost = catalog.record("furniture", "crate").duplicate(true)
+	ghost.blocks_shots = false
+	rejected("furniture", [ghost], "breakables that shots cannot hit")
+	rejected("layouts", [{"id": "z", "roles": ["combat"], "pieces": [{"prop": "throne", "count": [1, 1]}]}], "layouts naming missing props")
+	check(catalog.errors.is_empty(), "catalog restores after negative checks")
+
+## Data-level navigation for a generated room: walls, solid props and chests.
+func room_navigation(room: Dictionary, geometry, clearance := .5):
+	var blockers := {}
+	for prop in room.props:
+		if catalog.record("furniture", prop.kind).get("solid", false) and not prop.get("destroyed", false):
+			blockers[prop.id] = Furnish.record_rect(prop)
+	for chest in room.chests:
+		blockers[chest.id] = Rect2(Generator.vec2(chest.position) - Vector2(.5, .33), Vector2(1.0, .66))
+	return Navigation.new(geometry, clearance, blockers)
+
+func test_layouts() -> void:
+	var kinds := {}
+	var themes := {}
+	var variants := {}
+	var rest_mounts = 0
+	var rest_rooms = 0
+	for seed_value in range(1, 41):
+		for floor_number in range(1, 4):
+			var floor_data = Generator.generate(seed_value, floor_number)
+			check(Generator.validate(floor_data).is_empty(), "furnished floor validates")
+			var secrets = floor_data.rooms.values().filter(func(r): return r.get("secret", false))
+			check(secrets.size() == 1, "exactly one optional secret room per floor")
+			for secret in secrets:
+				variants[secret.variant] = true
+				check(secret.portals.size() == 1 and floor_data.portals[secret.portals[0]].state == "concealed",
+					"the secret room is a leaf behind one concealed passage")
+				var host = floor_data.portals[secret.portals[0]]
+				var host_id = host.a.room if host.b.room == secret.id else host.b.room
+				check(floor_data.rooms[host_id].type != "boss", "the boss room never hides the secret")
+			for id in floor_data.rooms:
+				var room = floor_data.rooms[id]
+				if room.has("theme"): themes[room.theme] = true
+				var anchor = Generator.vec(room.anchor)
+				var geometry = Geometry.new(Generator.room_cells(room).map(func(c): return c - anchor))
+				var zones = Generator.reserved_zones(floor_data, room)
+				var solids: Array = []
+				for prop in room.props:
+					kinds[prop.kind] = true
+					var definition = catalog.record("furniture", prop.kind)
+					var rect = Furnish.record_rect(prop)
+					check(Furnish.rect_inside(geometry, rect, .04), "prop inside its room: " + prop.id)
+					if definition.solid:
+						check(not Furnish.hits_zone(rect, zones.filter(func(z): return z.kind not in ["lantern", "pedestal"] or prop.kind != "pillar"), true), "solid prop clear of doorways, entries, pedestal and lanterns: " + prop.id)
+						for other in solids:
+							check(not rect.intersects(Furnish.record_rect(other)), "solid props never overlap")
+						for chest in room.chests:
+							check(not rect.intersects(Rect2(Generator.vec2(chest.position) - Vector2(.6, .45), Vector2(1.2, .9))), "furniture never covers a chest")
+						solids.append(prop)
+					if definition.get("tall", false):
+						var along_front = false
+						for segment in geometry.wall_segments():
+							if Geometry.is_front(segment.dir) and rect.grow(.15).intersects(Rect2(Geometry.segment_box(segment).center - Geometry.segment_box(segment).size / 2, Geometry.segment_box(segment).size)):
+								along_front = true
+						check(not along_front, "tall pieces stand only on rear walls: " + prop.id)
+				for mount in room.get("mounts", []):
+					check(not Geometry.is_front(Generator.vec(mount.dir)), "paintings hang on rear walls that stay visible")
+					check(mount.width >= 1.2 and mount.height > 1.0, "mount has room for a painting")
+					for prop in solids:
+						check(Furnish.record_rect(prop).get_center().distance_to(Generator.vec2(mount.view)) > 1.0, "nothing solid stands in a painting's viewing spot")
+				if room.type == "rest":
+					rest_rooms += 1
+					if not room.mounts.is_empty(): rest_mounts += 1
+				# Every required object stays reachable from every doorway.
+				if seed_value <= 12:
+					var nav = room_navigation(room, geometry)
+					var hub = geometry.safe_point(Generator.vec2(room.pedestal), .5)
+					var goals: Array = []
+					for chest in room.chests: goals.append(Generator.vec2(chest.position) + Vector2(0, 1.0))
+					for mount in room.mounts: goals.append(Generator.vec2(mount.view))
+					for portal_id in room.portals:
+						var portal = floor_data.portals[portal_id]
+						var side = portal.a if portal.a.room == id else portal.b
+						goals.append(Geometry.entry_point(Generator.vec(side.cell) - anchor, Generator.vec(side.dir)))
+					for goal in goals:
+						check(nav.reachable(hub, goal), "required spot reachable in %s (seed %d)" % [id, seed_value])
+	for kind in ["table", "chair", "bookcase", "bench", "cupboard", "crate", "barrel", "jar", "brazier", "wall_shelf", "book_pile", "rug", "partition", "workbench", "cot"]:
+		check(kinds.has(kind), "prop family appears in generated rooms: " + kind)
+	for theme in ["reading_room", "storage", "workshop", "living_quarters", "shrine", "gallery"]:
+		check(themes.has(theme), "theme appears: " + theme)
+	check(variants.has("cache") and variants.has("gallery"), "both secret variants appear")
+	check(rest_mounts == rest_rooms, "every rest room offers a painting mount (%d of %d)" % [rest_mounts, rest_rooms])
+
+func furnished_room(kind: String) -> String:
+	for id in run.rooms:
+		var room = run.rooms[id]
+		if room.type == kind and room.props.any(func(p): return catalog.record("furniture", p.kind).has("breakable")):
+			return id
+	return ""
+
+func test_detail_levels() -> void:
+	game.start_run("candle", 61001, false)
+	game.paused = true
+	var room_id = ""
+	for id in run.rooms:
+		if run.rooms[id].props.any(func(p): return catalog.record("furniture", p.kind).detail == "decor"):
+			room_id = id
+			break
+	check(room_id != "", "a room with decorative props exists")
+	run.current_room = room_id
+	run.rooms[room_id].cleared = true
+	var shapes := {}
+	for level in ["low", "balanced", "high"]:
+		settings.set_value("small_details", level)
+		game.enter_room(Vector3(0, 0, 2))
+		var colliders = game.room.find_children("*", "StaticBody3D", true, false).map(func(body): return [body.global_position.snapped(Vector3.ONE * .01), body.collision_layer])
+		colliders.sort()
+		shapes[level] = {"colliders": colliders, "obstacles": game.room.obstacles.size(), "props": game.room.props.size(),
+			"details": game.room.detail_meshes.reduce(func(total, mesh): return total + mesh.multimesh.instance_count, 0)}
+	check(shapes.low.colliders == shapes.high.colliders and shapes.low.colliders == shapes.balanced.colliders, "collision is identical at every detail level")
+	check(shapes.low.obstacles == shapes.high.obstacles, "navigation obstacles are identical at every detail level")
+	check(shapes.low.props < shapes.high.props, "Low hides decorative pieces")
+	check(shapes.low.details < shapes.high.details, "High adds small details such as book spines")
+	settings.set_value("small_details", "balanced")
+
+func test_breakables() -> void:
+	game.start_run("candle", 61002, false)
+	game.paused = false
+	var room_id = furnished_room("combat")
+	check(room_id != "", "a combat room has breakable furniture")
+	run.current_room = room_id
+	run.rooms[room_id].cleared = true
+	game.enter_room(Vector3(0, 0, 2))
+	var record: Dictionary = run.rooms[room_id].props.filter(func(p): return catalog.record("furniture", p.kind).has("breakable"))[0]
+	var at = Furnish.record_rect(record).get_center()
+	var nav = game.room.navigation(.5)
+	check(not nav.walkable(at), "an intact breakable blocks navigation")
+	var drops_before = run.rooms[room_id].get("pickups", []).size()
+	# Shoot it from close range until it breaks.
+	var shots = 0
+	while game.room.props.has(record.id) and shots < 40:
+		var from = Vector3(at.x, .65, at.y) + Vector3(0, 0, 1.6)
+		var shot = game.spawn_shot(from, Vector3(0, 0, -1), 6, 20, {}, Color.WHITE, true)
+		for frame in 12:
+			await physics_frame
+			if not is_instance_valid(shot) or not shot.alive: break
+			shot.update_sim(1.0 / 60.0)
+		shots += 1
+	check(record.destroyed and not game.room.props.has(record.id), "friendly shots break furniture")
+	check(nav.walkable(at), "breaking updates navigation once")
+	check(not game.room.obstacles.any(func(o): return o.get("id", "") == record.id), "a broken prop no longer repels foes")
+	var drops_after = run.rooms[room_id].get("pickups", []).size()
+	game.destroy_prop(room_id, record, true)
+	check(run.rooms[room_id].get("pickups", []).size() == drops_after, "a broken prop never drops twice")
+	run.save_run()
+	check(run.load_run(), "broken furniture saves")
+	game.enter_room(Vector3(0, 0, 2))
+	check(not game.room.props.has(record.id), "destroyed furniture stays destroyed after reload")
+	# Loot comes from a per-prop stream, independent of fragment effects.
+	var a = RandomNumberGenerator.new()
+	a.seed = catalog.stable_hash("loot:%d:%d:%s" % [run.seed_value, run.floor_number, record.id])
+	var expected = load("res://scripts/items/drops.gd").roll(catalog.record("furniture", record.kind).breakable.drops, a, run.stats.luck)
+	check(drops_after - drops_before == expected.size(), "breakable loot is deterministic per prop")
+
+func test_secrets() -> void:
+	game.start_run("candle", 61003, false)
+	game.paused = false
+	var secret_id = ""
+	var portal_id = ""
+	for id in run.rooms:
+		if run.rooms[id].get("secret", false):
+			secret_id = id
+			portal_id = run.rooms[id].portals[0]
+	var host = run.other_room(portal_id, secret_id)
+	run.rooms[host].cleared = true
+	run.current_room = host
+	game.enter_room(Vector3(0, 0, 2))
+	clear_enemies()
+	# Nothing about the secret leaks before it is found.
+	for id in run.rooms: run.rooms[id].visited = id == host
+	check(secret_id not in run.neighbors(host), "the hidden room is absent from neighbour lists")
+	check(secret_id not in game.ui.map_rooms(), "the hidden room is absent from the map")
+	check(not game.room.hidden_seam().is_empty(), "the host room has a concealed seam")
+	var side = run.portal_side(portal_id, host)
+	var socket = Geometry.socket_point(side.cell, side.dir)
+	check(not game.room.sockets[game.room.socket_key(side.cell, side.dir)].has("gate"), "a concealed seam starts as solid wall")
+	check(game.room.sockets[game.room.socket_key(side.cell, side.dir)].has("hints"), "a concealed seam shows subtle hints")
+	# Bullets alone never open it.
+	var shot = game.spawn_shot(Vector3(socket.x, .65, socket.y) - Vector3(side.dir.x, 0, side.dir.y) * 1.5, Vector3(side.dir.x, 0, side.dir.y), 50, 20, {}, Color.WHITE, true)
+	for frame in 10:
+		if is_instance_valid(shot) and shot.alive: shot.update_sim(1.0 / 60.0)
+	check(run.portals[portal_id].state == "concealed", "ordinary shots never reveal a secret")
+	# The Miner's Lantern points at the seam here, and only here.
+	run.active_item = {"instance": "a1", "def": "miners_lantern"}
+	run.cooldowns = {"miners_lantern": 0.0}
+	check(game.submit({"type": "use_active"}).ok and run.cooldown_remaining("miners_lantern") > 0, "Miner's Lantern hints at a nearby seam")
+	check(run.portals[portal_id].state == "concealed", "a hint does not open the wall")
+	# A bomb against the seam reveals it for good.
+	var inside = socket - Vector2(side.dir) * .9
+	game.player.place(Vector3(inside.x, 0, inside.y))
+	run.bombs = 2
+	game.submit({"type": "place_bomb"})
+	game.player.place(Vector3(0, 0, 2))
+	for frame in 120:
+		game._physics_process(1.0 / 60.0)
+		if run.pending_bombs.is_empty(): break
+	check(run.portals[portal_id].state == "revealed", "a bomb reveals the concealed passage")
+	var opened = game.room.sockets[game.room.socket_key(side.cell, side.dir)]
+	check(opened.state == "revealed" and opened.has("gate"), "the wall becomes a doorway in the live room")
+	check(not is_instance_valid(opened.walls.collider) or opened.walls.collider.is_queued_for_deletion(), "the plug's collision is removed with it")
+	check(secret_id in run.neighbors(host) and secret_id in game.ui.map_rooms(), "a revealed room appears on the map")
+	var saved = JSON.parse_string(FileAccess.get_file_as_string("user://run.json"))
+	check(saved.portals[portal_id].state == "revealed", "the reveal is saved with the blast")
+	check(run.load_run(), "revealed floor reloads")
+	game.enter_room(Vector3(0, 0, 2))
+	check(game.room.sockets[game.room.socket_key(side.cell, side.dir)].state == "revealed", "reloading never reseals an opened wall")
+	game.travel(portal_id)
+	check(run.current_room == secret_id and game.room.open, "the secret room is enterable and safe")
+	var room = run.rooms[secret_id]
+	if room.variant == "cache":
+		check(room.chests.size() == 1 and not room.chests[0].locked, "a cache holds an unlocked chest")
+		game.actions.open_chest(room.chests[0].id)
+		check(room.chests[0].opened, "the cache opens")
+		run.load_run()
+		game.enter_room(Vector3(0, 0, 2))
+		check(run.rooms[secret_id].chests[0].opened, "reloading never replenishes the cache")
+	else:
+		check(room.mounts.size() >= 1, "a forgotten gallery has painting mounts")
+	# Offscreen: a bomb left at another floor's seam still opens it.
+	game.start_run("candle", 61004, false)
+	game.paused = false
+	for id in run.rooms:
+		if run.rooms[id].get("secret", false):
+			secret_id = id
+			portal_id = run.rooms[id].portals[0]
+	host = run.other_room(portal_id, secret_id)
+	run.rooms[host].cleared = true
+	run.current_room = host
+	game.enter_room(Vector3(0, 0, 2))
+	clear_enemies()
+	side = run.portal_side(portal_id, host)
+	inside = Geometry.socket_point(side.cell, side.dir) - Vector2(side.dir) * .9
+	game.player.place(Vector3(inside.x, 0, inside.y))
+	game.submit({"type": "place_bomb"})
+	var away = run.neighbors(host)[0]
+	run.current_room = away
+	run.rooms[away].cleared = true
+	game.enter_room(Vector3(0, 0, 2))
+	for frame in 150: game._physics_process(1.0 / 60.0)
+	check(run.portals[portal_id].state == "revealed", "an offscreen bomb reveals the seam from saved state")
+	run.current_room = host
+	game.enter_room(Vector3(0, 0, 2))
+	check(game.room.sockets[game.room.socket_key(side.cell, side.dir)].has("gate"), "returning finds the offscreen reveal")
+
+func clear_enemies() -> void:
+	for enemy in game.enemies:
+		if is_instance_valid(enemy): enemy.queue_free()
+	game.enemies.clear()
+
+func test_occluders() -> void:
+	var stage = Node3D.new()
+	root.add_child(stage)
+	var room = load("res://scripts/world.gd").new()
+	stage.add_child(room)
+	var record = {"id": "t:f0", "kind": "partition", "position": [0.0, 0.0], "rotation": 0, "size": [2.4, .3]}
+	room.build(stage, {"type": "combat", "seed": 2, "cells": [[0, 0]], "anchor": [0, 0], "props": [record], "chests": [], "lights": [], "pedestal": [0, 4]})
+	check(room.occluders.size() == 1, "free-standing tall pieces can cut away")
+	var collider_before = room.props["t:f0"].base.get_child(0).global_transform
+	room.update_wall_visibility(Vector3(0, 0, -1.2), 0, [])
+	check(room.occluders[0].node.scale.y < .5, "a piece lowers when an actor stands behind it")
+	check(room.props["t:f0"].base.get_child(0).global_transform == collider_before, "its collision never moves")
+	room.update_wall_visibility(Vector3(0, 0, 3), 0, [])
+	check(is_equal_approx(room.occluders[0].node.scale.y, 1.0), "it recovers when nothing is hidden")
+	stage.free()

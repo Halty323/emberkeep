@@ -18,6 +18,11 @@ var alive = true
 var returning = false
 var start_position = Vector3.ZERO
 var trail: Array[MeshInstance3D] = []
+# Forged traits: gathering speed, hanging as a mine, swelling, forking at
+# the end of flight, and the residue a shot leaves where it flies.
+var base_speed = 15.0
+var trail_timer = 0.0
+var forked = false
 
 func setup(owner_game: Node3D, at: Vector3, travel: Vector3, power: float, velocity_value: float, effects: Dictionary, color: Color, is_friendly: bool) -> void:
 	game = owner_game
@@ -32,13 +37,16 @@ func setup(owner_game: Node3D, at: Vector3, travel: Vector3, power: float, veloc
 	pierces = int(stats.get("pierce", 0))
 	bounces = int(stats.get("bounce", 0))
 	lifetime = (1.15 if friendly else 4.0) * float(stats.get("range", 1))
+	base_speed = speed
+	if float(stats.get("linger", 0)) > 0: lifetime *= 2.2
 	radius = (.12 if friendly else .17) * float(stats.get("size", 1))
 	Geo.sphere(self, Vector3.ZERO, radius, color.lightened(.4), 1.6)
 	Geo.halo(self, Vector3(0, -.02, 0), radius * 7, Color(color.r, color.g, color.b, .42))
 	if not friendly:
 		Geo.ring(self, Vector3.ZERO, radius * 1.4, Color("f39b88"), .025)
 	else:
-		for i in 3:
+		# Trails are cosmetic, so they follow the Effects detail budget.
+		for i in [0, 2, 3][Settings.DETAIL_LEVELS.find(Settings.values.effects_detail)]:
 			var mesh = Geo.sphere(self, -direction * (i + 1) * .14, radius * (.65 - i * .15), color, 1.0)
 			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			trail.append(mesh)
@@ -48,7 +56,7 @@ func update_sim(delta: float) -> void:
 		return
 	age += delta
 	if age >= lifetime:
-		remove()
+		finish()
 		return
 	if friendly:
 		if stats.get("returning", 0) > 0 and age > lifetime * .48:
@@ -65,37 +73,55 @@ func update_sim(delta: float) -> void:
 			if target:
 				var desired: Vector3 = target.global_position + Vector3.UP * .65 - global_position
 				direction = direction.lerp(desired.normalized(), minf(.85, delta * stats.homing)).normalized()
-	var movement = direction * speed * delta
+	elif stats.get("homing", 0) > 0:
+		# A mirrored volley seeks the player, more gently.
+		var desired: Vector3 = game.player.global_position + Vector3.UP * .65 - global_position
+		desired.y = 0
+		direction = direction.lerp(desired.normalized(), minf(.5, delta * float(stats.homing) * .5)).normalized()
+	if friendly: shape_flight(delta)
+	var movement = direction * speed * delta + game.wind * delta
 	if stats.get("wave", 0) > 0:
 		movement += direction.cross(Vector3.UP) * cos(age * 15) * delta * 3.0
 	var target_position = global_position + movement
+	# A shot through a dead lantern's glass lights it again.
+	if friendly and is_instance_valid(game.room):
+		var lantern: int = game.room.lantern_near(Vector2(target_position.x, target_position.z), .6, false)
+		if lantern >= 0:
+			game.relight(lantern)
+			Effects.play("impact", global_position, Color("ffd08a"))
+			remove()
+			return
+	# Glass splits a shot crossing it into three, once.
+	if not stats.get("glassed", false) and game.residue and game.residue.crosses_glass(global_position, target_position):
+		stats["glassed"] = true
+		for side in [-1, 1]:
+			var copy = game.spawn_shot(global_position, direction.rotated(Vector3.UP, side * .32), damage * (.6 if friendly else 1.0), speed, stats, tint, friendly)
+			if copy: copy.hit_ids = hit_ids.duplicate()
 	var query = PhysicsRayQueryParameters3D.create(global_position, target_position, 1)
 	var hit = get_world_3d().direct_space_state.intersect_ray(query)
 	var geometry: RoomGeometry = game.room.geometry
-	var boundary = not geometry.contains(target_position, .1)
+	var flat_from = Vector2(global_position.x, global_position.z)
+	var flat_to = Vector2(target_position.x, target_position.z)
+	var boundary = not geometry.contains(flat_to, .1)
 	if friendly and not hit.is_empty() and is_instance_valid(hit.collider) and hit.collider.has_meta("prop_id"):
-		game.damage_prop(hit.collider.get_meta("prop_id"), damage)
+		game.hit_prop(hit.collider.get_meta("prop_id"), damage)
 	if not hit.is_empty() or boundary:
 		if bounces > 0:
 			bounces -= 1
-			# Ricochet off the wall actually struck: the physics normal, or the
-			# nearest exposed edge of the footprint (doorways, L corners).
-			var edge := geometry.boundary_normal(target_position)
-			var normal: Vector3 = hit.normal if not hit.is_empty() else Vector3(edge.x, 0, edge.y)
+			# Ricochet off the wall actually struck: the physics hit, or the
+			# exposed footprint edge crossed (an open doorway, an L bend).
+			var normal: Vector3 = hit.normal if not hit.is_empty() else Vector3.ZERO
+			if hit.is_empty():
+				var edge = geometry.exit_normal(flat_from, flat_to, .1)
+				normal = Vector3(edge.x, 0, edge.y) if edge != Vector2.ZERO else -direction
 			normal.y = 0
-			normal = normal.normalized()
-			direction = direction.bounce(normal).normalized()
+			direction = direction.bounce(normal.normalized()).normalized()
 			if not hit.is_empty():
 				global_position = hit.position + normal * .12
-			else:
-				var inside := geometry.nearest_inside(global_position, .2)
-				global_position = Vector3(inside.x, global_position.y, inside.y)
 		else:
-			Effects.impact(global_position, tint)
-			if stats.get("paint", 0) > 0:
-				# Cosmetic splash only: marks never deal damage.
-				Effects.floor_mark(Vector3(global_position.x, 0, global_position.z), Color(tint, .5), .32, 4.0)
-			remove()
+			Effects.play("impact", global_position, tint)
+			splash()
+			finish()
 			return
 	else:
 		global_position = target_position
@@ -103,11 +129,14 @@ func update_sim(delta: float) -> void:
 		trail[i].position = -direction * (i + 1) * .17
 	if friendly:
 		for enemy in game.enemies.duplicate():
-			if not is_instance_valid(enemy) or not enemy.alive or hit_ids.has(enemy.entity_id):
+			if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable or hit_ids.has(enemy.entity_id):
 				continue
 			var center: Vector3 = enemy.global_position + Vector3.UP * .65
 			var closest = Geometry3D.get_closest_point_to_segment(center, global_position - movement, global_position)
 			if closest.distance_to(center) < enemy.radius + radius:
+				# Some foes absorb or turn a shot instead of taking it.
+				if enemy.catch_shot(self):
+					return
 				hit_enemy(enemy)
 				if not alive:
 					return
@@ -118,14 +147,64 @@ func update_sim(delta: float) -> void:
 			game.player.hurt(damage, global_position)
 			remove()
 
+func shape_flight(delta: float) -> void:
+	var flown = age / lifetime
+	if float(stats.get("accel", 0)) > 0:
+		speed = minf(base_speed * 2.6, speed * (1.0 + 1.6 * delta))
+	if float(stats.get("linger", 0)) > 0:
+		# Slows to a stop partway, then waits as a mine for whatever comes.
+		speed = base_speed * clampf(1.0 - (flown - .2) / .2, 0.0, 1.0)
+	if float(stats.get("grow", 0)) > 0:
+		scale = Vector3.ONE * (1.0 + flown)
+		radius = (.12 * float(stats.get("size", 1))) * (1.0 + flown)
+	var kind: String = stats.get("trail_kind", "")
+	if kind != "" and game.residue:
+		trail_timer -= delta
+		if trail_timer <= 0:
+			trail_timer = .12
+			# Wide enough to always cover a tile centre.
+			game.residue.add(kind, Vector3(global_position.x, 0, global_position.z), .6)
+
+## The end of a shot's flight: what it carries meets what lies here, and a
+## friendly shot that struck nothing is a miss.
+func finish() -> void:
+	if not alive: return
+	if friendly and float(stats.get("fork", 0)) > 0 and not forked and age >= lifetime:
+		fork()
+	if game.residue and friendly: game.residue.react(global_position, .7, stats)
+	if friendly and hit_ids.is_empty(): game.shot_missed(self)
+	remove()
+
+## Paint lands as a short-lived, budgeted floor mark; it deals no damage.
+func splash() -> void:
+	if friendly and float(stats.get("paint", 0)) > 0:
+		Effects.play("paint_splash", Vector3(global_position.x, .02, global_position.z), tint)
+
+## A forking shot splits three ways where its flight runs out.
+func fork() -> void:
+	forked = true
+	var child_stats = stats.duplicate()
+	child_stats.fork = 0
+	child_stats.linger = 0
+	for side in [-1, 0, 1]:
+		var shot = game.spawn_shot(global_position, direction.rotated(Vector3.UP, side * .55), damage * .5, base_speed * .9, child_stats, tint, true)
+		if shot:
+			shot.forked = true
+			shot.lifetime *= .6
+			shot.hit_ids = hit_ids.duplicate()
+
 func hit_enemy(enemy: DungeonEnemy) -> void:
 	hit_ids[enemy.entity_id] = true
+	splash()
 	var critical = Run.rng.randf() < float(stats.get("crit", .05))
 	var power = damage * (float(stats.get("crit_damage", 2.0)) if critical else 1.0)
+	# A swelling shot strikes harder the farther it has flown.
+	if float(stats.get("grow", 0)) > 0: power *= 1.0 + .5 * age / lifetime
 	if enemy.hp < enemy.max_hp * .35:
 		power *= 1.0 + float(stats.get("execute", 0))
 	enemy.apply_status(stats)
-	enemy.take_hit(power, direction * float(stats.get("knockback", 1)) * 2.0, critical)
+	if game.residue: game.residue.react(enemy.global_position, .7, stats)
+	enemy.take_hit(power, direction * float(stats.get("knockback", 1)) * 2.0, critical, false, "shot")
 	if Run.rng.randf() < minf(.25, float(stats.get("lifesteal", 0))):
 		Run.heal(.5)
 	if stats.get("chain", 0) > 0:
@@ -139,8 +218,10 @@ func hit_enemy(enemy: DungeonEnemy) -> void:
 			var at: Vector3 = target.global_position + Vector3.UP * .65
 			Effects.beam(game, previous, at, Color("c4c2ff"))
 			target.apply_status(stats)
-			target.take_hit(power * .6, Vector3.ZERO, false)
+			target.take_hit(power * .6, Vector3.ZERO, false, false, "shot")
 			previous = at
+		# Standing in water, the struck foe carries the lightning to the rest of the pool.
+		if game.residue: game.residue.shock(enemy.global_position, power * .5, chained)
 	if stats.get("explosion", 0) > 0:
 		game.blast(global_position, minf(3.5, stats.explosion), power * .5, true, enemy)
 	if stats.get("split", 0) > 0:

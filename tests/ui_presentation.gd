@@ -26,7 +26,7 @@ func descendants(node: Node) -> Array:
 
 func validate_controls(screen: String) -> void:
 	var controls: Array = descendants(game.ui.content).filter(func(node): return node is Button or node is LineEdit)
-	var frame = Rect2(Vector2.ZERO, Vector2(1280, 720))
+	var frame = Rect2(Vector2.ZERO, Vector2(game.ui.view_width, 720))
 	check(not controls.is_empty(), screen + ": native controls are available")
 	for control in controls:
 		var rect = Rect2(control.position, control.size)
@@ -72,6 +72,8 @@ func test_ui() -> void:
 	validate_controls("title")
 	validate_surfaces("title")
 	game.start_run("needle", 20261027, false)
+	check(is_equal_approx(game.ui.floor_title_start, game.ui.elapsed_ui) and game.ui.floor_title_length() > 3.0,
+		"a run opens with its floor's name spelled across the screen")
 	game.paused = true
 	await process_frame
 	game.room.set_process(false)
@@ -82,9 +84,11 @@ func test_ui() -> void:
 	# The UI must follow existing room illumination rather than using a second
 	# collection of real lights or expensive UI shadow-rendering viewports.
 	game.ui.sync_lighting()
-	check(game.ui.lighting_lamps.size() == game.room.lamps.size(), "all room lanterns reach the UI lighting data")
-	check(game.ui.lighting_colors.size() == game.room.lamps.size(), "lantern colors reach the UI lighting data")
-	for i in game.room.lamps.size():
+	# Four slots: burning lanterns first, the rest dark (the cellar has few).
+	var shown = mini(4, game.room.lamps.size())
+	check(shown > 0 and game.ui.lighting_lamps.size() == 4 and game.ui.lighting_colors.size() == 4, "room lanterns reach the UI lighting data")
+	check(range(shown, 4).all(func(i): return is_zero_approx(game.ui.lighting_lamps[i].w)), "unused UI lighting slots stay dark")
+	for i in shown:
 		var lamp: OmniLight3D = game.room.lamps[i]
 		var expected: Vector2 = game.ui.local_point(game.camera.unproject_position(lamp.global_position))
 		var actual: Vector4 = game.ui.lighting_lamps[i]
@@ -177,6 +181,45 @@ func test_ui() -> void:
 	check(game.ui.left_touch == -1 and game.ui.right_touch == -1, "dash tap does not capture a movement or aiming stick")
 	game.ui.offset = original_offset
 	game.ui.scale_value = original_scale
+	# A screen wider than 16:9 widens the canvas instead of adding bars: the
+	# slab keeps to the left edge and the right-hand controls follow the right.
+	root.size = Vector2i(1680, 720)
+	await process_frame
+	await process_frame
+	var ui = game.ui
+	check(is_equal_approx(ui.view_width, 1680.0) and ui.offset == Vector2.ZERO and ui.mode == "play", "a 21:9 screen widens the canvas with no bars")
+	validate_controls("wide play")
+	var pause = descendants(ui.content).filter(func(node): return node is Button and node.text == "II")
+	check(pause.size() == 1 and is_equal_approx(pause[0].position.x, ui.PAUSE_RECT.position.x + 400.0), "the pause button follows the right edge")
+	check(ui.surfaces.any(func(surface): return surface.position == ui.HUD_RECT.position), "the player's slab keeps to the left edge")
+	game.request_dash = false
+	touch.index = 5
+	touch.position = ui.DASH_CENTER + Vector2(400, 0)
+	ui._input(touch)
+	check(game.request_dash and ui.right_touch == -1, "the dash control follows the right edge")
+	touch.index = 6
+	touch.position = Vector2(1600, 600)
+	ui._input(touch)
+	check(ui.right_touch == 6 and ui.left_touch == -1, "the aiming stick sits under the right thumb")
+	touch.pressed = false
+	ui._input(touch)
+	touch.pressed = true
+	game.make_marker("rest", game.player.position)
+	run.hp = 1
+	game.update_interaction()
+	touch.index = 7
+	touch.position = ui.INTERACTION_RECT.get_center() + Vector2(200, 0)
+	ui._input(touch)
+	check(run.hp > 1 and game.marker == null, "the interaction prompt stays in the middle")
+	game.pause_game()
+	await process_frame
+	validate_controls("wide pause")
+	check(is_equal_approx(ui.content.position.x, 200.0), "other screens sit centred on a wide screen")
+	game.resume_game()
+	root.size = Vector2i(1280, 720)
+	await process_frame
+	await process_frame
+	check(is_equal_approx(game.ui.view_width, 1280.0), "returning to 16:9 restores the standard canvas")
 	game.return_to_title()
 	game.queue_free()
 	root.get_node("Audio").music_player.stop()

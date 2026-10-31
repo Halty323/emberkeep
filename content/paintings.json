@@ -1,198 +1,501 @@
 {
   "version": 1,
+  "checked": "2026-10-27",
   "paintings": [
     {
       "id": "mona_lisa",
       "title": "Mona Lisa",
       "artist": "Leonardo da Vinci",
       "date": "c. 1503–1519",
-      "institution": "Musée du Louvre, Paris",
+      "medium": "Oil on poplar panel",
+      "holding": "Musée du Louvre, Paris",
       "record_url": "https://collections.louvre.fr/ark:/53355/cl010062370",
-      "kind": "canvas",
-      "aspect": 0.671,
-      "caption": "A half-length portrait of a seated woman before a hazy imagined landscape, painted in oil on a poplar panel.",
-      "image": "res://assets/paintings/mona_lisa.jpg",
       "source": {
-        "kind": "commons",
-        "file": "Leonardo_da_Vinci_-_Mona_Lisa_(Louvre,_Paris).jpg"
-      }
+        "type": "commons",
+        "file": "Leonardo da Vinci - Mona Lisa (Louvre, Paris).jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Leonardo_da_Vinci_-_Mona_Lisa_(Louvre,_Paris).jpg"
+      },
+      "rights": "Public domain (PD-Art): a faithful reproduction of a two-dimensional work whose author died in 1519.",
+      "verification": "observed",
+      "credit": "Leonardo da Vinci, Mona Lisa (c. 1503–1519). Musée du Louvre, Paris. Reproduction: https://commons.wikimedia.org/wiki/File:Leonardo_da_Vinci_-_Mona_Lisa_(Louvre,_Paris).jpg",
+      "caption": "A woman sits before a hazy, winding landscape, modelled with soft transitions of light and shadow.",
+      "aspect": 0.688,
+      "aspect_basis": "panel 53 × 77 cm",
+      "asset": {
+        "status": "pending",
+        "wall": "res://assets/paintings/mona_lisa.jpg",
+        "full": "res://assets/paintings/mona_lisa_full.jpg",
+        "sha256_wall": "",
+        "sha256_full": "",
+        "width": 0,
+        "height": 0,
+        "retrieved": "",
+        "revision": "",
+        "image_url": ""
+      },
+      "notes": ""
     },
     {
       "id": "last_supper",
       "title": "The Last Supper",
       "artist": "Leonardo da Vinci",
       "date": "1495–1498",
-      "institution": "Santa Maria delle Grazie, Milan",
+      "medium": "Tempera and oil on plaster (wall painting)",
+      "holding": "Santa Maria delle Grazie refectory, Milan (Museo del Cenacolo Vinciano)",
       "record_url": "https://cenacolovinciano.org/en/",
-      "kind": "wall painting",
-      "aspect": 1.839,
-      "caption": "A reproduction of a wall painting in a refectory: Christ and the twelve apostles at the moment of a shocking announcement.",
-      "image": "res://assets/paintings/last_supper.jpg",
       "source": {
-        "kind": "commons",
-        "file": "Leonardo_da_Vinci_-_The_Last_Supper_high_res.jpg"
-      }
+        "type": "commons",
+        "file": "Leonardo da Vinci - The Last Supper high res.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Leonardo_da_Vinci_-_The_Last_Supper_high_res.jpg"
+      },
+      "rights": "Public domain (PD-Art) as stated on the file page.",
+      "verification": "observed",
+      "credit": "Leonardo da Vinci, The Last Supper (1495–1498). Santa Maria delle Grazie refectory, Milan (Museo del Cenacolo Vinciano). Reproduction: https://commons.wikimedia.org/wiki/File:Leonardo_da_Vinci_-_The_Last_Supper_high_res.jpg",
+      "caption": "The apostles react as Christ announces that one of them will betray him. Painted directly on a refectory wall, it began to flake within decades.",
+      "aspect": 1.839,
+      "aspect_basis": "source image 5381 × 2926 px",
+      "asset": {
+        "status": "pending",
+        "wall": "res://assets/paintings/last_supper.jpg",
+        "full": "res://assets/paintings/last_supper_full.jpg",
+        "sha256_wall": "",
+        "sha256_full": "",
+        "width": 0,
+        "height": 0,
+        "retrieved": "",
+        "revision": "",
+        "image_url": ""
+      },
+      "notes": "Store the full composition and label it as a wall painting reproduction, not a framed canvas."
     },
     {
       "id": "birth_of_venus",
       "title": "The Birth of Venus",
       "artist": "Sandro Botticelli",
       "date": "c. 1485",
-      "institution": "Uffizi Galleries, Florence",
+      "medium": "Tempera on canvas",
+      "holding": "Gallerie degli Uffizi, Florence",
       "record_url": "https://www.uffizi.it/en/artworks/birth-of-venus",
-      "kind": "canvas",
-      "aspect": 1.5931,
-      "caption": "Tempera on canvas: the goddess arrives at the shore on a scallop shell, blown by the winds.",
-      "image": "res://assets/paintings/birth_of_venus.jpg",
       "source": {
-        "kind": "commons",
-        "file": "Botticelli_Venus.jpg"
-      }
+        "type": "commons",
+        "file": "Botticelli Venus.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Botticelli_Venus.jpg"
+      },
+      "rights": "Public domain (PD-Art) as stated on the file page.",
+      "verification": "observed",
+      "credit": "Sandro Botticelli, The Birth of Venus (c. 1485). Gallerie degli Uffizi, Florence. Reproduction: https://commons.wikimedia.org/wiki/File:Botticelli_Venus.jpg",
+      "caption": "Venus drifts ashore on a scallop shell, blown by the winds and met by an attendant holding out a cloak.",
+      "aspect": 1.593,
+      "aspect_basis": "source image 5995 × 3763 px",
+      "asset": {
+        "status": "pending",
+        "wall": "res://assets/paintings/birth_of_venus.jpg",
+        "full": "res://assets/paintings/birth_of_venus_full.jpg",
+        "sha256_wall": "",
+        "sha256_full": "",
+        "width": 0,
+        "height": 0,
+        "retrieved": "",
+        "revision": "",
+        "image_url": ""
+      },
+      "notes": "Italian cultural-heritage reproduction rules are separate and should be reviewed before commercial release; this is not an institutional open-access grant. If that is undesirable, substitute an explicitly open museum work."
     },
     {
       "id": "girl_pearl",
       "title": "Girl with a Pearl Earring",
       "artist": "Johannes Vermeer",
       "date": "c. 1665",
-      "institution": "Mauritshuis, The Hague",
+      "medium": "Oil on canvas",
+      "holding": "Mauritshuis, The Hague",
       "record_url": "https://www.mauritshuis.nl/en/our-collection/artworks/670-girl-with-a-pearl-earring/",
-      "kind": "canvas",
-      "aspect": 0.8457,
-      "caption": "A study of a girl in a turban turning toward the viewer, with a single large pearl catching the light.",
-      "image": "res://assets/paintings/girl_pearl.jpg",
       "source": {
-        "kind": "commons",
-        "file": "Girl_with_a_Pearl_Earring.jpg"
-      }
+        "type": "commons",
+        "file": "Girl with a Pearl Earring.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Girl_with_a_Pearl_Earring.jpg"
+      },
+      "rights": "Public domain (PD-Art) as stated on the file page; source attributed to Geheugen van Nederland.",
+      "verification": "observed",
+      "credit": "Johannes Vermeer, Girl with a Pearl Earring (c. 1665). Mauritshuis, The Hague. Reproduction: https://commons.wikimedia.org/wiki/File:Girl_with_a_Pearl_Earring.jpg",
+      "caption": "A girl in a blue and yellow turban turns toward the viewer; light catches a large pearl at her ear.",
+      "aspect": 0.846,
+      "aspect_basis": "source image 1808 × 2138 px",
+      "asset": {
+        "status": "pending",
+        "wall": "res://assets/paintings/girl_pearl.jpg",
+        "full": "res://assets/paintings/girl_pearl_full.jpg",
+        "sha256_wall": "",
+        "sha256_full": "",
+        "width": 0,
+        "height": 0,
+        "retrieved": "",
+        "revision": "",
+        "image_url": ""
+      },
+      "notes": "The Mauritshuis's own current image is offered for non-commercial download only; do not use it or call it CC0."
     },
     {
       "id": "night_watch",
       "title": "The Night Watch",
       "artist": "Rembrandt van Rijn",
       "date": "1642",
-      "institution": "Rijksmuseum, Amsterdam",
+      "medium": "Oil on canvas",
+      "holding": "Rijksmuseum, Amsterdam",
       "record_url": "https://www.rijksmuseum.nl/en/collection/SK-C-5",
-      "kind": "canvas",
-      "aspect": 1.229,
-      "caption": "A civic militia company sets out, its captain in black and his lieutenant in pale gold, lit against deep shadow.",
-      "image": "res://assets/paintings/night_watch.jpg",
       "source": {
-        "kind": "commons",
-        "file": "The_Nightwatch_by_Rembrandt_-_Rijksmuseum.jpg"
-      }
+        "type": "commons",
+        "file": "The Nightwatch by Rembrandt - Rijksmuseum.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:The_Nightwatch_by_Rembrandt_-_Rijksmuseum.jpg"
+      },
+      "rights": "Public domain (PD-Art) as stated on the file page, with Rijksmuseum provenance.",
+      "verification": "observed",
+      "credit": "Rembrandt van Rijn, The Night Watch (1642). Rijksmuseum, Amsterdam. Reproduction: https://commons.wikimedia.org/wiki/File:The_Nightwatch_by_Rembrandt_-_Rijksmuseum.jpg",
+      "caption": "The militia company of Captain Frans Banninck Cocq sets out, its figures caught in raking light and deep shadow.",
+      "aspect": 1.229,
+      "aspect_basis": "source image 14168 × 11528 px",
+      "asset": {
+        "status": "pending",
+        "wall": "res://assets/paintings/night_watch.jpg",
+        "full": "res://assets/paintings/night_watch_full.jpg",
+        "sha256_wall": "",
+        "sha256_full": "",
+        "width": 0,
+        "height": 0,
+        "retrieved": "",
+        "revision": "",
+        "image_url": ""
+      },
+      "notes": "Use a downsampled derivative, not the 14168 × 11528 original."
     },
     {
       "id": "las_meninas",
       "title": "Las Meninas",
       "artist": "Diego Velázquez",
       "date": "1656",
-      "institution": "Museo del Prado, Madrid",
+      "medium": "Oil on canvas",
+      "holding": "Museo Nacional del Prado, Madrid",
       "record_url": "https://www.museodelprado.es/en/the-collection/art-work/las-meninas/9fdc7800-9ade-48b0-ab8b-edee94ea877f",
-      "kind": "canvas",
-      "aspect": 0.8667,
-      "caption": "The young Infanta and her attendants in the painter's studio, with the painter himself at his easel.",
-      "image": "res://assets/paintings/las_meninas.jpg",
       "source": {
-        "kind": "commons",
-        "file": "Las_Meninas_(1656),_by_Velazquez.jpg"
-      }
+        "type": "commons",
+        "file": "Las Meninas (1656), by Velazquez.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Las_Meninas_(1656),_by_Velazquez.jpg"
+      },
+      "rights": "Public domain (PD-Art) as stated on the file page.",
+      "verification": "observed",
+      "credit": "Diego Velázquez, Las Meninas (1656). Museo Nacional del Prado, Madrid. Reproduction: https://commons.wikimedia.org/wiki/File:Las_Meninas_(1656),_by_Velazquez.jpg",
+      "caption": "The young Infanta Margarita Teresa stands among her attendants while the painter works at a vast canvas; the king and queen appear in a mirror.",
+      "aspect": 0.868,
+      "aspect_basis": "canvas 276 × 318 cm",
+      "asset": {
+        "status": "pending",
+        "wall": "res://assets/paintings/las_meninas.jpg",
+        "full": "res://assets/paintings/las_meninas_full.jpg",
+        "sha256_wall": "",
+        "sha256_full": "",
+        "width": 0,
+        "height": 0,
+        "retrieved": "",
+        "revision": "",
+        "image_url": ""
+      },
+      "notes": "Verify that the full composition, not a similarly named cropped detail, is imported."
     },
     {
       "id": "starry_night",
       "title": "The Starry Night",
       "artist": "Vincent van Gogh",
       "date": "1889",
-      "institution": "The Museum of Modern Art, New York",
+      "medium": "Oil on canvas",
+      "holding": "The Museum of Modern Art, New York",
       "record_url": "https://www.moma.org/collection/works/79802",
-      "kind": "canvas",
-      "aspect": 1.2628,
-      "caption": "Swirling night sky over a quiet village, with a dark cypress rising in the foreground.",
-      "image": "res://assets/paintings/starry_night.jpg",
       "source": {
-        "kind": "commons",
-        "file": "Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg"
-      }
+        "type": "commons",
+        "file": "Van Gogh - Starry Night - Google Art Project.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg"
+      },
+      "rights": "Public domain (PD-Art): a faithful reproduction, as stated on the file page.",
+      "verification": "observed",
+      "credit": "Vincent van Gogh, The Starry Night (1889). The Museum of Modern Art, New York. Reproduction: https://commons.wikimedia.org/wiki/File:Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg",
+      "caption": "A swirling night sky rolls above a small village and a flame-like cypress, painted during Van Gogh's stay at Saint-Rémy-de-Provence.",
+      "aspect": 1.263,
+      "aspect_basis": "source image 44567 × 35291 px",
+      "asset": {
+        "status": "pending",
+        "wall": "res://assets/paintings/starry_night.jpg",
+        "full": "res://assets/paintings/starry_night_full.jpg",
+        "sha256_wall": "",
+        "sha256_full": "",
+        "width": 0,
+        "height": 0,
+        "retrieved": "",
+        "revision": "",
+        "image_url": ""
+      },
+      "notes": "Import an approved derivative with a pinned revision; the original file is about 664 MB. MoMA's wider image library is not assumed to be free to reuse."
     },
     {
       "id": "impression_sunrise",
       "title": "Impression, Sunrise",
       "artist": "Claude Monet",
       "date": "1872",
-      "institution": "Musée Marmottan Monet, Paris",
+      "medium": "Oil on canvas",
+      "holding": "Musée Marmottan Monet, Paris",
       "record_url": "https://www.marmottan.fr/en/collections/claude-monet/",
-      "kind": "canvas",
-      "aspect": 1.2892,
-      "caption": "The port of Le Havre in morning haze, a small orange sun reflected in the water.",
-      "image": "res://assets/paintings/impression_sunrise.jpg",
       "source": {
-        "kind": "commons",
-        "file": "Monet_-_Impression,_Sunrise.jpg"
-      }
+        "type": "commons",
+        "file": "Monet - Impression, Sunrise.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Monet_-_Impression,_Sunrise.jpg"
+      },
+      "rights": "Public domain as stated on the file page: author's life plus 95 years or fewer, with a separate United States basis. Not a worldwide CC0 grant.",
+      "verification": "observed",
+      "credit": "Claude Monet, Impression, Sunrise (1872). Musée Marmottan Monet, Paris. Reproduction: https://commons.wikimedia.org/wiki/File:Monet_-_Impression,_Sunrise.jpg",
+      "caption": "An orange sun rises over the hazy port of Le Havre; the title later gave the Impressionists their name.",
+      "aspect": 1.289,
+      "aspect_basis": "source image 5773 × 4478 px",
+      "asset": {
+        "status": "pending",
+        "wall": "res://assets/paintings/impression_sunrise.jpg",
+        "full": "res://assets/paintings/impression_sunrise_full.jpg",
+        "sha256_wall": "",
+        "sha256_full": "",
+        "width": 0,
+        "height": 0,
+        "retrieved": "",
+        "revision": "",
+        "image_url": ""
+      },
+      "notes": ""
     },
     {
-      "id": "water_lilies_1906",
-      "title": "Water Lilies",
+      "id": "woman_with_parasol",
+      "title": "Woman with a Parasol – Madame Monet and Her Son",
       "artist": "Claude Monet",
-      "date": "1906",
-      "institution": "Art Institute of Chicago",
-      "record_url": "https://www.artic.edu/artworks/111442/water-lilies",
-      "kind": "canvas",
-      "aspect": 1.0626,
-      "caption": "Lily pads and reflections on the surface of the painter's garden pond at Giverny.",
-      "image": "res://assets/paintings/water_lilies_1906.jpg",
+      "date": "1875",
+      "medium": "Oil on canvas",
+      "holding": "National Gallery of Art, Washington",
+      "record_url": "https://www.nga.gov/artworks/61379-woman-parasol-madame-monet-and-her-son",
       "source": {
-        "kind": "artic",
-        "artwork": 111442,
-        "fallback": "woman_with_parasol"
-      }
+        "type": "nga",
+        "object": 61379,
+        "page": "https://www.nga.gov/artworks/61379-woman-parasol-madame-monet-and-her-son"
+      },
+      "rights": "Public domain: the National Gallery of Art states that this object's media is free and in the public domain under its open-access policy.",
+      "verification": "observed",
+      "credit": "Claude Monet, Woman with a Parasol – Madame Monet and Her Son (1875). National Gallery of Art, Washington. Reproduction: https://www.nga.gov/artworks/61379-woman-parasol-madame-monet-and-her-son",
+      "caption": "Camille Monet and the couple's son stand on a breezy hillside, seen from below against a bright, moving sky.",
+      "aspect": 0.81,
+      "aspect_basis": "canvas 81 × 100 cm",
+      "asset": {
+        "status": "pending",
+        "wall": "res://assets/paintings/woman_with_parasol.jpg",
+        "full": "res://assets/paintings/woman_with_parasol_full.jpg",
+        "sha256_wall": "",
+        "sha256_full": "",
+        "width": 0,
+        "height": 0,
+        "retrieved": "",
+        "revision": "",
+        "image_url": ""
+      },
+      "notes": ""
     },
     {
       "id": "kiss_1907",
       "title": "The Kiss",
       "artist": "Gustav Klimt",
       "date": "1907–1908",
-      "institution": "Belvedere, Vienna",
+      "medium": "Oil and gold leaf on canvas",
+      "holding": "Belvedere, Vienna",
       "record_url": "https://sammlung.belvedere.at/objects/6678/der-kuss-liebespaar",
-      "kind": "canvas",
-      "aspect": 0.9966,
-      "caption": "An embracing couple wrapped in patterned gold robes at the edge of a flowered meadow.",
-      "image": "res://assets/paintings/kiss_1907.jpg",
       "source": {
-        "kind": "commons",
-        "file": "The_Kiss_-_Gustav_Klimt_-_Google_Cultural_Institute.jpg"
-      }
+        "type": "commons",
+        "file": "The Kiss - Gustav Klimt - Google Cultural Institute.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:The_Kiss_-_Gustav_Klimt_-_Google_Cultural_Institute.jpg"
+      },
+      "rights": "Public domain (PD-Art) as stated on the file page.",
+      "verification": "observed",
+      "credit": "Gustav Klimt, The Kiss (1907–1908). Belvedere, Vienna. Reproduction: https://commons.wikimedia.org/wiki/File:The_Kiss_-_Gustav_Klimt_-_Google_Cultural_Institute.jpg",
+      "caption": "Two lovers embrace at the edge of a flowered meadow, wrapped in patterned robes glowing with gold leaf.",
+      "aspect": 0.997,
+      "aspect_basis": "source image 7376 × 7401 px",
+      "asset": {
+        "status": "pending",
+        "wall": "res://assets/paintings/kiss_1907.jpg",
+        "full": "res://assets/paintings/kiss_1907_full.jpg",
+        "sha256_wall": "",
+        "sha256_full": "",
+        "width": 0,
+        "height": 0,
+        "retrieved": "",
+        "revision": "",
+        "image_url": ""
+      },
+      "notes": "Do not substitute a recoloured or cropped derivative."
     },
     {
       "id": "scream_1893",
       "title": "The Scream",
       "artist": "Edvard Munch",
       "date": "1893",
-      "institution": "National Museum, Oslo",
-      "record_url": "https://www.nasjonalmuseet.no/en/collection/object/NG.M.00939",
-      "kind": "canvas",
-      "aspect": 0.8055,
-      "caption": "A figure on a bridge clutches its face beneath a blood-red evening sky. Tempera and crayon on cardboard.",
-      "image": "res://assets/paintings/scream_1893.jpg",
+      "medium": "Tempera and crayon on cardboard",
+      "holding": "National Museum, Oslo (NG.M.00939)",
+      "record_url": "https://www.nasjonalmuseet.no/en/collection/",
       "source": {
-        "kind": "commons",
-        "file": "The_Scream_by_Edvard_Munch,_1893_-_Nasjonalgalleriet.png"
-      }
+        "type": "commons",
+        "file": "The Scream by Edvard Munch, 1893 - Nasjonalgalleriet.png",
+        "page": "https://commons.wikimedia.org/wiki/File:The_Scream_by_Edvard_Munch,_1893_-_Nasjonalgalleriet.png"
+      },
+      "rights": "Public domain (PD-Art) as stated on the file page: author's life plus 80 years or fewer. Unrestricted status is not claimed in every jurisdiction.",
+      "verification": "observed",
+      "credit": "Edvard Munch, The Scream (1893). National Museum, Oslo (NG.M.00939). Reproduction: https://commons.wikimedia.org/wiki/File:The_Scream_by_Edvard_Munch,_1893_-_Nasjonalgalleriet.png",
+      "caption": "A figure on a bridge clutches its face beneath a blood-red evening sky; this is the 1893 painted version.",
+      "aspect": 0.806,
+      "aspect_basis": "source image 1611 × 2000 px",
+      "asset": {
+        "status": "pending",
+        "wall": "res://assets/paintings/scream_1893.jpg",
+        "full": "res://assets/paintings/scream_1893_full.jpg",
+        "sha256_wall": "",
+        "sha256_full": "",
+        "width": 0,
+        "height": 0,
+        "retrieved": "",
+        "revision": "",
+        "image_url": ""
+      },
+      "notes": ""
     },
     {
       "id": "arnolfini_portrait",
       "title": "The Arnolfini Portrait",
       "artist": "Jan van Eyck",
       "date": "1434",
-      "institution": "The National Gallery, London",
+      "medium": "Oil on oak panel",
+      "holding": "The National Gallery, London",
       "record_url": "https://www.nationalgallery.org.uk/paintings/jan-van-eyck-the-arnolfini-portrait",
-      "kind": "canvas",
-      "aspect": 0.7422,
-      "caption": "A couple stands in a richly furnished room; a convex mirror on the back wall reflects the scene.",
-      "image": "res://assets/paintings/arnolfini_portrait.jpg",
       "source": {
-        "kind": "commons",
-        "file": "Arnolfini_Portrait.jpg"
-      }
+        "type": "commons",
+        "file": "Arnolfini Portrait.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Arnolfini_Portrait.jpg"
+      },
+      "rights": "Public domain as stated on the file page, sourced from Closer to Van Eyck.",
+      "verification": "observed",
+      "credit": "Jan van Eyck, The Arnolfini Portrait (1434). The National Gallery, London. Reproduction: https://commons.wikimedia.org/wiki/File:Arnolfini_Portrait.jpg",
+      "caption": "A merchant and a woman stand hand in hand in a Bruges room; a convex mirror on the back wall reflects the whole scene.",
+      "aspect": 0.742,
+      "aspect_basis": "source image 6433 × 8667 px",
+      "asset": {
+        "status": "pending",
+        "wall": "res://assets/paintings/arnolfini_portrait.jpg",
+        "full": "res://assets/paintings/arnolfini_portrait_full.jpg",
+        "sha256_wall": "",
+        "sha256_full": "",
+        "width": 0,
+        "height": 0,
+        "retrieved": "",
+        "revision": "",
+        "image_url": ""
+      },
+      "notes": "Not the tiny cropped 'Arnolfini Portrait 1.jpg' detail."
+    },
+    {
+      "id": "water_lilies_1906",
+      "title": "Water Lilies",
+      "artist": "Claude Monet",
+      "date": "1906",
+      "medium": "Oil on canvas",
+      "holding": "Art Institute of Chicago",
+      "record_url": "https://www.artic.edu/artworks/111442/water-lilies",
+      "source": {
+        "type": "aic",
+        "object": 111442,
+        "page": "https://www.artic.edu/artworks/111442/water-lilies"
+      },
+      "rights": "Not yet verified.",
+      "verification": "required",
+      "credit": "Claude Monet, Water Lilies (1906). Art Institute of Chicago. Reproduction: https://www.artic.edu/artworks/111442/water-lilies",
+      "caption": "Water lilies float on Monet's garden pond at Giverny, with the sky reflected in the water.",
+      "aspect": 1.0,
+      "aspect_basis": "unverified",
+      "asset": {
+        "status": "pending",
+        "wall": "res://assets/paintings/water_lilies_1906.jpg",
+        "full": "res://assets/paintings/water_lilies_1906_full.jpg",
+        "sha256_wall": "",
+        "sha256_full": "",
+        "width": 0,
+        "height": 0,
+        "retrieved": "",
+        "revision": "",
+        "image_url": ""
+      },
+      "notes": "Requires is_public_domain=true, a non-empty image_id and the exact image reuse notice from the AIC API before use; the AIC website and API returned 403 from the planning and implementation environments."
+    },
+    {
+      "id": "wheat_cypresses",
+      "title": "Wheat Field with Cypresses",
+      "artist": "Vincent van Gogh",
+      "date": "1889",
+      "medium": "Oil on canvas",
+      "holding": "The Metropolitan Museum of Art, New York",
+      "record_url": "https://www.metmuseum.org/art/collection/search/436535",
+      "source": {
+        "type": "met",
+        "object": 436535,
+        "page": "https://www.metmuseum.org/art/collection/search/436535"
+      },
+      "rights": "Public domain: The Met labels this image Public Domain under its open-access program.",
+      "verification": "observed",
+      "credit": "Vincent van Gogh, Wheat Field with Cypresses (1889). The Metropolitan Museum of Art, New York. Reproduction: https://www.metmuseum.org/art/collection/search/436535",
+      "caption": "Ripe wheat bends under a churning summer sky beside a dark stand of cypresses.",
+      "aspect": 1.276,
+      "aspect_basis": "canvas 93.4 × 73.2 cm",
+      "asset": {
+        "status": "pending",
+        "wall": "res://assets/paintings/wheat_cypresses.jpg",
+        "full": "res://assets/paintings/wheat_cypresses_full.jpg",
+        "sha256_wall": "",
+        "sha256_full": "",
+        "width": 0,
+        "height": 0,
+        "retrieved": "",
+        "revision": "",
+        "image_url": ""
+      },
+      "notes": ""
+    },
+    {
+      "id": "washington_delaware",
+      "title": "Washington Crossing the Delaware",
+      "artist": "Emanuel Leutze",
+      "date": "1851",
+      "medium": "Oil on canvas",
+      "holding": "The Metropolitan Museum of Art, New York",
+      "record_url": "https://www.metmuseum.org/art/collection/search/11417",
+      "source": {
+        "type": "met",
+        "object": 11417,
+        "page": "https://www.metmuseum.org/art/collection/search/11417"
+      },
+      "rights": "Public domain: The Met labels this image Public Domain under its open-access program.",
+      "verification": "observed",
+      "credit": "Emanuel Leutze, Washington Crossing the Delaware (1851). The Metropolitan Museum of Art, New York. Reproduction: https://www.metmuseum.org/art/collection/search/11417",
+      "caption": "George Washington stands in a crowded boat as his troops push through river ice before dawn.",
+      "aspect": 1.711,
+      "aspect_basis": "canvas 647.7 × 378.5 cm",
+      "asset": {
+        "status": "pending",
+        "wall": "res://assets/paintings/washington_delaware.jpg",
+        "full": "res://assets/paintings/washington_delaware_full.jpg",
+        "sha256_wall": "",
+        "sha256_full": "",
+        "width": 0,
+        "height": 0,
+        "retrieved": "",
+        "revision": "",
+        "image_url": ""
+      },
+      "notes": ""
     }
   ]
 }

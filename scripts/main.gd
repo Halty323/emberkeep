@@ -2,9 +2,6 @@ extends Node3D
 const CAMERA_GAME_SIZE = 14.4
 const CAMERA_MENU_SIZE = 18.8
 const CAMERA_FOLLOW_GAIN = .45
-## Why an active did nothing, told once per fresh press. Cooldown has its own ring.
-const ACTIVE_REASONS = {"insufficient_coins": "Not enough coins.", "not_useful": "You are already at full health.",
-	"no_target": "Nothing here for it to act on.", "no_capacity": "Your moths are still out."}
 const CAMERA_FOCUS_LIMIT = Vector2(3.6, 2.8)
 var room: DungeonRoom
 var camera: Camera3D
@@ -18,7 +15,6 @@ var marker: Node3D
 var marker_visual: Node3D
 var enemies: Array = []
 var shots: Array = []
-var companions: Array = []
 var pickups: Array = []
 var paused = true
 var in_menu = true
@@ -29,30 +25,76 @@ var hurt_flash = 0.0
 var request_dash = false
 var interaction_text = ""
 var interaction_kind = ""
-var interaction_target: Dictionary = {}
-var pending_portal := ""
-var interactions := InteractionRegistry.new()
-var actions := GameActions.new()
-var items: ItemSystem
-## Visual nodes for durable bombs in the current room, by bomb record id.
-var bomb_nodes: Dictionary = {}
-var request_active = false
-var request_bomb = false
-## Damage taken by breakable props in the current room (not persisted: only
-## the destroyed state is durable).
-var prop_damage: Dictionary = {}
 var transition_cooldown = 0.0
+var pending_portal = ""
+# Doorways play out over 1.5 s: walk out and fade, slide, walk in and appear.
+const TRANSITION_EXIT := .45
+const TRANSITION_SLIDE := .6
+const TRANSITION_ENTER := .45
+const DOOR_STEP := .7
+var transition: Dictionary = {}
+# The departing room, kept on screen (and nothing else) during the slide.
+var previous_view: Node3D
+# The footprint the glow mask was last set to by a transition.
+var view_mask: RoomGeometry
+var fade_prewarm = 0
+# The way up: a stair that builds itself when the boss falls, climbed into
+# the light from the floor above; the next floor opens at its stairwell.
+const CLIMB_APPROACH := .5
+const CLIMB_STEPS := 2.0
+const ARRIVE_RISE := .8
+const ARRIVE_STEP_OFF := .5
+var stairs: Staircase
+var well_spot := Vector3.ZERO
+var light_veil: ColorRect
 var entity_counter = 10
 var chosen_reward_shop = false
+var chosen_reward_dark = false
 var snapshot_timer = 0.0
 var vignette: ShaderMaterial
+var actions: GameActions
+var interactions := InteractionRegistry.new()
+var companions: Array = []
+var bomb_views: Dictionary = {}
+var item_views: Dictionary = {}
+var chest_views: Dictionary = {}
+var command_counter = 0
+var last_result: Dictionary = {}
+const PEDESTAL_ID := "pedestal"
+const MAX_SHOTS := 200
+const HOSTILE_SHOT_RESERVE := 50
+# What a fight leaves on the floor; one per room, rebuilt on entry.
+var residue: ResidueField
+var hazards: FloorHazards
+# A windswept floor's draught: every shot in flight drifts with it.
+var wind := Vector3.ZERO
+# Combat state that outlives a room. Sparks are hostile embers caught by a
+# grazing dash, released with the next shot. Kindle grows with quick kills
+# and gutters with a hit. Noise is what sound-hunting foes follow.
+var sparks = 0
+var kindle_heat = 0.0
+var kindle_quiet = 0.0
+var noises: Array = []
+const MAX_SPARKS := 3
+const KINDLE_STEPS := [3, 6, 10]
+const KINDLE_DAMAGE := [1.0, 1.15, 1.3, 1.5]
+const KINDLE_FADE_AFTER := 3.5
+const PLAYER_LIGHT := 3.6
 var camera_home = Vector3(18, 23, 22)
 var screen_right = Vector3(22, 0, -18).normalized()
 var screen_down = Vector3(18, 0, 22).normalized()
 
 func _ready() -> void:
+	# Packaged-build diagnostic: report what the catalog actually loaded.
+	if "--verify-catalog" in OS.get_cmdline_user_args():
+		print("EMBERKEEP CATALOG REPORT " + JSON.stringify(Content.report()))
+		# Quit lands after this frame; nothing below was built, so stay idle.
+		set_process(false)
+		set_physics_process(false)
+		set_process_unhandled_input(false)
+		get_tree().quit(0 if Content.errors.is_empty() else 1)
+		return
 	setup_inputs()
-	items = ItemSystem.new(self)
 	# Reserve a useful 512px tile for the single optional lantern shadow.
 	get_viewport().positional_shadow_atlas_quad_0 = Viewport.SHADOW_ATLAS_QUADRANT_SUBDIV_1
 	room_environment = WorldEnvironment.new()
@@ -99,6 +141,11 @@ func _ready() -> void:
 	vignette.shader = preload("res://shaders/vignette.gdshader")
 	overlay.material = vignette
 	fx_layer.add_child(overlay)
+	light_veil = ColorRect.new()
+	light_veil.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	light_veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	light_veil.color = Color(1, .95, .84, 0)
+	fx_layer.add_child(light_veil)
 	var layer = CanvasLayer.new()
 	layer.layer = 3
 	add_child(layer)
@@ -106,14 +153,9 @@ func _ready() -> void:
 	layer.add_child(ui)
 	ui.setup(self)
 	Run.item_gained.connect(on_item_gained)
-	actions.register("Interact", _action_interact)
-	actions.register("CollectPickup", _action_collect_pickup)
-	actions.register("EnterPortal", _action_enter_portal)
-	actions.register("UseActive", func(_action): return items.use_active() if is_playing() else GameActions.fail("not_playing"))
-	actions.register("PlaceBomb", _action_place_bomb)
-	actions.register("BreakProp", _action_break_prop)
-	# Commands from the transport boundary use the same validated handlers.
-	Session.command_received.connect(func(_peer_id, command): perform_action(command))
+	actions = GameActions.new(self)
+	Session.command_received.connect(on_command)
+	Collection.unlocked.connect(on_weapon_unlocked)
 	get_tree().auto_accept_quit = false
 	show_title_room()
 	if "--quickstart" in OS.get_cmdline_user_args():
@@ -123,7 +165,7 @@ func setup_inputs() -> void:
 	var actions = {"move_left": [KEY_A, KEY_LEFT], "move_right": [KEY_D, KEY_RIGHT],
 		"move_up": [KEY_W, KEY_UP], "move_down": [KEY_S, KEY_DOWN],
 		"dash": [KEY_SPACE, KEY_SHIFT], "interact": [KEY_E], "pause_game": [KEY_ESCAPE, KEY_P], "journal": [KEY_TAB], "map": [KEY_M],
-		"active": [KEY_F], "bomb": [KEY_B]}
+		"use_active": [KEY_F], "place_bomb": [KEY_B]}
 	for action in actions:
 		if not InputMap.has_action(action): InputMap.add_action(action)
 		for key in actions[action]:
@@ -131,7 +173,7 @@ func setup_inputs() -> void:
 			event.physical_keycode = key
 			InputMap.action_add_event(action, event)
 	var joy_actions = {"dash": JOY_BUTTON_RIGHT_SHOULDER, "interact": JOY_BUTTON_A, "pause_game": JOY_BUTTON_START,
-		"active": JOY_BUTTON_LEFT_SHOULDER, "bomb": JOY_BUTTON_X}
+		"use_active": JOY_BUTTON_LEFT_SHOULDER, "place_bomb": JOY_BUTTON_X}
 	for action in joy_actions:
 		var event = InputEventJoypadButton.new()
 		event.button_index = joy_actions[action]
@@ -141,29 +183,40 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("pause_game") and not in_menu and Run.active:
 		if ui.mode == "play": pause_game()
 		elif ui.mode == "pause": resume_game()
-		elif ui.mode in ["journal", "settings"]: ui.close_subscreen()
-		elif ui.mode == "map": ui.close_map()
+		elif ui.mode in ["journal", "settings", "map"]: ui.close_subscreen()
+		elif ui.mode == "painting": ui.close_painting()
 		elif ui.mode == "secret": ui.close_secret_code()
+	elif event.is_action_pressed("map") and not in_menu and Run.active:
+		if ui.mode == "map": ui.close_subscreen()
+		elif is_playing(): ui.open_map("play")
 	elif event.is_action_pressed("dash") and is_playing():
 		request_dash = true
-	elif event.is_action_pressed("active") and is_playing():
-		request_active = true
-	elif event.is_action_pressed("bomb") and is_playing():
-		request_bomb = true
 	elif event.is_action_pressed("interact") and is_playing():
 		interact()
+	# Actions fire on a fresh press only; a held key never repeats them.
+	elif event.is_action_pressed("use_active", false) and is_playing():
+		submit({"type": "use_active"})
+	elif event.is_action_pressed("place_bomb", false) and is_playing():
+		submit({"type": "place_bomb"})
 	elif event.is_action_pressed("journal") and is_playing():
 		ui.open_journal("pause")
-	elif event.is_action_pressed("map") and not in_menu:
-		if is_playing(): ui.open_map()
-		elif ui.mode == "map": ui.close_map()
-	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and is_playing():
+	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and is_playing() and event.device != InputEvent.DEVICE_ID_EMULATION:
 		var p = ui.local_point(event.position)
-		var button = ui.action_button_at(p) if ui.touch_controls_visible() else ""
-		if button != "":
-			ui.press_action_button(button)
-		elif ui.INTERACTION_RECT.has_point(p) and interaction_text != "":
+		if ui.INTERACTION_RECT.has_point(ui.from_middle(p)) and interaction_text != "":
 			interact()
+
+## Local commands take the same path a remote peer's would: through Session
+## to the validated action handlers, with a unique event id.
+func submit(command: Dictionary) -> Dictionary:
+	command_counter += 1
+	command["event"] = "local:%d:%d" % [Run.seed_value, command_counter]
+	last_result = {}
+	Session.submit(command)
+	return last_result
+
+func on_command(peer_id: int, command: Dictionary) -> void:
+	if Session.is_authority():
+		last_result = actions.perform(command, peer_id)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
@@ -173,8 +226,8 @@ func _notification(what: int) -> void:
 		if is_instance_valid(ui) and not in_menu:
 			if ui.mode == "play": pause_game()
 			elif ui.mode == "pause": resume_game()
-			elif ui.mode in ["settings", "journal"]: ui.close_subscreen()
-			elif ui.mode == "map": ui.close_map()
+			elif ui.mode in ["settings", "journal", "map"]: ui.close_subscreen()
+			elif ui.mode == "painting": ui.close_painting()
 			elif ui.mode == "secret": ui.close_secret_code()
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		get_tree().quit()
@@ -187,12 +240,20 @@ func screen_direction(value: Vector2) -> Vector3:
 
 func _physics_process(delta: float) -> void:
 	if not is_playing(): return
+	# A doorway transition owns the tick: foes, shots and timers wait for it.
+	if not transition.is_empty():
+		advance_transition(delta)
+		return
 	if hitstop > 0:
 		hitstop -= delta
 		return
 	sim_time += delta
 	Run.elapsed += delta
 	transition_cooldown -= delta
+	# Cooldowns, modifiers and fuses advance on this same unpaused clock.
+	for bomb in Run.advance(delta):
+		actions.detonate(bomb)
+		if not is_playing(): return
 	var move_input = Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	var move_joy = Vector2(Input.get_joy_axis(0, JOY_AXIS_LEFT_X), Input.get_joy_axis(0, JOY_AXIS_LEFT_Y))
 	if move_joy.length() > .18: move_input = move_joy.limit_length()
@@ -214,47 +275,261 @@ func _physics_process(delta: float) -> void:
 		if intersection != null:
 			aim = intersection - player.global_position - Vector3.UP * .65
 			aim.y = 0
-		shooting = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+		# A click that pressed an on-screen action button never becomes fire.
+		shooting = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not ui.mouse_on_action
 	if request_dash:
 		player.dash()
 		request_dash = false
-	# Only a fresh press uses an item; holding never re-fires at cooldown expiry.
-	if request_active:
-		request_active = false
-		var used := perform_action({"type": "UseActive"})
-		if not used.ok and ACTIVE_REASONS.has(used.reason):
-			ui.notify(items.equipped_def().get("name", ""), ACTIVE_REASONS[used.reason], Color("efbd9f"))
-	if request_bomb:
-		request_bomb = false
-		perform_action({"type": "PlaceBomb"})
-	for bomb in items.tick(delta):
-		detonate_bomb(bomb)
 	player.update_sim(delta, move_input, aim, shooting)
 	for enemy in enemies.duplicate():
-		if is_instance_valid(enemy) and is_playing(): enemy.update_sim(delta)
+		if is_instance_valid(enemy) and is_playing() and enemy.alive: enemy.update_sim(delta)
 	enemies = enemies.filter(func(e): return is_instance_valid(e) and e.alive)
-	for moth in companions:
-		if is_instance_valid(moth) and is_playing(): moth.update_sim(delta)
-	companions = live_companions()
 	for shot in shots.duplicate():
 		if is_instance_valid(shot) and is_playing(): shot.update_sim(delta)
 	shots = shots.filter(func(s): return is_instance_valid(s) and s.alive)
-	for pickup in pickups:
+	if residue: residue.update_sim(delta)
+	if hazards: hazards.update_sim(delta)
+	# A streak cools once kills stop coming.
+	kindle_quiet += delta
+	# A draught takes the heat away faster.
+	if kindle_quiet > KINDLE_FADE_AFTER: kindle_heat = maxf(0.0, kindle_heat - delta * (1.8 if Run.has_twist("windswept") else 1.0))
+	sync_companions()
+	for companion in companions:
+		companion.update_sim(delta)
+	for pickup in pickups.duplicate():
 		if is_instance_valid(pickup): pickup.update_sim(delta)
 	pickups = pickups.filter(func(p): return is_instance_valid(p) and not p.collected)
 	if not Run.active: return
-	if enemies.is_empty() and not room.open:
+	track_exploration()
+	# Posts and dropped lanterns never hold a room shut.
+	if not room.open and enemies.all(func(e): return e.inert):
+		for enemy in enemies:
+			enemy.alive = false
+			enemy.queue_free()
+		enemies.clear()
 		clear_room()
 	update_interaction()
 	if room.open and transition_cooldown <= 0:
-		check_doors()
+		check_portals()
 	snapshot_timer -= delta
 	if snapshot_timer <= 0:
 		snapshot_timer = .1
 		Session.publish({"player": {"id": player.entity_id, "owner": player.owner_peer_id, "position": [player.position.x, player.position.z], "hp": Run.hp},
 			"room": Run.current_room, "seed": Run.seed_value, "floor": Run.floor_number})
+	# Room changes start only here, after every actor finished this tick.
+	if pending_portal != "":
+		var portal_id: String = pending_portal
+		pending_portal = ""
+		begin_transition(portal_id)
+
+func in_transition() -> bool:
+	return not transition.is_empty()
+
+## The character walks through the doorway and fades. Everything runs on the
+## simulation clock, so pausing holds it and every frame rate sees the same.
+func begin_transition(portal_id: String) -> void:
+	var side = Run.portal_side(portal_id, Run.current_room)
+	var door = RoomGeometry.socket_point(side.cell, side.dir)
+	transition = {"portal": portal_id, "phase": "exit", "time": 0.0, "from": player.position,
+		"to": Vector3(door.x, 0, door.y) + Vector3(side.dir.x, 0, side.dir.y) * DOOR_STEP}
+	player.velocity = Vector3.ZERO
+	request_dash = false
+	interaction_text = ""
+	interaction_kind = ""
+
+func advance_transition(delta: float) -> void:
+	transition.time += delta
+	if transition.get("kind", "") == "stairs":
+		advance_climb()
+		return
+	if transition.get("kind", "") == "build":
+		ease_from_stairs(delta)
+		if not is_instance_valid(stairs) or stairs.advance(delta):
+			if is_instance_valid(stairs): stairs_ready(true)
+			transition = {}
+		return
+	match transition.phase:
+		"exit":
+			var t = phase_progress(TRANSITION_EXIT)
+			player.walk_to(transition.from.lerp(transition.to, t))
+			player.set_fade(1.0 - t)
+			if t >= 1.0: slide_to(transition.portal)
+		"slide":
+			if phase_progress(TRANSITION_SLIDE) >= 1.0: finish_slide()
+		"enter":
+			var t = phase_progress(TRANSITION_ENTER)
+			player.walk_to(transition.from.lerp(transition.to, t))
+			player.set_fade(t)
+			if t >= 1.0:
+				player.place(transition.to)
+				var gate = transition.get("reseal")
+				if is_instance_valid(gate):
+					gate.get_node("Barrier").visible = not room.open
+					Audio.play_sound("door", .8)
+				transition = {}
+
+## Walks to the stair's foot and up every step, fading into the light that
+## fills the view; the floor changes under it, then the figure comes up the
+## new floor's stairwell as the light recedes. Simulation clock, like doorways.
+func begin_climb() -> void:
+	var path: Array = [player.position] + stairs.climb_path()
+	var times: Array = [CLIMB_APPROACH * .6, CLIMB_APPROACH * .4]
+	for i in Staircase.STEPS: times.append(CLIMB_STEPS / Staircase.STEPS)
+	transition = {"kind": "stairs", "phase": "climb", "time": 0.0, "path": path, "times": times}
+	player.velocity = Vector3.ZERO
+	request_dash = false
+	interaction_text = ""
+	interaction_kind = ""
+
+func advance_climb() -> void:
+	var total: float = transition.times.reduce(func(sum, t): return sum + t, 0.0)
+	var u = clampf(transition.time / total + .0001, 0.0, 1.0)
+	player.walk_to(path_point(transition.path, transition.times, transition.time))
+	if transition.phase == "climb":
+		player.set_fade(1.0 - clampf((u - .55) / .4, 0.0, 1.0))
+		light_veil.color.a = pow(clampf((u - .4) / .6, 0.0, 1.0), 1.6)
+		if u >= 1.0: reach_next_floor()
+	else:
+		player.set_fade(clampf(transition.time / (ARRIVE_RISE * .8), 0.0, 1.0))
+		light_veil.color.a = 1.0 - smoothstep(0.0, 1.0, transition.time / ARRIVE_RISE)
+		if u >= 1.0:
+			player.place(transition.path[-1])
+			light_veil.color.a = 0.0
+			transition = {}
+
+## The top of the last floor is the end of the run; otherwise the next floor.
+func reach_next_floor() -> void:
+	if Run.last_floor():
+		transition = {}
+		light_veil.color.a = 0.0
+		end_run(true)
+		return
+	Run.next_floor()
+	enter_room(Vector3(0, 0, 2.0))
+	var pedestal = Vector2(room.pedestal.x, room.pedestal.z)
+	var out = (pedestal - Vector2(well_spot.x, well_spot.z)).normalized()
+	var landing = room.geometry.safe_point(Vector2(well_spot.x, well_spot.z) + out * (Staircase.OUTER + .9), .5, room.blocked_at)
+	var arrival = Vector3(landing.x, 0, landing.y)
+	var path = Staircase.rise_path(well_spot, arrival)
+	var times: Array = []
+	for i in path.size() - 2: times.append(ARRIVE_RISE / (path.size() - 2))
+	times.append(ARRIVE_STEP_OFF)
+	transition = {"kind": "stairs", "phase": "arrive", "time": 0.0, "path": path, "times": times}
+	player.position = path[0]
+	player.face(path[1] - path[0])
+	player.set_fade(0.0)
+	light_veil.color.a = 1.0
+	Run.entry = {"room": Run.current_room, "position": [snappedf(arrival.x, .001), snappedf(arrival.z, .001)]}
+	Run.save_run()
+	ui.announce_floor()
+
+## Position along a path of segments with their own durations.
+static func path_point(path: Array, times: Array, time: float) -> Vector3:
+	for i in times.size():
+		if time <= times[i] or i == times.size() - 1:
+			return path[i].lerp(path[i + 1], clampf(time / times[i], 0.0, 1.0))
+		time -= times[i]
+	return path[-1]
+
+## Fixed ticks never land exactly on a phase length in floating point.
+func phase_progress(duration: float, extra := 0.0) -> float:
+	return clampf((transition.time + extra) / duration + .0001, 0.0, 1.0)
+
+## The room changes (and saves) here. The new room is built at the origin as
+## always and the old one stays on screen behind it along the way travelled:
+## the camera pans from one to the other, like pushing to the next screen.
+func slide_to(portal_id: String) -> void:
+	var old_anchor: Vector2i = Run.room_anchor(Run.rooms[Run.current_room])
+	var old_cells: Array = room.geometry.cells.duplicate()
+	var old_focus = camera_focus
+	var outward: Vector2i = Run.portal_side(portal_id, Run.current_room).dir
+	travel(portal_id, true)
+	var side = Run.portal_side(portal_id, Run.current_room)
+	var door = RoomGeometry.socket_point(side.cell, side.dir)
+	var start = Vector3(door.x, 0, door.y) + Vector3(side.dir.x, 0, side.dir.y) * DOOR_STEP
+	var arrival: Vector3 = player.position
+	var focus_to = camera_target(start)
+	# Rooms float apart in the dark. Adjacent on the floor grid, each would
+	# pop in or out beside the other's doorway, so the old room steps back
+	# whole cells until neither shows while the other is framed.
+	var adjacent: Vector2i = old_anchor - Run.room_anchor(Run.rooms[Run.current_room])
+	var shift := adjacent
+	var offset := Vector3.ZERO
+	for gap in range(6):
+		shift = adjacent - outward * gap
+		offset = Vector3(shift.x * RoomGeometry.CELL.x, 0, shift.y * RoomGeometry.CELL.y)
+		if not room_in_view(room.geometry.cells, Vector3.ZERO, old_focus + offset) and not room_in_view(old_cells, offset, focus_to):
+			break
+	previous_view.position = offset
+	# Lantern glows and floor marks are masked to the room; cover both for now.
+	view_mask = RoomGeometry.new(room.geometry.cells + old_cells.map(func(cell): return cell + shift))
+	view_mask.apply_shader_mask()
+	# Whole cells can leave a stretch of the pan where neither room shows.
+	# Those frames are identical darkness, so the camera skips them.
+	var focus_from = old_focus + offset
+	var old_leaves = view_crossing(func(u): return room_in_view(old_cells, offset, focus_from.lerp(focus_to, u)))
+	var new_arrives = view_crossing(func(u): return not room_in_view(room.geometry.cells, Vector3.ZERO, focus_from.lerp(focus_to, u)))
+	transition.merge({"phase": "slide", "time": 0.0, "from": start, "to": arrival, "focus_from": focus_from,
+		"focus_to": focus_to, "dark_from": old_leaves, "dark_skip": maxf(0.0, new_arrives - old_leaves)}, true)
+	player.position = start
+	player.face(arrival - start)
+	player.set_fade(0.0)
+	# A room that seals on entry keeps this doorway open until the figure is in.
+	for gate in room.gates:
+		if gate.get_meta("portal", "") == portal_id and not room.open:
+			gate.get_node("Barrier").visible = false
+			transition["reseal"] = gate
+
+## Whether any of a room's cells (floor, walls with caps up to 2.9 units, wall
+## faces 0.45 past the floor) would be on screen with the camera at this
+## focus. Orthographic: each cell box projects to a convex hexagon, tested
+## exactly against the view at the current aspect.
+func room_in_view(cells: Array, offset: Vector3, focus: Vector3) -> bool:
+	var view = get_viewport().get_visible_rect().size
+	var half = Vector2(camera.size * view.x / view.y, camera.size) / 2.0
+	var screen = PackedVector2Array([-half, Vector2(half.x, -half.y), half, Vector2(-half.x, half.y)])
+	var basis: Basis = camera.global_basis
+	var eye = camera_home + focus
+	for cell in cells:
+		var box = Rect2(RoomGeometry.cell_center(cell) - RoomGeometry.HALF, RoomGeometry.CELL).grow(.5)
+		var corners = PackedVector2Array()
+		for x in [box.position.x, box.end.x]:
+			for z in [box.position.y, box.end.y]:
+				for y in [0.0, 3.0]:
+					var relative = Vector3(x, y, z) + offset - eye
+					corners.append(Vector2(relative.dot(basis.x), relative.dot(basis.y)))
+		if not Geometry2D.intersect_polygons(Geometry2D.convex_hull(corners), screen).is_empty():
+			return true
+	return false
+
+## Where along the pan (0..1) a test that holds at the start stops holding.
+func view_crossing(holds: Callable) -> float:
+	var low = 0.0
+	var high = 1.0
+	for i in 18:
+		var middle = (low + high) / 2.0
+		if holds.call(middle): low = middle
+		else: high = middle
+	return low
+
+## Pan position for a slide progress: eased, with the dark stretch removed.
+func slide_focus(progress: float) -> Vector3:
+	var along = smoothstep(0.0, 1.0, progress) * (1.0 - transition.dark_skip)
+	if along > transition.dark_from: along += transition.dark_skip
+	return transition.focus_from.lerp(transition.focus_to, along)
+
+func finish_slide() -> void:
+	if is_instance_valid(previous_view): previous_view.queue_free()
+	previous_view = null
+	view_mask = room.geometry
+	view_mask.apply_shader_mask()
+	transition.phase = "enter"
+	transition.time = 0.0
 
 func _process(delta: float) -> void:
+	if fade_prewarm > 0:
+		fade_prewarm -= 1
+		if fade_prewarm == 0 and in_menu and is_instance_valid(player): player.set_fade(1.0)
 	shake = maxf(0, shake - delta * .9)
 	hurt_flash = maxf(0, hurt_flash - delta * 1.6)
 	update_camera(delta)
@@ -263,6 +538,10 @@ func _process(delta: float) -> void:
 		# Animate the luminous relic alone; its pedestal and light stay static,
 		# allowing the room's shadow maps to remain cached while idle.
 		marker_visual.rotation.y += delta * .5
+	for view in item_views.values():
+		if is_instance_valid(view):
+			var orb = view.get_node_or_null("Orb")
+			if orb: orb.position.y = .62 + sin(Time.get_ticks_msec() * .003) * .06
 
 func update_camera(delta: float, snap := false) -> void:
 	if not camera:
@@ -270,55 +549,76 @@ func update_camera(delta: float, snap := false) -> void:
 	var target = Vector3.ZERO
 	if not in_menu and is_instance_valid(player):
 		target = camera_target(player.position)
+		# Rise with a climb so the figure stays framed on the stair; watch a
+		# stair build from a little above its middle.
+		if transition.get("kind", "") == "stairs": target.y = player.position.y
+		elif transition.get("kind", "") == "build" and is_instance_valid(stairs): target = stairs.position + Vector3(0, 2.8, 0)
 		var actors: Array = []
 		for enemy in enemies:
 			if is_instance_valid(enemy) and enemy.alive: actors.append(enemy.position)
 		if is_instance_valid(room): room.update_wall_visibility(player.position, 0.0 if snap else delta, actors)
-	camera_focus = target if snap else camera_focus.lerp(target, 1.0 - exp(-7.0 * delta))
+	if transition.get("phase", "") == "slide":
+		# Interpolate between fixed ticks so the pan is smooth at any frame rate.
+		var between = Engine.get_physics_interpolation_fraction() / Engine.physics_ticks_per_second if is_playing() else 0.0
+		camera_focus = slide_focus(phase_progress(TRANSITION_SLIDE, between))
+	else:
+		camera_focus = target if snap else camera_focus.lerp(target, 1.0 - exp(-7.0 * delta))
+	if not in_menu and is_instance_valid(room):
+		room.update_light_selection(camera_focus)
 	var amount = shake if Settings.values.shake else 0.0
 	# Translate the camera without rotating it: movement and aiming axes stay fixed.
 	camera.position = camera_home + camera_focus + Vector3(sin(Time.get_ticks_msec() * .081), cos(Time.get_ticks_msec() * .067), 0) * amount
 
-## Geometry-aware follow: inside a large room the camera tracks the player
-## between cell centres, then eases toward the outer walls exactly as a single
-## room always has. The close zoom never shrinks to fit a whole room.
+## Keeps the close zoom in every room. A 1x1 room follows 45% of movement
+## within ±3.6/±2.8; larger rooms widen the same edge margins so the player
+## stays framed at every wall, bend and door without shrinking combat.
 func camera_target(at: Vector3) -> Vector3:
-	var area: Rect2 = room.geometry.bounds() if is_instance_valid(room) else Rect2(-9, -7, 18, 14)
-	var track_low := area.position + RoomGeometry.HALF
-	var track_high := area.end - RoomGeometry.HALF
-	var result := Vector3.ZERO
-	var tx := clampf(at.x, track_low.x, track_high.x)
-	var tz := clampf(at.z, track_low.y, track_high.y)
-	result.x = tx + clampf((at.x - tx) * CAMERA_FOLLOW_GAIN, -CAMERA_FOCUS_LIMIT.x, CAMERA_FOCUS_LIMIT.x)
-	result.z = tz + clampf((at.z - tz) * CAMERA_FOLLOW_GAIN, -CAMERA_FOCUS_LIMIT.y, CAMERA_FOCUS_LIMIT.y)
-	return result
+	var area: Rect2 = room.geometry.bounds() if is_instance_valid(room) and room.geometry else Rect2(-9, -7, 18, 14)
+	var center = area.get_center()
+	var half = area.size / 2.0
+	var margin = RoomGeometry.HALF - CAMERA_FOCUS_LIMIT
+	var limit = Vector2(maxf(0, half.x - margin.x), maxf(0, half.y - margin.y))
+	var gain = Vector2(maxf(CAMERA_FOLLOW_GAIN, limit.x / maxf(half.x - .3, .1)), maxf(CAMERA_FOLLOW_GAIN, limit.y / maxf(half.y - .3, .1)))
+	return Vector3(center.x + clampf((at.x - center.x) * gain.x, -limit.x, limit.x), 0,
+		center.y + clampf((at.z - center.y) * gain.y, -limit.y, limit.y))
 
-func clean_room() -> void:
-	prop_damage.clear()
+func clean_room(keep_view := false) -> void:
 	for shot in shots:
 		if is_instance_valid(shot): shot.queue_free()
 	for enemy in enemies:
 		if is_instance_valid(enemy): enemy.queue_free()
 	for pickup in pickups:
-		if is_instance_valid(pickup): pickup.queue_free()
-	bomb_nodes.clear()
-	for moth in companions:
-		if is_instance_valid(moth): moth.queue_free()
-	companions.clear()
+		# Kept views show their drops as they slide away; nothing collects them.
+		if is_instance_valid(pickup) and not keep_view: pickup.queue_free()
 	shots.clear()
 	enemies.clear()
 	pickups.clear()
+	companions.clear()
+	bomb_views.clear()
+	item_views.clear()
+	chest_views.clear()
+	interactions.clear()
+	if is_instance_valid(previous_view): previous_view.queue_free()
+	previous_view = null
+	residue = null
+	hazards = null
+	if not keep_view:
+		transition = {}
+		if light_veil: light_veil.color.a = 0.0
+	stairs = null
 	if scene_root:
-		remove_child(scene_root)
-		scene_root.queue_free()
+		if keep_view:
+			previous_view = scene_root
+		else:
+			remove_child(scene_root)
+			scene_root.queue_free()
 	scene_root = Node3D.new()
 	add_child(scene_root)
 	marker = null
 	marker_visual = null
-	interactions.clear()
-	interaction_target = {}
 	interaction_text = ""
 	interaction_kind = ""
+	pending_portal = ""
 
 func show_title_room() -> void:
 	in_menu = true
@@ -332,9 +632,14 @@ func show_title_room() -> void:
 	player = Adventurer.new()
 	scene_root.add_child(player)
 	player.setup(self)
-	player.position = Vector3(0, 0, .1)
+	player.place(Vector3(0, 0, .1))
 	player.visual.rotation_degrees.y = 150
+	# Draw the faded variant for a few title frames: its shaders then compile
+	# here rather than mid-transition, which would stall on phones.
+	player.set_fade(.99)
+	fade_prewarm = 3
 	make_marker("treasure", Vector3(2.3, 0, -1.5))
+	apply_floor_light()
 	update_camera(0.0, true)
 
 func start_run(weapon: String, seed_input: int, is_daily: bool) -> void:
@@ -343,10 +648,15 @@ func start_run(weapon: String, seed_input: int, is_daily: bool) -> void:
 	paused = false
 	camera.h_offset = 0
 	camera.size = CAMERA_GAME_SIZE
+	# Scene entity ids restart with each run, so a seed plays out identically.
 	sim_time = 0
+	entity_counter = 10
+	reset_combat()
 	enter_room(Vector3(0, 0, 2.0))
 	ui.show_screen("play")
-	ui.notify("A little light wakes up", "Clear rooms. Find relics. Follow the hearth.")
+	var arrival: Array = Run.theme().arrival
+	ui.notify(arrival[0], arrival[1])
+	ui.announce_floor()
 
 func continue_run() -> void:
 	if not Run.load_run():
@@ -356,59 +666,80 @@ func continue_run() -> void:
 	paused = false
 	camera.h_offset = 0
 	camera.size = CAMERA_GAME_SIZE
-	enter_room(checkpoint_spawn(), Run.checkpoint.get("portal", ""))
+	reset_combat()
+	enter_room(saved_entry())
 	ui.show_screen("play")
 	ui.notify("Welcome back, little light", "Your last safe room remembers you.")
+	ui.announce_floor()
 
-func enter_room(spawn: Vector3, via_portal := "") -> void:
-	clean_room()
+func saved_entry() -> Vector3:
+	if Run.entry.get("room", "") == Run.current_room:
+		return Vector3(float(Run.entry.position[0]), 0, float(Run.entry.position[1]))
+	return Vector3(0, 0, 2.0)
+
+func enter_room(spawn: Vector3, keep_view := false) -> void:
+	clean_room(keep_view)
 	var data: Dictionary = Run.rooms[Run.current_room]
 	data.visited = true
-	Run.checkpoint = {"room": Run.current_room, "portal": via_portal}
 	room = DungeonRoom.new()
 	scene_root.add_child(room)
-	room.build(self, data, false, Run.room_layout(Run.current_room))
-	# Never place the player outside the footprint, e.g. in an L's missing quadrant.
-	var safe := room.geometry.nearest_inside(spawn, .45)
+	room.build(self, data)
+	residue = ResidueField.new()
+	scene_root.add_child(residue)
+	residue.setup(self, room.geometry)
+	hazards = FloorHazards.new()
+	scene_root.add_child(hazards)
+	hazards.setup(self, data, room.geometry, residue, room.pedestal)
+	wind = Vector3.ZERO
+	if Run.has_twist("windswept"):
+		var bearing = float(Content.stable_hash("wind:%d:%d" % [Run.seed_value, Run.floor_number]) % 628) / 100.0
+		wind = Vector3(cos(bearing), 0, sin(bearing)) * 2.4
+	noises.clear()
+	# A saved or requested spawn can be outside a rotated L: validate it.
+	var safe = room.geometry.safe_point(Vector2(spawn.x, spawn.z), .5, room.blocked_at)
 	spawn = Vector3(safe.x, 0, safe.y)
+	Run.entry = {"room": Run.current_room, "position": [snappedf(safe.x, .001), snappedf(safe.y, .001)]}
 	player = Adventurer.new()
 	scene_root.add_child(player)
 	player.setup(self)
-	player.position = spawn
-	player.last_valid = spawn
+	player.place(spawn)
 	player.invulnerability = 1.0
 	transition_cooldown = .9
 	var gen = RandomNumberGenerator.new()
 	gen.seed = int(data.seed)
 	if not data.cleared and data.type in ["combat", "boss"]:
 		room.set_open(false)
+		# The encounter restarts from its seed: each foe has a stable source id,
+		# and the room's credit ledger stops a respawned foe paying out twice.
 		if data.type == "boss":
-			spawn_enemy(Vector3(0, 0, -2.5), "boss", "%d:%s:boss" % [Run.floor_number, Run.current_room])
+			spawn_enemy(room.pedestal + Vector3(0, 0, -2.5), "boss", "%s:boss" % data.id)
 		else:
-			var choices = ["mote", "spitter", "charger", "splitter", "brute"]
-			var cells: Array[Vector2i] = room.geometry.cells
-			# A large room is one encounter with a few more foes, cleared once.
-			var count = 3 + Run.floor_number + mini(int(data.depth) / 3, 2) + (cells.size() - 1) * 2
-			for i in count:
-				var offset := Vector2.ZERO
-				if cells.size() > 1:
-					offset = room.geometry.cell_center(cells[gen.randi_range(0, cells.size() - 1)])
-				var center := Vector3(offset.x, 0, offset.y)
-				var p = center + Vector3(gen.randf_range(-6, 6), 0, gen.randf_range(-4, 4))
-				if p.distance_to(spawn) < 3.0: p = center - (p - center)
+			var cells: int = room.geometry.cells.size()
+			var count = roundi((3 + mini(Run.floor_number, 4) + mini(int(data.depth) / 3, 2)) * (1.0 + .45 * (cells - 1)))
+			if Run.has_twist("swarming"): count = roundi(count * 1.35)
+			var roster = Foes.roster_for(Run.theme_id(), Run.floor_number, Run.floor_plan)
+			var chance = Foes.elite_chance(Run.floor_number) + (.2 if Run.has_twist("gilded") else 0.0)
+			var plan: Array = Foes.compose(roster, chance, count, gen)
+			var spawned: Array = []
+			for i in plan.size():
+				var center = RoomGeometry.cell_center(room.geometry.cells[i % cells])
+				var p = Vector3(gen.randf_range(-6, 6), 0, gen.randf_range(-4, 4))
+				if p.distance_to(spawn - Vector3(center.x, 0, center.y)) < 3.0: p = -p
+				p += Vector3(center.x, 0, center.y)
+				# A rootling grows a few steps from its partner.
+				if plan[i].partner >= 0 and plan[i].partner < i:
+					p = spawned[plan[i].partner].global_position + Vector3(3.5, 0, 0).rotated(Vector3.UP, gen.randf() * TAU)
 				for obstacle in room.obstacles:
-					if p.distance_to(obstacle.position) < 1.6: p.z = center.z
-				if cells.size() > 1 and p.distance_to(spawn) < 3.0:
-					p = center
-				var inside := room.geometry.nearest_inside(p, .6)
-				# Never spawn inside furniture: walk toward the cell centre.
-				for attempt in 6:
-					if not room.blocked_at(inside, .7): break
-					inside = room.geometry.nearest_inside(inside.lerp(Vector2(center.x, center.z), .4) + Vector2(attempt * .7, 0), .6)
-				p = Vector3(inside.x, 0, inside.y)
-				var kind: String = choices[gen.randi_range(0, mini(choices.size() - 1, 2 + Run.floor_number))]
-				# Deterministic source IDs: a restarted encounter cannot pay twice.
-				spawn_enemy(p, kind, "%d:%s:%d" % [Run.floor_number, Run.current_room, i])
+					if p.distance_to(obstacle.position) < 1.6: p.z = center.y
+				if p.distance_to(spawn) < 3.0:
+					p = spawn + (p - spawn).normalized() * 3.5 if not p.is_equal_approx(spawn) else spawn + Vector3(3.5, 0, 0)
+				spawned.append(spawn_enemy(p, plan[i].kind, "%s:e%d" % [data.id, i]))
+			for i in plan.size():
+				if plan[i].partner > i: spawned[i].bind_partner(spawned[plan[i].partner])
+				if plan[i].elite == "twinned":
+					if plan[i].twin > i: spawned[i].make_elite("twinned", spawned[plan[i].twin])
+				elif plan[i].elite != "":
+					spawned[i].make_elite(plan[i].elite)
 	else:
 		room.set_open(true)
 		if not data.cleared:
@@ -417,111 +748,87 @@ func enter_room(spawn: Vector3, via_portal := "") -> void:
 		# offers were generated. The room seed makes regeneration repeatable.
 		if data.type == "boss" and not data.claimed and not data.has("offers"):
 			ensure_offers(true)
-		if not data.claimed and data.type in ["treasure", "shop", "rest"]:
-			make_marker(data.type)
+		if not data.claimed and data.type in ["treasure", "shop", "rest", "dark"]:
+			make_marker(data.type, room.pedestal)
 		elif data.cleared and not data.claimed and data.has("offers"):
-			make_marker("treasure")
-		elif data.type == "boss":
-			make_marker("exit", Vector3(0, 0, -1.5))
+			make_marker("treasure", room.pedestal)
+		if data.type == "boss":
+			raise_stairs(false)
 		Run.save_run()
-	# Persistent drops, chests, dropped actives and live bombs return with the room.
 	for drop in data.get("pickups", []):
-		spawn_pickup(Vector3(drop.position[0], 0, drop.position[1]), drop.kind, int(drop.value), int(drop.id))
-	build_room_objects()
+		spawn_pickup(Vector3(float(drop.position[0]), 0, float(drop.position[1])), drop.def, float(drop.get("value", -1)), str(drop.id))
+	if data.type == "start" and Run.floor_number > 1:
+		var spot = stair_spot(data, "stairwell")
+		well_spot = Vector3(spot.x, 0, spot.y)
+		Staircase.make_well(scene_root, well_spot)
+		room.add_obstacle("stairwell", spot, Staircase.OUTER)
+	if data.type == "secret" and not data.get("found", false):
+		data["found"] = true
+		ui.notify("A forgotten gallery" if data.get("variant", "") == "gallery" else "A hidden cache", "Few little lights ever find this room.", Color("d7c3e8"))
+	for chest in data.get("chests", []):
+		chest_views[chest.id] = ItemViews.chest(scene_root, chest)
+	refresh_items()
+	for mount_id in room.paintings:
+		var mount = GameActions.find_record(data.get("mounts", []), mount_id)
+		var view = Vector3(float(mount.view[0]), 0, float(mount.view[1]))
+		interactions.register("painting:" + mount_id, "painting", view, 2.0, "", room.paintings[mount_id].node)
 	for bomb in Run.pending_bombs:
-		if bomb.room == Run.current_room:
-			make_bomb_node(bomb)
+		if bomb.room == Run.current_room: spawn_bomb_view(bomb)
+	sync_companions()
 	if data.type == "boss" and not data.cleared:
-		ui.notify("The hearth is stirring", "Watch the windup. Dash through danger.", Color("e0a18b"))
+		var line: Array = Run.theme().boss.intro
+		ui.notify(line[0], line[1], Color("e0a18b"))
+	apply_floor_light()
 	update_camera(0.0, true)
 
-## Each doorway trigger identifies one portal; several doors may share a wall.
-func check_doors() -> void:
-	for socket in room.sockets:
-		if socket.portal == "" or socket.get("state", "open") == "concealed": continue
-		var door := room.socket_position(socket)
-		var normal := Vector3(socket.dir.x, 0, socket.dir.y)
-		var lateral := Vector3(absf(normal.z), 0, absf(normal.x))
-		var offset: Vector3 = player.position - door
-		if offset.dot(normal) > -.85 and absf(offset.dot(lateral)) < 1.1:
-			# Transition after this physics step, at a safe boundary.
-			if pending_portal == "":
-				pending_portal = socket.portal
-				call_deferred("_finish_portal_transition")
+## The tower brightens floor by floor; the title keeps its own warm light.
+func apply_floor_light() -> void:
+	FloorLight.apply(FloorLight.profile(0) if in_menu else FloorLight.current(), room_environment.environment, key_light, vignette)
+
+## Each doorway trigger names one specific portal; the transition itself is
+## scheduled for the end of the physics tick.
+func check_portals() -> void:
+	var at = Vector2(player.position.x, player.position.z)
+	for portal_id in Run.rooms[Run.current_room].get("portals", []):
+		if Run.portals[portal_id].state not in ["open", "revealed"]: continue
+		var side = Run.portal_side(portal_id, Run.current_room)
+		if RoomGeometry.in_trigger(at, side.cell, side.dir):
+			submit({"type": "enter_portal", "target": portal_id})
 			return
 
-func _finish_portal_transition() -> void:
-	var portal := pending_portal
-	pending_portal = ""
-	if portal != "" and is_playing():
-		perform_action({"type": "EnterPortal", "portal": portal})
-
-## Entry anchor inside `room_id` for a portal, in that room's local space.
-func portal_entry(room_id: String, portal_id: String) -> Vector3:
-	var layout := Run.room_layout(room_id)
-	var geometry := RoomGeometry.new(layout.cells)
-	for socket in layout.sockets:
-		if socket.portal == portal_id:
-			var p := geometry.entry_point(socket.cell, socket.dir)
-			return Vector3(p.x, 0, p.y)
-	return Vector3(0, 0, 2.0)
-
-func _action_enter_portal(action: Dictionary) -> Dictionary:
-	var pid := str(action.get("portal", ""))
-	if not is_playing() or not room.open:
-		return GameActions.fail("doors_closed")
-	if not Run.portals.has(pid) or pid not in Run.room_portal_ids.get(Run.current_room, []):
-		return GameActions.fail("unknown_portal")
-	var portal: Dictionary = Run.portals[pid]
-	if portal.get("state", "open") == "concealed":
-		return GameActions.fail("concealed")
-	var destination: String = portal.b if portal.a == Run.current_room else portal.a
+## Enter the paired room at the entry anchor of the portal's other side.
+func travel(portal_id: String, keep_view := false) -> void:
+	var destination = Run.other_room(portal_id, Run.current_room)
+	var side = Run.portal_side(portal_id, destination)
 	Run.current_room = destination
 	Audio.play_sound("door")
-	enter_room(portal_entry(destination, pid), pid)
-	return GameActions.ok({"room": destination})
+	var point = RoomGeometry.entry_point(side.cell, side.dir)
+	enter_room(Vector3(point.x, 0, point.y), keep_view)
 
-## Where Continue resumes: the saved entry anchor, validated against geometry.
-func checkpoint_spawn() -> Vector3:
-	var portal: String = Run.checkpoint.get("portal", "")
-	if Run.checkpoint.get("room", "") == Run.current_room and portal != "" and Run.portals.has(portal):
-		return portal_entry(Run.current_room, portal)
-	return Vector3(0, 0, 2.0)
-
-## `source` is the stable reward identity; summoned foes pass "" and never pay.
 func spawn_enemy(at: Vector3, kind: String, source := "") -> DungeonEnemy:
-	var enemy = DungeonEnemy.new()
+	# Each floor theme has its own boss.
+	if kind == "boss": kind = Foes.boss_kind(Run.theme())
+	var enemy: DungeonEnemy = Foes.create(kind)
 	scene_root.add_child(enemy)
 	entity_counter += 1
 	enemy.setup(self, kind, entity_counter)
 	enemy.source = source
-	enemy.position = at
-	enemy.last_valid = at
+	var safe = room.geometry.safe_point(Vector2(at.x, at.z), .5 + enemy.radius * .5, room.blocked_at)
+	enemy.place(Vector3(safe.x, 0, safe.y))
 	enemies.append(enemy)
 	return enemy
 
-func live_companions() -> Array:
-	return companions.filter(func(m): return is_instance_valid(m) and m.alive())
-
-func release_moths(count: int, duration: float, damage: float) -> void:
-	for i in count:
-		var moth := Moth.new()
-		scene_root.add_child(moth)
-		moth.setup(self, i, duration, damage)
-		moth.global_position = player.global_position + Vector3.UP * .9
-		companions.append(moth)
-	Effects.pickup_glint(player.global_position + Vector3.UP * .9, Color("efe2b4"))
-
+## Friendly volleys may not starve enemies of their attacks under the global
+## cap: hostile projectiles keep a reserved share.
 func spawn_shot(at: Vector3, direction: Vector3, damage: float, speed_value: float, stats: Dictionary, color: Color, friendly: bool) -> EmberShot:
-	if shots.size() >= 200: return null
-	# Friendly volleys leave room for enemy attacks under the global cap.
-	if friendly and shots.filter(func(s): return is_instance_valid(s) and s.friendly).size() >= 160: return null
+	if shots.size() >= MAX_SHOTS: return null
+	var hostile = shots.filter(func(s): return is_instance_valid(s) and not s.friendly).size()
+	if friendly and shots.size() - hostile >= MAX_SHOTS - HOSTILE_SHOT_RESERVE: return null
 	var shot = EmberShot.new()
 	scene_root.add_child(shot)
 	entity_counter += 1
 	shot.entity_id = entity_counter
 	shot.setup(self, at, direction, damage, speed_value, stats, color, friendly)
-	if friendly: Effects.muzzle(at, direction.normalized(), color)
 	shots.append(shot)
 	return shot
 
@@ -529,7 +836,7 @@ func nearest_enemy(at: Vector3, distance: float, excluded: Dictionary = {}) -> D
 	var result: DungeonEnemy = null
 	var best = distance
 	for enemy in enemies:
-		if not is_instance_valid(enemy) or not enemy.alive or excluded.has(enemy.entity_id): continue
+		if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable or enemy.inert or excluded.has(enemy.entity_id): continue
 		var d = at.distance_to(enemy.global_position + Vector3.UP * .65)
 		if d < best:
 			best = d
@@ -538,64 +845,125 @@ func nearest_enemy(at: Vector3, distance: float, excluded: Dictionary = {}) -> D
 
 func blast(at: Vector3, radius: float, damage: float, friendly: bool, excluded: DungeonEnemy) -> void:
 	Effects.ring_burst(scene_root, Vector3(at.x, 0, at.z), Color("edbd7b"), radius)
+	if residue: residue.ignite(Vector3(at.x, 0, at.z), radius * .7)
 	if friendly:
+		make_noise(at, 2.5)
 		for enemy in enemies.duplicate():
-			if is_instance_valid(enemy) and enemy.alive and enemy != excluded and enemy.global_position.distance_to(Vector3(at.x, 0, at.z)) < radius + enemy.radius:
-				enemy.take_hit(damage, (enemy.global_position - at).normalized() * 2, false)
+			if is_instance_valid(enemy) and enemy.alive and enemy.targetable and enemy != excluded and enemy.global_position.distance_to(Vector3(at.x, 0, at.z)) < radius + enemy.radius:
+				enemy.take_hit(damage, (enemy.global_position - at).normalized() * 2, false, false, "blast")
 	else:
 		if player.global_position.distance_to(at) < radius:
 			player.hurt(1, at)
 
+## A foe pays out once per run: its credit and its stable drop records are
+## created together, so any later save holds both or neither.
 func on_enemy_killed(enemy: DungeonEnemy) -> void:
-	# Reward credit and its drops are one transaction keyed by the source ID.
-	if enemy.source == "" or Run.reward_ledger.has(enemy.source):
-		return
-	Run.reward_ledger[enemy.source] = true
-	Run.kills += 1
-	var expected = 1.35 * (1.0 + Run.stats.coin_bonus)
-	var amount = int(floor(expected)) + int(Run.rng.randf() < fposmod(expected, 1.0))
+	if not enemy.inert: stoke()
 	if enemy.boss:
-		amount = maxi(4, roundi(12 * (1.0 + Run.stats.coin_bonus)))
 		hitstop = .11
 		shake = .3
 		for shot in shots:
 			if is_instance_valid(shot) and not shot.friendly: shot.remove()
-	for i in (4 if enemy.boss else 1):
-		spawn_pickup(enemy.global_position + Vector3(sin(i * 2.4) * .4, 0, cos(i * 2.4) * .4), "copper_coin", amount / 4 if enemy.boss else amount)
-	var bonus := ItemSystem.roll_table("enemy_bonus", Run.rng, Run.stats.luck)
-	for i in bonus.size():
-		spawn_pickup(enemy.global_position + Vector3(.4, 0, -.3 + i * .35), bonus[i], int(ItemSystem.pickup_def(bonus[i]).amount))
+	var data: Dictionary = Run.rooms[Run.current_room]
+	if enemy.source == "" or enemy.source in data.get("credited", []):
+		return
+	if not data.has("credited"): data.credited = []
+	data.credited.append(enemy.source)
+	Run.kills += 1
+	var drops = Drops.roll("boss" if enemy.boss else "enemy_common", Run.rng, Run.stats.luck, Run.coin_bonus())
+	for i in drops.size():
+		var at = Drops.scatter(drops.size(), i, enemy.global_position)
+		spawn_pickup(at, drops[i].def)
 
-func spawn_pickup(at: Vector3, kind: String, amount: int, restored_id := -1) -> void:
+func spawn_pickup(at: Vector3, pickup_id: String, amount := -1.0, restored_id := "") -> DungeonPickup:
+	var definition = Content.record("pickups", pickup_id)
+	if definition.is_empty():
+		push_warning("Unknown pickup '%s' was not spawned." % pickup_id)
+		return null
+	var safe = room.geometry.safe_point(Vector2(at.x, at.z), .3)
 	var pickup = DungeonPickup.new()
 	scene_root.add_child(pickup)
-	pickup.setup(self, at, kind, amount)
-	var data: Dictionary = Run.rooms[Run.current_room]
-	if restored_id < 0:
-		# Persisted drop IDs come from the run, never from disposable scene counters.
-		pickup.drop_id = Run.new_entity_id()
-		if not data.has("pickups"): data.pickups = []
-		data.pickups.append({"id": pickup.drop_id, "kind": kind, "value": amount, "position": [at.x, at.z]})
+	pickup.setup(self, Vector3(safe.x, 0, safe.y), pickup_id, amount)
+	if restored_id.is_empty():
+		pickup.drop_id = Run.add_drop(Run.current_room, pickup_id, safe, pickup.value)
 	else:
 		pickup.drop_id = restored_id
 	pickups.append(pickup)
+	return pickup
+
+func pickup_node(drop_id: String) -> DungeonPickup:
+	for pickup in pickups:
+		if is_instance_valid(pickup) and pickup.drop_id == drop_id and not pickup.collected: return pickup
+	return null
+
+func pickup_feedback(at: Vector3, definition: Dictionary) -> void:
+	Effects.play("pickup", at + Vector3(0, .35, 0), Color(definition.color))
+
+## The map remembers each floor cell the first time it is walked into and
+## scribbles it in. A safe room keeps it at once; in a fight, the room's own
+## save at the end keeps it.
+func track_exploration() -> void:
+	var local = room.geometry.cell_at(Vector2(player.position.x, player.position.z))
+	if not room.geometry.cell_set.has(local): return
+	var cell: Vector2i = local + Run.room_anchor(Run.rooms[Run.current_room])
+	if not Run.uncover(cell): return
+	ui.scribble(cell)
+	Audio.play_sound("scribble", .92 + float(absi(hash(cell)) % 17) / 100.0)
+	if room.open: Run.save_run()
+
+## The room's stair (or stairwell) spot. Rooms generated before the stairs
+## existed find one now, clear of their saved furniture, and keep it.
+func stair_spot(data: Dictionary, key: String) -> Vector2:
+	if not data.has(key):
+		var zones = FloorGenerator.reserved_zones({"portals": Run.portals}, data)
+		var blockers = room.obstacles.map(func(obstacle): return obstacle.rect)
+		data[key] = FloorGenerator.point_array(Staircase.find_spot(room.geometry, zones, Vector2(room.pedestal.x, room.pedestal.z), blockers))
+	return FloorGenerator.vec2(data[key])
+
+func raise_stairs(animated: bool) -> void:
+	var spot = stair_spot(Run.rooms[Run.current_room], "stairs")
+	stairs = Staircase.new()
+	scene_root.add_child(stairs)
+	stairs.position = Vector3(spot.x, 0, spot.y)
+	stairs.setup(Vector2(room.pedestal.x, room.pedestal.z), not animated)
+	if stairs.built: stairs_ready(false)
+
+func stairs_ready(announce: bool) -> void:
+	stairs.make_solid()
+	room.add_obstacle("stairs", Vector2(stairs.position.x, stairs.position.z), Staircase.OUTER)
+	interactions.register("stairs", "exit", stairs.approach_point(), 2.1, "", stairs)
+	if announce:
+		if Run.last_floor(): ui.notify("The last stair", "It climbs out into the light.", Color("f3dfb8"))
+		else: ui.notify("A stair winds upward", "Climb it toward the light above.", Color("f3dfb8"))
+
+## While the stair builds, nobody stands where it will be solid.
+func ease_from_stairs(delta: float) -> void:
+	var away = Vector2(player.position.x - stairs.position.x, player.position.z - stairs.position.z)
+	var room_needed = Staircase.OUTER + .5 - away.length()
+	if room_needed <= 0: return
+	var direction = away.normalized() if away.length() > .01 else Vector2(0, 1)
+	var moved = direction * minf(room_needed, 6.0 * delta)
+	player.position += Vector3(moved.x, 0, moved.y)
 
 func clear_room() -> void:
 	room.set_open(true)
 	Run.mark_cleared()
 	var data: Dictionary = Run.rooms[Run.current_room]
+	# Lanterns relit or put out in the fight stay that way.
+	if room.lanterns_changed: data["lit"] = room.burning_indices()
 	Audio.play_sound("door", 1.3)
 	ui.notify("A little more warmth", "The doorways are open.")
+	if data.type == "boss":
+		# The stair builds as a short scene: play waits and the camera watches.
+		raise_stairs(true)
+		transition = {"kind": "build", "time": 0.0}
 	if data.type == "boss" or Run.cleared % 2 == 0:
 		ensure_offers(data.type == "boss")
-		make_marker("treasure")
+		make_marker("treasure", room.pedestal)
 	else:
 		data.claimed = true
-		var drops := ItemSystem.roll_table("room_clear", Run.rng)
-		for i in drops.size():
-			spawn_pickup(Vector3(i * .6, 0, 0), drops[i], int(ItemSystem.pickup_def(drops[i]).amount))
-	# Chests become interactable once the room is safe.
-	build_room_objects()
+		for drop in Drops.roll("room_clear", Run.rng, Run.stats.luck):
+			spawn_pickup(room.pedestal, drop.def)
 	Run.save_run()
 
 func ensure_offers(premium := false) -> void:
@@ -603,47 +971,39 @@ func ensure_offers(premium := false) -> void:
 	if data.has("offers"): return
 	var gen = RandomNumberGenerator.new()
 	gen.seed = int(data.seed) + 991
-	var relics = Content.roll_items(gen, 3, Run.inventory, premium, Run.stats.luck)
+	var items = Content.roll_items(gen, 3, Run.inventory, premium, Run.stats.luck)
 	var offers: Array = []
-	for item in relics:
+	for item in items:
 		var price: int = {"common": 8, "uncommon": 12, "rare": 17, "mythic": 24}[item.rarity]
 		offers.append({"kind": "item", "id": item.id, "price": price})
 	if gen.randf() < .5 or data.type == "shop":
-		var choices: Array = WeaponAvailability.available()
-		var weapon: Dictionary = choices[gen.randi_range(0, choices.size() - 1)]
-		offers[2] = {"kind": "weapon", "id": weapon.id, "price": 14}
-	# Active items: always offered in a first-floor treasure room without one equipped.
-	var actives: Array = Content.families.get("actives", [])
-	if not actives.is_empty() and (gen.randf() < .3 or (data.type == "treasure" and Run.floor_number == 1 and Run.active_item.is_empty())):
-		var active: Dictionary = actives[gen.randi_range(0, actives.size() - 1)]
-		offers[1] = {"kind": "active", "id": active.id, "price": 15}
+		# Every weapon on offer is forged here, for this room alone.
+		offers[2] = {"kind": "weapon", "id": Forge.id_for(Content.stable_hash("shop:%d:%s" % [Run.seed_value, data.id]), gen.randi_range(0, 99)), "price": 14}
+	if gen.randf() < (.6 if data.type == "shop" else .3):
+		var pool = Content.families.actives.filter(func(active): return active.id != Run.active_item.get("def", ""))
+		offers[1] = {"kind": "active", "id": pool[gen.randi_range(0, pool.size() - 1)].id, "price": 15}
 	data.offers = offers
 	Run.save_run()
 
-func interaction_prompt(kind: String) -> String:
-	return {"treasure": "Choose a little treasure", "shop": "Browse the merchant’s wares", "rest": "Warm your hands · heal 3",
-		"exit": "Carry the light home" if Run.floor_number == 3 else "Descend to the next floor"}.get(kind, "")
-
-func remove_marker() -> void:
-	if marker and is_instance_valid(marker):
-		interactions.unregister(marker.get_meta("target_id"))
-		marker.queue_free()
-	marker = null
-	marker_visual = null
-
 func make_marker(kind: String, at := Vector3.ZERO) -> void:
-	remove_marker()
+	if marker and is_instance_valid(marker): marker.queue_free()
+	marker_visual = null
 	marker = Node3D.new()
 	scene_root.add_child(marker)
 	marker.position = at
 	marker.set_meta("kind", kind)
-	var target_id = "%s:%s" % [Run.current_room, kind]
-	marker.set_meta("target_id", target_id)
-	interactions.register(target_id, kind, at, interaction_prompt(kind))
 	if kind == "exit":
 		Geo.ring(marker, Vector3(0, .09, 0), 1.05, Color("a3d5c2"), .09)
 		Geo.halo(marker, Vector3(0, .02, 0), 5.0, Color(.35, .8, .6, .32))
 		Geo.light(marker, Vector3(0, .6, 0), Color("a7d8bd"), .65, 3.5)
+	elif kind == "dark":
+		Geo.box(marker, Vector3(0, .35, 0), Vector3(1.1, .7, .8), Color("1e1a22"))
+		Geo.box(marker, Vector3(0, .74, 0), Vector3(1.3, .08, 1.0), Color("3a2a3e"))
+		var flame = Geo.sphere(marker, Vector3(0, 1.05, 0), .2, Color("b98ae0"), 2.4)
+		flame.scale = Vector3(.8, 1.5, .8)
+		marker_visual = flame
+		Geo.halo(marker, Vector3(0, .03, 0), 4.5, Color(.55, .3, .8, .3))
+		Geo.light(marker, Vector3(0, 1.4, 0), Color("b98ae0"), .9, 5.0)
 	elif kind == "rest":
 		Geo.cylinder(marker, Vector3(0, .2, 0), .65, .4, Color("86775f"))
 		Geo.sphere(marker, Vector3(0, .75, 0), .25, Color("ffd28d"), 1.8)
@@ -656,39 +1016,77 @@ func make_marker(kind: String, at := Vector3.ZERO) -> void:
 		Geo.ring(marker, Vector3(0, .035, 0), .95, Color("d9b97a"), .035)
 		Geo.halo(marker, Vector3(0, .03, 0), 4, Color(1, .65, .22, .22))
 		Geo.light(marker, Vector3(0, 1.5, 0), Color("f0c68c"), .55, 3.5)
+	interactions.register(PEDESTAL_ID, kind, at, 2.1, "", marker)
+
+func remove_marker() -> void:
+	if marker and is_instance_valid(marker): marker.queue_free()
+	marker = null
+	marker_visual = null
+	interactions.unregister(PEDESTAL_ID)
+
+func prompt_for(target: Dictionary) -> String:
+	match target.kind:
+		"treasure": return "Choose a little treasure"
+		"shop": return "Browse the merchant’s wares"
+		"dark": return "Bargain with the dark · pay in life"
+		"rest": return "Warm your hands · heal 3"
+		"exit": return "Carry the light home" if Run.last_floor() else "Climb to the next floor"
+		"chest":
+			var chest = GameActions.find_record(Run.rooms[Run.current_room].get("chests", []), target.id.trim_prefix("chest:"))
+			if not chest.get("locked", false): return "Open the chest"
+			return "Unlock the chest · 1 key" if Run.keys > 0 else "Locked · it needs a key"
+		"item":
+			var record = GameActions.find_record(Run.rooms[Run.current_room].get("items", []), target.id.trim_prefix("item:"))
+			var definition = Content.record("actives", record.get("def", ""))
+			return ("Swap for " if not Run.active_item.is_empty() else "Take ") + definition.get("name", "item")
+		"painting":
+			var painting_id: String = room.paintings.get(target.id.trim_prefix("painting:"), {}).get("painting", "")
+			return "Look at " + Content.record("paintings", painting_id).title if Collection.seen(painting_id) else "Look at the painting"
+	return target.prompt
+
+## Loot, swaps and paintings wait until the room is safe; nothing interacts
+## through a wall.
+func interaction_eligible(target: Dictionary) -> bool:
+	if target.kind in ["chest", "item", "painting"] and not room.open:
+		return false
+	var from = Vector2(player.position.x, player.position.z)
+	var to = Vector2(target.position.x, target.position.z)
+	for step in 6:
+		if not room.geometry.contains(from.lerp(to, step / 5.0)): return false
+	return true
 
 func update_interaction() -> void:
-	interaction_target = interactions.select(player.position) if is_instance_valid(player) else {}
-	interaction_kind = interaction_target.get("kind", "")
-	interaction_text = interaction_target.get("prompt", "")
-
-func perform_action(action: Dictionary) -> Dictionary:
-	return actions.perform(action)
+	if in_transition():
+		interaction_text = ""
+		interaction_kind = ""
+		return
+	var target = interactions.choose(player.position, interaction_eligible)
+	interaction_kind = target.get("kind", "")
+	interaction_text = prompt_for(target) if not target.is_empty() else ""
 
 func interact() -> void:
 	if not is_playing(): return
 	update_interaction()
-	if interaction_target.is_empty(): return
-	perform_action({"type": "Interact", "target": interaction_target.id})
+	if interactions.focused == "": return
+	submit({"type": "interact", "target": interactions.focused})
+	if is_playing(): update_interaction()
 
-func _action_interact(action: Dictionary) -> Dictionary:
-	if not is_playing():
-		return GameActions.fail("not_playing")
-	var target: Dictionary = interactions.get_target(str(action.get("target", "")))
-	if target.is_empty() or not target.enabled:
-		return GameActions.fail("unknown_target")
-	if player.position.distance_to(target.position) >= target.radius:
-		return GameActions.fail("out_of_range")
+## Pedestal uses: rewards, the merchant, the rest hearth and the floor exit.
+func use_pedestal(target: Dictionary) -> Dictionary:
 	var data: Dictionary = Run.rooms[Run.current_room]
 	match target.kind:
-		"treasure", "shop":
-			ensure_offers(data.type == "treasure")
+		"treasure", "shop", "dark":
+			if target.kind == "dark": ensure_dark_offers()
+			else: ensure_offers(data.type == "treasure")
 			chosen_reward_shop = target.kind == "shop"
+			chosen_reward_dark = target.kind == "dark"
 			ui.offers = data.offers
 			ui.shop = chosen_reward_shop
+			ui.dark = chosen_reward_dark
 			paused = true
 			ui.show_screen("reward")
 		"rest":
+			# The hearth's marker is the gate: it is removed once used.
 			Run.heal(3)
 			data.claimed = true
 			remove_marker()
@@ -696,339 +1094,227 @@ func _action_interact(action: Dictionary) -> Dictionary:
 			Audio.play_sound("item")
 			ui.notify("A moment of warmth", "Recovered 3 health.")
 		"exit":
-			if Run.floor_number >= 3:
-				end_run(true)
-			else:
-				Run.next_floor()
-				enter_room(Vector3(0, 0, 2.0))
-				ui.notify("A little deeper", "A new floor. A fresh breath of warmth.")
-		"chest":
-			var result := open_chest(target.data.chest_id)
-			if not result.ok:
-				if result.reason == "no_key":
-					ui.notify("A locked chest", "You need a key.", Color("efbd9f"))
-					Audio.play_sound("hurt", 1.6)
-				return result
-		"active":
-			var result := take_dropped_active(target.data.drop_id)
-			if not result.ok: return result
-		"painting":
-			inspect_painting(target.data.painting)
-	if is_playing(): update_interaction()
-	return GameActions.ok({"kind": target.kind})
+			if not is_instance_valid(stairs) or not stairs.built:
+				return GameActions.result(false, "the stair is still rising")
+			begin_climb()
+	return GameActions.result(true)
 
-## Inspecting pauses solo play; the first inspection records the discovery
-## permanently and may complete the collection.
-func inspect_painting(id: String) -> void:
-	var result := Gallery.discover(id)
-	if result.new and is_instance_valid(room) and room.has_node("Painting"):
-		Effects.discovery_glint(room.get_node("Painting").global_position)
-	paused = true
-	ui.open_painting(id, result)
-	build_room_objects()
+## Inspecting discovers the work for good. The viewer pauses solo play.
+func inspect_painting(target: Dictionary) -> Dictionary:
+	var view: Dictionary = room.paintings.get(target.id.trim_prefix("painting:"), {})
+	if view.is_empty():
+		return GameActions.result(false, "no painting here")
+	var painting: Dictionary = Content.record("paintings", view.painting)
+	var unlocks_before: Array = Run.profile.unlocks.duplicate()
+	if Collection.discover(painting.id):
+		Effects.play("discovery_glint", view.node.global_position + Vector3(0, 0, 0))
+		var progress = Collection.progress()
+		ui.notify("A painting found · %d / %d" % [progress.x, progress.y], painting.title, Color("e9d6a8"))
+		Audio.play_sound("item", .85)
+	ui.painting_unlock = ""
+	for weapon in Run.profile.unlocks:
+		if weapon not in unlocks_before: ui.painting_unlock = Content.weapon_by_id[weapon].name
+	ui.open_painting(painting.id, "play")
+	return GameActions.result(true)
 
-func pickup_useful(kind: String) -> bool:
-	return items.pickup_useful(kind)
-
-func _action_collect_pickup(action: Dictionary) -> Dictionary:
-	var drop_id := int(action.get("drop_id", -1))
-	var pickup: DungeonPickup = null
-	for candidate in pickups:
-		if is_instance_valid(candidate) and candidate.drop_id == drop_id and not candidate.collected:
-			pickup = candidate
-	if pickup == null:
-		return GameActions.fail("unknown_drop")
-	if not pickup_useful(pickup.kind):
-		return GameActions.fail("not_useful")
-	var data: Dictionary = Run.rooms[Run.current_room]
-	var records: Array = data.get("pickups", [])
-	if not records.any(func(drop): return int(drop.id) == drop_id):
-		return GameActions.fail("already_collected")
-	# Remove the persistent record and grant the effect in one step.
-	pickup.collected = true
-	data.pickups = records.filter(func(drop): return int(drop.id) != drop_id)
-	items.apply_pickup(pickup.kind, pickup.value)
-	var effect: String = ItemSystem.pickup_def(pickup.kind).effect
-	Audio.play_sound("coin" if effect == "coins" else "item", 1.0 + float(pickup.value) * .05 if effect == "coins" else 1.2)
-	Effects.pickup_glint(pickup.global_position + Vector3.UP * .3, Color(ItemSystem.pickup_def(pickup.kind).color))
-	Run.save_run()
-	pickup.queue_free()
-	return GameActions.ok({"kind": pickup.kind, "value": pickup.value})
+## A newly earned weapon is announced; it never replaces the one in hand.
+func on_weapon_unlocked(weapon_id: String) -> void:
+	if is_instance_valid(ui):
+		ui.notify("%s unlocked" % Content.weapon_by_id[weapon_id].name, "Twelve classics found. Choose it when you begin a run.", Color("e7d9c8"))
 
 func choose_offer(index: int) -> void:
 	var data: Dictionary = Run.rooms[Run.current_room]
 	if data.claimed or index < 0 or index >= data.offers.size(): return
 	var offer: Dictionary = data.offers[index]
-	if chosen_reward_shop:
+	if chosen_reward_dark:
+		# Each bargain once; each costs maximum health for the rest of the run.
+		if offer.get("sold", false) or not Run.pay_life(int(offer.price)):
+			Audio.play_sound("hurt", 1.5)
+			if not offer.get("sold", false): ui.notify("Too little life left to give", "The dark never takes your last heart.", Color("b98ae0"))
+			return
+		offer["sold"] = true
+		game_shake_dark()
+	elif chosen_reward_shop:
 		if Run.coins < int(offer.price):
 			Audio.play_sound("hurt", 1.5)
 			return
 		Run.coins -= int(offer.price)
-	data.claimed = true
+	if not chosen_reward_dark or data.offers.all(func(entry): return entry.get("sold", false)):
+		data.claimed = true
 	if offer.kind == "weapon":
 		Run.weapon_id = offer.id
 		Run.changed.emit()
-		ui.notify(Content.weapon_by_id[offer.id].name, "A new way to carry the light.")
+		ui.notify(Forge.lookup(offer.id).name, "A new way to carry the light.")
 		Audio.play_sound("item")
 	elif offer.kind == "active":
-		equip_active(offer.id)
+		# The new item goes into the slot; the one in hand is set beside the
+		# pedestal, keeping its instance and its running cooldown.
+		var item_id = Run.next_instance("a")
+		if not data.has("items"): data.items = []
+		data.items.append({"id": item_id, "def": offer.id, "position": [snappedf(player.position.x, .001), snappedf(player.position.z, .001)]})
+		actions.take_item(item_id)
 	else:
 		Run.gain_item(offer.id)
-	remove_marker()
-	if data.type == "boss": make_marker("exit", Vector3(0, 0, -1.5))
+	if data.claimed: remove_marker()
 	Run.save_run()
-	close_reward()
-
-## Equip an active; a held one is set down on the floor where it can be swapped
-## back. Its cooldown entry keeps ticking either way.
-func equip_active(id: String, instance := -1) -> void:
-	var previous := items.equip(id, instance)
-	var def: Dictionary = Content.get_def("actives", id)
-	ui.notify(def.name, def.description, Color(def.color))
-	Audio.play_sound("item")
-	if not previous.is_empty():
-		var data: Dictionary = Run.rooms[Run.current_room]
-		if not data.has("actives"): data.actives = []
-		var at := room.geometry.nearest_inside(Vector2(player.position.x + 1.1, player.position.z + .6), .6)
-		data.actives.append({"id": Run.new_entity_id(), "active": previous.id, "instance": int(previous.instance), "position": [at.x, at.y]})
-		build_room_objects()
-
-func take_dropped_active(drop_id: int) -> Dictionary:
-	var data: Dictionary = Run.rooms[Run.current_room]
-	var records: Array = data.get("actives", [])
-	var index := -1
-	for i in records.size():
-		if int(records[i].id) == drop_id: index = i
-	if index < 0:
-		return GameActions.fail("unknown_drop")
-	var record: Dictionary = records[index]
-	records.remove_at(index)
-	equip_active(record.active, int(record.instance))
-	build_room_objects()
-	Run.save_run()
-	return GameActions.ok()
-
-## Spend a key and grant the chest's drops in one transaction.
-func open_chest(chest_id: String) -> Dictionary:
-	var data: Dictionary = Run.rooms[Run.current_room]
-	var chest: Dictionary = {}
-	for record in data.get("chests", []):
-		if record.id == chest_id: chest = record
-	if chest.is_empty() or chest.opened:
-		return GameActions.fail("unknown_chest")
-	if chest.locked and Run.keys <= 0:
-		return GameActions.fail("no_key")
-	if chest.locked: Run.keys -= 1
-	chest.opened = true
-	var drops := ItemSystem.roll_table(chest.get("table", "chest"), Run.rng, Run.stats.luck)
-	var at := Vector3(chest.position[0], 0, chest.position[1])
-	for i in drops.size():
-		var offset := Vector3(cos(i * 2.1), 0, sin(i * 2.1)) * .9 + Vector3(0, 0, .8)
-		var spot := room.geometry.nearest_inside(at + offset, .5)
-		spawn_pickup(Vector3(spot.x, 0, spot.y), drops[i], int(ItemSystem.pickup_def(drops[i]).amount))
-	Audio.play_sound("item", 1.1)
-	Effects.chest_open(at)
-	build_room_objects()
-	Run.save_run()
-	return GameActions.ok({"drops": drops})
-
-## Chests and dropped actives: interactable once the room is safe.
-func build_room_objects() -> void:
-	for node in scene_root.get_children():
-		if node.has_meta("room_object"):
-			interactions.unregister(node.get_meta("target_id"))
-			node.queue_free()
-	var data: Dictionary = Run.rooms[Run.current_room]
-	for chest in data.get("chests", []):
-		var node := Node3D.new()
-		scene_root.add_child(node)
-		node.position = Vector3(chest.position[0], 0, chest.position[1])
-		node.set_meta("room_object", true)
-		var target_id: String = "chest:" + chest.id
-		node.set_meta("target_id", target_id)
-		var wood := Color("6b5137") if not chest.opened else Color("4e3f31")
-		Geo.box(node, Vector3(0, .32, 0), Vector3(1.1, .62, .72), wood)
-		var lid = Geo.box(node, Vector3(0, .7, 0), Vector3(1.16, .18, .78), Color("7d5f40"))
-		Geo.box(node, Vector3(0, .42, -.37), Vector3(.2, .22, .06), Color("d6b36f"), .4 if chest.locked and not chest.opened else 0.0)
-		if chest.opened:
-			lid.position = Vector3(0, .95, .32)
-			lid.rotation_degrees.x = -62
-		else:
-			Geo.halo(node, Vector3(0, .03, 0), 2.2, Color(1, .75, .35, .18))
-		Geo.collider(node, Vector3(0, .5, 0), Vector3(1.1, 1.0, .72))
-		if not chest.opened and data.cleared:
-			interactions.register(target_id, "chest", node.position,
-				"Open the chest · 1 key" if chest.locked else "Open the chest", 2.1, {"chest_id": chest.id})
-	if data.has("painting") and data.has("mount") and data.cleared:
-		var view := Furnishing.view_point(data.mount)
-		var title: String = Gallery.painting(data.painting).get("title", "a painting")
-		interactions.register("painting:" + Run.current_room, "painting", Vector3(view.x, 0, view.y),
-			"Inspect " + title + ("" if Gallery.is_discovered(data.painting) else " · new"), 2.0, {"painting": data.painting})
-	for record in data.get("actives", []):
-		var def: Dictionary = Content.get_def("actives", record.active)
-		var node := Node3D.new()
-		scene_root.add_child(node)
-		node.position = Vector3(record.position[0], 0, record.position[1])
-		node.set_meta("room_object", true)
-		var target_id: String = "active:%d" % int(record.id)
-		node.set_meta("target_id", target_id)
-		Geo.cylinder(node, Vector3(0, .12, 0), .38, .24, Color("5b5547"))
-		Geo.sphere(node, Vector3(0, .55, 0), .2, Color(def.color), 1.2)
-		Geo.halo(node, Vector3(0, .03, 0), 2.0, Color(Color(def.color), .2))
-		interactions.register(target_id, "active", node.position,
-			("Swap for " if not Run.active_item.is_empty() else "Take ") + def.name, 1.8, {"drop_id": int(record.id)})
-
-func _action_place_bomb(_action: Dictionary) -> Dictionary:
-	if not is_playing():
-		return GameActions.fail("not_playing")
-	if Run.bombs <= 0:
-		return GameActions.fail("no_bombs")
-	# Debit, record and fuse are saved together; reload never refunds it.
-	Run.bombs -= 1
-	var bomb := {"id": Run.new_entity_id(), "room": Run.current_room, "position": [player.position.x, player.position.z],
-		"fuse": ItemSystem.BOMB_FUSE, "floor": Run.floor_number}
-	Run.pending_bombs.append(bomb)
-	make_bomb_node(bomb)
-	Run.changed.emit()
-	Run.save_run()
-	Audio.play_sound("door", .7)
-	return GameActions.ok({"bomb": bomb.id})
-
-func make_bomb_node(bomb: Dictionary) -> void:
-	var node := Node3D.new()
-	scene_root.add_child(node)
-	node.position = Vector3(bomb.position[0], 0, bomb.position[1])
-	Geo.sphere(node, Vector3(0, .32, 0), .3, Color("3b3f45"))
-	Geo.cylinder(node, Vector3(0, .66, 0), .04, .14, Color("a08a68"))
-	var spark = Geo.sphere(node, Vector3(0, .76, 0), .07, Color("ffd38a"), 2.2)
-	spark.name = "Spark"
-	# The radius is visible while the fuse burns.
-	Geo.ring(node, Vector3(0, .04, 0), ItemSystem.BOMB_RADIUS, Color("d9825e"), .03)
-	bomb_nodes[int(bomb.id)] = node
-
-func detonate_bomb(bomb: Dictionary) -> void:
-	var at := Vector3(bomb.position[0], 0, bomb.position[1])
-	if bomb.room == Run.current_room and bomb.get("floor", Run.floor_number) == Run.floor_number:
-		var node: Node3D = bomb_nodes.get(int(bomb.id))
-		if is_instance_valid(node): node.queue_free()
-		bomb_nodes.erase(int(bomb.id))
-		Effects.ring_burst(scene_root, at, Color("f2a066"), ItemSystem.BOMB_RADIUS)
-		Effects.burst(scene_root, at + Vector3.UP * .4, Color("f2c27a"), 12, 1.6)
-		Effects.floor_mark(at, Color(.08, .06, .05, .55), ItemSystem.BOMB_RADIUS * .45, 8.0)
-		shake = maxf(shake, .3)
-		Audio.play_sound("kill", .5)
-		var damage: float = ItemSystem.BOMB_DAMAGE * (1.0 + (Run.floor_number - 1) * .4)
-		for enemy in enemies.duplicate():
-			if is_instance_valid(enemy) and enemy.alive and enemy.global_position.distance_to(at) < ItemSystem.BOMB_RADIUS + enemy.radius:
-				enemy.take_hit(damage, (enemy.global_position - at).normalized() * 4, false)
-		# Bomb self-damage is defined separately from friendly weapon blasts.
-		if is_instance_valid(player) and player.global_position.distance_to(at) < ItemSystem.BOMB_RADIUS * .8:
-			player.hurt(1, at)
-	if bomb.get("floor", Run.floor_number) == Run.floor_number:
-		breach(bomb.room, at, ItemSystem.BOMB_RADIUS)
-	Run.pending_bombs = Run.pending_bombs.filter(func(b): return int(b.id) != int(bomb.id))
-	if Run.active:
-		Run.save_run()
-
-## Breach effects resolve from saved room state, so a bomb in an unloaded
-## room still opens what it should without creating offscreen visuals.
-func breach(room_id: String, at: Vector3, radius: float) -> void:
-	if not Run.rooms.has(room_id): return
-	var here: bool = room_id == Run.current_room
-	var p := Vector2(at.x, at.z)
-	for record in Run.rooms[room_id].get("props", []):
-		if record.get("destroyed", false): continue
-		var def: Dictionary = Content.get_def("furniture", record.def)
-		if not def.has("breakable"): continue
-		var rect := Furnishing.record_rect(record)
-		var closest := Vector2(clampf(p.x, rect.position.x, rect.end.x), clampf(p.y, rect.position.y, rect.end.y))
-		if closest.distance_to(p) <= radius:
-			break_prop(room_id, record)
-	# A bomb against a concealed seam opens it; bullets never do.
-	var layout := Run.room_layout(room_id)
-	var geometry := RoomGeometry.new(layout.cells)
-	for socket in layout.sockets:
-		if socket.state != "concealed": continue
-		if geometry.socket_point(socket.cell, socket.dir).distance_to(p) <= radius + 1.0:
-			reveal_portal(socket.portal, here)
-
-## Reveal persists before anything inside can be claimed.
-func reveal_portal(pid: String, here: bool) -> void:
-	var portal: Dictionary = Run.portals[pid]
-	if portal.get("state", "open") != "concealed": return
-	portal.state = "open"
-	if here and is_instance_valid(room):
-		room.reveal_socket(pid)
-		Audio.play_sound("door", .6)
-		Effects.burst(scene_root, room.socket_position(room.socket_for(_socket_cell(pid), _socket_dir(pid))) + Vector3.UP * .8, Color("b8a98a"), 12, 1.2)
-		ui.notify("A hidden way", "The old wall gives way.", Color("d8c79a"))
-	Run.save_run()
-
-func _socket_cell(pid: String) -> Vector2i:
-	for socket in room.sockets:
-		if socket.portal == pid: return socket.cell
-	return Vector2i.ZERO
-
-func _socket_dir(pid: String) -> Vector2i:
-	for socket in room.sockets:
-		if socket.portal == pid: return socket.dir
-	return Vector2i.DOWN
-
-## Friendly shots chip at breakable furniture; solid pieces just stop them.
-func damage_prop(id: String, amount: float) -> void:
-	if not room.props.has(id): return
-	var record: Dictionary = room.props[id].record
-	var def: Dictionary = Content.get_def("furniture", record.def)
-	if not def.has("breakable"): return
-	prop_damage[id] = float(prop_damage.get(id, 0.0)) + amount
-	var node: Node3D = room.props[id].node
-	if is_instance_valid(node):
-		node.scale = Vector3(1.06, .94, 1.06)
-		create_tween().tween_property(node, "scale", Vector3.ONE, .12)
-	if prop_damage[id] >= float(def.breakable.hp):
-		perform_action({"type": "BreakProp", "prop": id})
-
-func _action_break_prop(action: Dictionary) -> Dictionary:
-	var id := str(action.get("prop", ""))
-	for record in Run.rooms[Run.current_room].get("props", []):
-		if record.id == id:
-			if record.get("destroyed", false):
-				return GameActions.fail("already_broken")
-			if not Content.get_def("furniture", record.def).has("breakable"):
-				return GameActions.fail("unbreakable")
-			return GameActions.ok({"drops": break_prop(Run.current_room, record)})
-	return GameActions.fail("unknown_prop")
-
-## Mark destroyed, grant persistent drops once, then update navigation once.
-## Loot uses its own stream keyed by the prop, never the cosmetic one.
-func break_prop(room_id: String, record: Dictionary) -> Array:
-	record.destroyed = true
-	var def: Dictionary = Content.get_def("furniture", record.def)
-	var loot := RandomNumberGenerator.new()
-	loot.seed = hash("%d:%s" % [Run.seed_value, record.id])
-	var drops := ItemSystem.roll_table(def.breakable.get("table", "prop_small"), loot, Run.stats.luck)
-	var at := Vector2(record.position[0], record.position[1])
-	if room_id == Run.current_room and is_instance_valid(room):
-		room.remove_prop(record.id)
-		prop_damage.erase(record.id)
-		for drop in drops:
-			spawn_pickup(Vector3(at.x, 0, at.y), drop, int(ItemSystem.pickup_def(drop).amount))
-		Effects.prop_dust(Vector3(at.x, .5, at.y), Color(def.get("color", "#7a5c3c")).lightened(.15))
-		Audio.play_sound("kill", 1.3)
+	if chosen_reward_dark and not data.claimed:
+		ui.offers = data.offers
+		ui.show_screen("reward")
 	else:
-		var data: Dictionary = Run.rooms[room_id]
-		if not data.has("pickups"): data.pickups = []
-		for drop in drops:
-			data.pickups.append({"id": Run.new_entity_id(), "kind": drop, "value": int(ItemSystem.pickup_def(drop).amount), "position": [at.x, at.y]})
+		close_reward()
+
+func game_shake_dark() -> void:
+	shake = maxf(shake, .12)
+	Effects.burst(scene_root, player.global_position + Vector3.UP * .8, Color("b98ae0"), 12, 1.4)
+
+## The dark store's bargains: a dark relic, a dark-forged weapon or a
+## precious relic, and something small. Prices are half-hearts of maximum
+## health, 2 to 5 by how much each is worth.
+func ensure_dark_offers() -> void:
+	var data: Dictionary = Run.rooms[Run.current_room]
+	if data.has("offers"): return
+	var gen = RandomNumberGenerator.new()
+	gen.seed = int(data.seed) + 6661
+	var dark: Array = Content.items.filter(func(item): return item.rarity == "dark")
+	var relic: Dictionary = dark[gen.randi_range(0, dark.size() - 1)]
+	var offers: Array = [{"kind": "item", "id": relic.id, "price": int(relic.cost)}]
+	if gen.randf() < .55:
+		offers.append({"kind": "weapon", "id": Forge.id_for(Content.stable_hash("dark:%d:%s" % [Run.seed_value, data.id]), gen.randi_range(0, 99), 1), "price": 4})
+	else:
+		var precious: Dictionary = Content.roll_items(gen, 1, Run.inventory, true, Run.stats.luck)[0]
+		offers.append({"kind": "item", "id": precious.id, "price": {"common": 2, "uncommon": 2, "rare": 3, "mythic": 4}[precious.rarity]})
+	if gen.randf() < .5:
+		var pool = Content.families.actives.filter(func(active): return active.id != Run.active_item.get("def", ""))
+		offers.append({"kind": "active", "id": pool[gen.randi_range(0, pool.size() - 1)].id, "price": 2})
+	else:
+		var others: Array = dark.filter(func(item): return item.id != relic.id)
+		var second: Dictionary = others[gen.randi_range(0, others.size() - 1)]
+		offers.append({"kind": "item", "id": second.id, "price": int(second.cost)})
+	data.offers = offers
 	Run.save_run()
-	return drops
 
 func close_reward() -> void:
 	paused = false
 	ui.show_screen("play")
-	if Run.rooms[Run.current_room].type == "boss" and not Run.rooms[Run.current_room].claimed:
-		# Reward remains on its pedestal until selected; descending requires choosing.
-		pass
+
+func add_item_record(definition_id: String, at: Vector3) -> void:
+	var data: Dictionary = Run.rooms[Run.current_room]
+	if not data.has("items"): data.items = []
+	data.items.append({"id": Run.next_instance("a"), "def": definition_id, "position": [snappedf(at.x, .001), snappedf(at.z, .001)]})
+	refresh_items()
+
+## Rebuilds the views and interaction targets for dropped items and chests.
+func refresh_items() -> void:
+	var data: Dictionary = Run.rooms[Run.current_room]
+	for view in item_views.values():
+		if is_instance_valid(view): view.queue_free()
+	item_views.clear()
+	for id in interactions.targets.keys():
+		if id.begins_with("item:") or id.begins_with("chest:"): interactions.unregister(id)
+	for record in data.get("items", []):
+		var view = ItemViews.item(scene_root, record)
+		item_views[record.id] = view
+		interactions.register("item:" + record.id, "item", view.position, 1.6, "", view)
+	for chest in data.get("chests", []):
+		if chest.opened: continue
+		var at = Vector3(float(chest.position[0]), 0, float(chest.position[1]))
+		interactions.register("chest:" + chest.id, "chest", at, 1.9, "", chest_views.get(chest.id))
+
+func chest_opened(chest: Dictionary) -> void:
+	interactions.unregister("chest:" + chest.id)
+	if chest_views.has(chest.id): ItemViews.set_open(chest_views[chest.id])
+	var at = Vector3(float(chest.position[0]), .7, float(chest.position[1]))
+	Effects.play("chest_open", at)
+	Audio.play_sound("item", .9)
+
+func spawn_bomb_view(record: Dictionary) -> void:
+	var view = BombView.new()
+	scene_root.add_child(view)
+	view.setup(record, GameActions.BOMB_RADIUS)
+	bomb_views[record.id] = view
+
+func bomb_exploded(record: Dictionary, at: Vector3, radius: float) -> void:
+	if bomb_views.has(record.id):
+		if is_instance_valid(bomb_views[record.id]): bomb_views[record.id].queue_free()
+		bomb_views.erase(record.id)
+	Effects.ring_burst(scene_root, at, Color("f0a46b"), radius)
+	Effects.burst(scene_root, at + Vector3(0, .5, 0), Color("f6c27a"), 12, 1.6)
+	shake = maxf(shake, .25)
+	Audio.play_sound("kill", .55)
+
+## A bomb's breach capability: breakable props and concealed seams in range.
+## Offscreen rooms resolve from their saved state without any effects.
+func breach(room_id: String, at: Vector3, radius: float, live: bool) -> void:
+	var data: Dictionary = Run.rooms[room_id]
+	var flat = Vector2(at.x, at.z)
+	for record in data.get("props", []):
+		if record.get("destroyed", false) or not Content.record("furniture", record.kind).has("breakable"): continue
+		var rect = Furnisher.record_rect(record)
+		var nearest = Vector2(clampf(flat.x, rect.position.x, rect.end.x), clampf(flat.y, rect.position.y, rect.end.y))
+		if nearest.distance_to(flat) <= radius:
+			destroy_prop(room_id, record, live)
+	for portal_id in data.get("portals", []):
+		var portal: Dictionary = Run.portals[portal_id]
+		if portal.state != "concealed": continue
+		var side = Run.portal_side(portal_id, room_id)
+		if RoomGeometry.socket_point(side.cell, side.dir).distance_to(flat) <= radius + .6:
+			# Revealed for good: saved with the blast, never resealed on reload.
+			portal.state = "revealed"
+			if live:
+				room.reveal_socket(portal_id)
+				ui.notify("A hidden passage", "The old wall gives way.", Color("d7c3e8"))
+				Audio.play_sound("door", .7)
+
+## Friendly shots chip at breakable furniture.
+func hit_prop(id: String, damage: float) -> void:
+	if room.damage_prop(id, damage):
+		var record = GameActions.find_record(Run.rooms[Run.current_room].get("props", []), id)
+		if not record.is_empty():
+			destroy_prop(Run.current_room, record, true)
+			if Run.rooms[Run.current_room].cleared: Run.save_run()
+
+## Breaking marks the prop destroyed, creates its drops from a per-prop loot
+## stream exactly once, and updates navigation; dust is purely cosmetic.
+func destroy_prop(room_id: String, record: Dictionary, live: bool) -> void:
+	if record.get("destroyed", false):
+		return
+	record.destroyed = true
+	var definition: Dictionary = Content.record("furniture", record.kind)
+	var loot = RandomNumberGenerator.new()
+	loot.seed = Content.stable_hash("loot:%d:%d:%s" % [Run.seed_value, Run.floor_number, record.id])
+	var drops = Drops.roll(definition.breakable.drops, loot, Run.stats.luck)
+	var at = Vector3(float(record.position[0]), 0, float(record.position[1]))
+	for i in drops.size():
+		var point = Drops.scatter(drops.size(), i, at)
+		if drops[i].has("active"):
+			if not Run.rooms[room_id].has("items"): Run.rooms[room_id].items = []
+			Run.rooms[room_id].items.append({"id": Run.next_instance("a"), "def": drops[i].active, "position": [point.x, point.z]})
+		elif live:
+			spawn_pickup(point, drops[i].def)
+		else:
+			Run.add_drop(room_id, drops[i].def, Vector2(point.x, point.z))
+	if live:
+		room.break_prop(record.id)
+		Effects.play("prop_dust", at + Vector3(0, .5, 0))
+		Audio.play_sound("hit", .7)
+		if drops.any(func(drop): return drop.has("active")): refresh_items()
+
+## Companion views follow the saved Moth Jar modifier, so they survive room
+## changes and reloads with their remaining time.
+func sync_companions() -> void:
+	var wanted = Run.flag_total("companions") if Run.active else 0
+	companions = companions.filter(func(c): return is_instance_valid(c))
+	while companions.size() > wanted:
+		companions.pop_back().queue_free()
+	var bite = 6.0
+	for modifier in Run.modifiers:
+		if modifier.get("flags", {}).has("companion_damage"): bite = float(modifier.flags.companion_damage)
+	while companions.size() < wanted and is_instance_valid(player):
+		var moth = MothCompanion.new()
+		scene_root.add_child(moth)
+		moth.setup(self, companions.size(), bite)
+		moth.global_position = player.global_position + Vector3(0, .9, 0)
+		companions.append(moth)
 
 func on_item_gained(item: Dictionary) -> void:
 	if player and is_instance_valid(player): player.refresh_orbitals()
@@ -1036,18 +1322,32 @@ func on_item_gained(item: Dictionary) -> void:
 	ui.notify(item.name, item.description, Content.RARITY_COLORS[item.rarity])
 
 func redeem_secret_code(code: String) -> bool:
-	if not Run.active or in_menu or code.strip_edges().to_upper() != Run.ALL_RELICS_CODE:
+	if not Run.active or in_menu:
 		return false
+	var wish = code.strip_edges().to_upper()
+	if wish == Run.ALL_RELICS_CODE: wish_all_relics()
+	elif wish == Run.PAINT_SPRAYER_CODE: wish_paint_sprayer()
+	else: return false
+	Audio.play_sound("item")
+	return true
+
+func wish_all_relics() -> void:
 	var added = Run.grant_all_relics()
 	if added > 0 and player and is_instance_valid(player):
 		player.refresh_orbitals()
 		player.shield = maxi(player.shield, int(Run.stats.shield))
-	Audio.play_sound("item")
 	if added > 0:
 		ui.notify("Every little light, all at once", "%d relics awakened. You carry all %d." % [added, Content.items.size()])
 	else:
 		ui.notify("Every little light is already yours", "You already carry all %d relics." % Content.items.size())
-	return true
+
+## Skips the twelve paintings: the weapon is in hand now and on the starting
+## rack from now on. The journal's own progress is left as it was.
+func wish_paint_sprayer() -> void:
+	if Run.grant_weapon("paint_sprayer"):
+		ui.notify("Paint Sprayer in hand", "Red, blue, green. Choose it when you begin any run.", Color("e7d9c8"))
+	else:
+		ui.notify("The Paint Sprayer is already yours", "It is in your hands and on the starting rack.", Color("e7d9c8"))
 
 func pause_game() -> void:
 	if not Run.active or in_menu: return
@@ -1070,6 +1370,86 @@ func end_run(won: bool) -> void:
 	Run.finish(won)
 	paused = true
 	ui.show_screen("won" if won else "dead")
+
+func reset_combat() -> void:
+	hitstop = 0.0
+	sparks = 0
+	kindle_heat = 0.0
+	kindle_quiet = 0.0
+	noises.clear()
+
+func kindle_level() -> int:
+	var level = 0
+	for step in KINDLE_STEPS:
+		if kindle_heat >= step: level += 1
+	return level
+
+func kindle_damage() -> float:
+	return KINDLE_DAMAGE[kindle_level()]
+
+## How far the player's own light reaches: it grows with the kindle.
+func player_light_radius() -> float:
+	return PLAYER_LIGHT + kindle_level()
+
+## A kill feeds the flame.
+func stoke() -> void:
+	var before = kindle_level()
+	kindle_heat = minf(kindle_heat + 1.0, 12.0)
+	kindle_quiet = 0.0
+	if kindle_level() > before and is_instance_valid(player):
+		Effects.ring_burst(scene_root, player.global_position, Color("ffcf7a"), 1.2 + kindle_level() * .4)
+		Audio.play_sound("coin", 1.2 + kindle_level() * .1)
+
+## A hit gutters it back to nothing.
+func gutter() -> void:
+	if kindle_heat <= 0: return
+	kindle_heat = 0.0
+	if is_instance_valid(player): Effects.play("death_puff", player.global_position + Vector3.UP * .9, Color("6a5a48"), 6)
+
+## A hostile ember caught in a grazing dash.
+func catch_spark(shot: EmberShot) -> void:
+	shot.remove()
+	if sparks >= MAX_SPARKS: return
+	sparks += 1
+	Effects.play("pickup", shot.global_position, Color("fff3c4"))
+	Audio.play_sound("coin", 1.5 + sparks * .08)
+
+func make_noise(at: Vector3, loudness: float) -> void:
+	noises.append({"at": Vector3(at.x, 0, at.z), "loudness": loudness, "time": sim_time})
+	while noises.size() > 12: noises.pop_front()
+
+## The newest noise at least this loud, no older than `within` seconds.
+func latest_noise(loudness := 1.0, within := 3.0) -> Dictionary:
+	for i in range(noises.size() - 1, -1, -1):
+		if sim_time - noises[i].time > within: break
+		if noises[i].loudness >= loudness: return noises[i]
+	return {}
+
+## A shot through a dead lantern's glass lights it again.
+func relight(index: int) -> void:
+	if not room.set_lantern(index, true): return
+	make_noise(room.lanterns[index].at, 1.5)
+	Audio.play_sound("item", 1.3)
+	for enemy in enemies:
+		if is_instance_valid(enemy) and enemy.alive: enemy.on_relight(index)
+	save_lanterns()
+
+func snuff(index: int) -> void:
+	if not room.set_lantern(index, false): return
+	Audio.play_sound("door", .6)
+	save_lanterns()
+
+## In a room already won, the lanterns are kept as they are left.
+func save_lanterns() -> void:
+	var data: Dictionary = Run.rooms[Run.current_room]
+	if not room.open: return
+	data["lit"] = room.burning_indices()
+	Run.save_run()
+
+## A friendly shot that ended without striking a foe.
+func shot_missed(shot: EmberShot) -> void:
+	for enemy in enemies:
+		if is_instance_valid(enemy) and enemy.alive: enemy.on_shot_missed(shot)
 
 func get_boss() -> DungeonEnemy:
 	for enemy in enemies:

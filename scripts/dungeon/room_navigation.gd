@@ -1,21 +1,21 @@
 class_name RoomNavigation
 extends RefCounted
-## Coarse grid navigation for concave rooms. One-unit cells, actor clearance,
-## and no diagonal corner cutting. Direct pursuit remains the fast path; paths
-## are only needed when the straight line leaves the floor (an L-shaped bend).
-const STEP := 1.0
+## Coarse grid navigation for one room. Diagonal steps never cut a blocked
+## corner, so enemies route around L bends and furniture instead of pressing
+## into them. Blockers can be removed later (a broken crate) and only the
+## affected cells are recomputed.
+const STEP := .5
 var geometry: RoomGeometry
+var clearance := .5
 var grid := AStarGrid2D.new()
 var origin := Vector2.ZERO
-var clearance := .6
-## Grid points covered by furniture or pillars themselves (no clearance), for
-## cheap line-of-travel checks.
-var blocked: Dictionary = {}
+var blockers: Dictionary = {}
 
-func _init(room_geometry: RoomGeometry, obstacles: Array = [], actor_clearance := .6) -> void:
+func _init(room_geometry: RoomGeometry, actor_clearance := .5, initial_blockers: Dictionary = {}) -> void:
 	geometry = room_geometry
 	clearance = actor_clearance
-	var area := geometry.bounds()
+	blockers = initial_blockers.duplicate()
+	var area = geometry.bounds()
 	origin = area.position
 	grid.region = Rect2i(0, 0, ceili(area.size.x / STEP), ceili(area.size.y / STEP))
 	grid.cell_size = Vector2.ONE
@@ -23,106 +23,80 @@ func _init(room_geometry: RoomGeometry, obstacles: Array = [], actor_clearance :
 	grid.default_compute_heuristic = AStarGrid2D.HEURISTIC_OCTILE
 	grid.default_estimate_heuristic = AStarGrid2D.HEURISTIC_OCTILE
 	grid.update()
-	# Same result as testing geometry.contains(point, clearance) per point,
-	# filled a block of cells at a time.
-	grid.fill_solid_region(grid.region, true)
-	for rect in geometry.rectangles():
-		var inner := rect.grow(-clearance + .0001)
-		var low := Vector2i(ceili((inner.position.x - origin.x) / STEP - .5), ceili((inner.position.y - origin.y) / STEP - .5))
-		var high := Vector2i(floori((inner.end.x - origin.x) / STEP - .5), floori((inner.end.y - origin.y) / STEP - .5))
-		low = low.clamp(Vector2i.ZERO, grid.region.size - Vector2i.ONE)
-		high = high.clamp(Vector2i.ZERO, grid.region.size - Vector2i.ONE)
-		if high.x >= low.x and high.y >= low.y:
-			grid.fill_solid_region(Rect2i(low, high - low + Vector2i.ONE), false)
-	for obstacle in obstacles:
-		if obstacle.has("rect"):
-			block_rect(obstacle.rect)
-		else:
-			block_circle(RoomGeometry.flat(obstacle.position), float(obstacle.radius))
+	refresh_area(area)
 
-func to_world(id: Vector2i) -> Vector2:
-	return origin + (Vector2(id) + Vector2(.5, .5)) * STEP
+func to_grid(point: Vector2) -> Vector2i:
+	var cell = Vector2i(floori((point.x - origin.x) / STEP), floori((point.y - origin.y) / STEP))
+	return cell.clamp(grid.region.position, grid.region.end - Vector2i.ONE)
 
-func to_grid(p: Vector2) -> Vector2i:
-	var id := Vector2i(floori((p.x - origin.x) / STEP), floori((p.y - origin.y) / STEP))
-	return id.clamp(grid.region.position, grid.region.end - Vector2i.ONE)
+func to_world(cell: Vector2i) -> Vector2:
+	return origin + (Vector2(cell) + Vector2(.5, .5)) * STEP
 
-func block_circle(center: Vector2, radius: float, solid := true) -> void:
-	var r := radius + clearance
-	var low := to_grid(center - Vector2.ONE * r)
-	var high := to_grid(center + Vector2.ONE * r)
-	for x in range(low.x, high.x + 1):
-		for y in range(low.y, high.y + 1):
-			var id := Vector2i(x, y)
-			if to_world(id).distance_to(center) <= r:
-				grid.set_point_solid(id, solid or not geometry.contains(to_world(id), clearance))
-				if to_world(id).distance_to(center) <= radius + .3:
-					if solid: blocked[id] = true
-					else: blocked.erase(id)
-
-## Block a furniture footprint. Returns the points that became solid so a
-## planner can undo a trial placement cheaply.
-func block_rect(rect: Rect2) -> Array[Vector2i]:
-	var changed: Array[Vector2i] = []
-	var grown := rect.grow(clearance)
-	var low := to_grid(grown.position)
-	var high := to_grid(grown.end)
-	for x in range(low.x, high.x + 1):
-		for y in range(low.y, high.y + 1):
-			var id := Vector2i(x, y)
-			var p := to_world(id)
-			if grown.has_point(p):
-				if not grid.is_point_solid(id):
-					changed.append(id)
-					grid.set_point_solid(id, true)
-				if rect.grow(.3).has_point(p): blocked[id] = true
-	return changed
-
-func unblock(ids: Array[Vector2i]) -> void:
-	for id in ids:
-		grid.set_point_solid(id, false)
-		blocked.erase(id)
-
-## True when every point can reach the first one.
-func connected(points: Array[Vector2]) -> bool:
-	if points.size() < 2:
-		return true
-	var start := nearest_open(to_grid(points[0]))
-	for i in range(1, points.size()):
-		var goal := nearest_open(to_grid(points[i]))
-		if goal != start and grid.get_id_path(start, goal).is_empty():
+func walkable(point: Vector2) -> bool:
+	if not geometry.contains(point, clearance):
+		return false
+	for id in blockers:
+		if blockers[id].grow(clearance).has_point(point):
 			return false
 	return true
 
-## True when the straight line a→b crosses no furniture or pillar.
-func line_clear(a: Vector2, b: Vector2) -> bool:
-	if blocked.is_empty():
-		return true
-	var count := maxi(1, ceili(a.distance_to(b) / (STEP * .5)))
-	for i in count + 1:
-		if blocked.has(to_grid(a.lerp(b, float(i) / count))):
+func refresh_area(area: Rect2) -> void:
+	var low = to_grid(area.position - Vector2.ONE * (clearance + STEP))
+	var high = to_grid(area.end + Vector2.ONE * (clearance + STEP))
+	for x in range(low.x, high.x + 1):
+		for y in range(low.y, high.y + 1):
+			var cell = Vector2i(x, y)
+			grid.set_point_solid(cell, not walkable(to_world(cell)))
+
+func remove_blocker(id: String) -> void:
+	if not blockers.has(id):
+		return
+	var area: Rect2 = blockers[id]
+	blockers.erase(id)
+	refresh_area(area)
+
+func is_open(cell: Vector2i) -> bool:
+	return grid.is_in_boundsv(cell) and not grid.is_point_solid(cell)
+
+func nearest_open(cell: Vector2i) -> Variant:
+	if is_open(cell):
+		return cell
+	for radius in range(1, 6):
+		for x in range(-radius, radius + 1):
+			for y in range(-radius, radius + 1):
+				if maxi(absi(x), absi(y)) == radius and is_open(cell + Vector2i(x, y)):
+					return cell + Vector2i(x, y)
+	return null
+
+## World-space waypoints, excluding the start. Empty when no route exists.
+func find_path(from: Vector2, to: Vector2) -> PackedVector2Array:
+	var start = nearest_open(to_grid(from))
+	var goal = nearest_open(to_grid(to))
+	var points := PackedVector2Array()
+	if start == null or goal == null:
+		return points
+	var cells = grid.get_id_path(start, goal, true)
+	for index in range(1, cells.size()):
+		points.append(to_world(cells[index]))
+	if not points.is_empty() and walkable(to):
+		points[points.size() - 1] = to
+	return points
+
+## True when an actor of this clearance can travel straight between points.
+func line_clear(from: Vector2, to: Vector2) -> bool:
+	var distance = from.distance_to(to)
+	var samples = maxi(1, ceili(distance / (STEP * .5)))
+	for index in range(1, samples + 1):
+		if not walkable(from.lerp(to, float(index) / samples)):
 			return false
 	return true
 
-func nearest_open(id: Vector2i) -> Vector2i:
-	if not grid.is_point_solid(id):
-		return id
-	for ring in range(1, 6):
-		for dx in range(-ring, ring + 1):
-			for dy in range(-ring, ring + 1):
-				var candidate := (id + Vector2i(dx, dy)).clamp(grid.region.position, grid.region.end - Vector2i.ONE)
-				if not grid.is_point_solid(candidate):
-					return candidate
-	return id
-
-## World-space XZ waypoints from a to b, excluding the start; empty if blocked.
-func find_path(a: Vector2, b: Vector2) -> PackedVector2Array:
-	var start := nearest_open(to_grid(a))
-	var goal := nearest_open(to_grid(b))
-	var ids := grid.get_id_path(start, goal, true)
-	var result := PackedVector2Array()
-	for i in range(1, ids.size()):
-		result.append(to_world(ids[i]))
-	if not result.is_empty():
-		result[result.size() - 1] = b if geometry.contains(b, clearance) else result[result.size() - 1]
-	return result
+func reachable(from: Vector2, to: Vector2) -> bool:
+	var start = nearest_open(to_grid(from))
+	var goal = nearest_open(to_grid(to))
+	if start == null or goal == null:
+		return false
+	if start == goal:
+		return true
+	var cells = grid.get_id_path(start, goal, false)
+	return not cells.is_empty()

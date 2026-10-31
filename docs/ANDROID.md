@@ -1,8 +1,8 @@
 # Android export
 
-The project targets a **landscape, native Android game** using Godot’s GL Compatibility renderer. The preset is configured for Android 8.0+ (API 26), arm64 devices and x86_64 emulators, with package ID `org.emberkeep.game`. It exports an APK through Godot’s built-in templates; Gradle and custom Android source builds are disabled.
+The project targets a **landscape, native Android game** using Godot’s GL Compatibility renderer. The preset exports an APK for arm64 devices and x86_64 emulators, with package ID `org.emberkeep.game`, through Godot’s built-in templates; Gradle and custom Android source builds are disabled. The APK therefore uses the template’s own SDK levels: with the 4.6.3 templates it installs on Android 7.0+ (API 24) and targets API 36. Godot refuses to export a template build whose preset overrides Min SDK or Target SDK, so those fields stay empty; choosing other levels needs a Gradle build.
 
-The source project has an export configuration, not a prebuilt APK. The implementation environment did not have Android SDK/export templates installed. An on-device build and performance pass are still required.
+The source project has an export configuration, not a prebuilt APK. A debug APK has been exported and inspected (see `docs/TESTING.md`), but an on-device run and performance pass are still required.
 
 ## Prerequisites
 
@@ -56,8 +56,12 @@ godot --headless --path . --export-debug Android ../builds/emberkeep-debug.apk
 
 `tools/configure_android.gd` sets only those Android export preferences in your Godot editor settings. The helper does not download software, create a release signing key or publish anything. `ANDROID_HOME` takes precedence if both SDK variables are set. Debug signing uses the standard public Android debug credentials; do not use this keystore for a store release.
 
+## Before exporting
+
+Run `python3 tools/import_paintings.py` (needs network access to the image hosts) and `python3 tools/import_paintings.py --check` so the painting reproductions are bundled, then `./tools/verify_pack.sh` to confirm the packaged catalog. Without imported files the game still runs; painting slots show a covered canvas.
+
 ## Device checks before sharing a build
 
-Play a full run on an arm64 phone. Check simultaneous movement/aim/dash touches, interruptions and resume, Android Back, safe-area placement on wide/notched screens, text size, and heat/frame rate with many split or bouncing shots. Lantern shadows can be disabled in Settings for slower hardware. The game requests no internet or microphone permissions.
+Play a full run on an arm64 phone. Check simultaneous movement/aim with Item, Bomb and Dash taps, interruptions and resume (item cooldowns must not advance while away), Android Back, safe-area placement on wide/notched screens, text size, and heat/frame rate with many split or bouncing shots. `tools/render_stress.sh` describes the worst-case scene to profile. Render resolution, FPS limit, Effects detail, Small details and Lantern shadows can be lowered in Settings for slower hardware; VSync is system controlled on Android. The game requests no internet or microphone permissions.
 
 For a store release, choose a final package ID, configure a private release keystore outside version control, review the then-current Google Play target API requirement, and configure an AAB/Gradle release export if required. Current debug APK settings are intended for development and sideloading.

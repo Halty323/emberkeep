@@ -1,12 +1,9 @@
 class_name Geo
 extends RefCounted
 static var materials: Dictionary = {}
-## Primitive meshes shared by shape and size: repeated books, legs, tiles and
-## trim reuse one resource instead of allocating a mesh per instance.
+# Identical primitives share one mesh resource; nothing mutates a mesh after
+# creation (cutaways scale nodes), so sharing is safe and saves uploads.
 static var meshes: Dictionary = {}
-## Floor footprint of the room being shown, as cell rectangles (x0, z0, x1, z1).
-## Glows clip to this mask so they never spill into the void of an L-shaped room.
-static var footprint := PackedVector4Array([Vector4(-9, -7, 9, 7), Vector4.ZERO, Vector4.ZERO, Vector4.ZERO])
 
 static func material(color: Color, emission := 0.0) -> StandardMaterial3D:
 	var key = str(color) + str(emission)
@@ -22,16 +19,19 @@ static func material(color: Color, emission := 0.0) -> StandardMaterial3D:
 	materials[key] = mat
 	return mat
 
-static func box(parent: Node3D, position: Vector3, size: Vector3, color: Color, emission := 0.0) -> MeshInstance3D:
-	var key := "b%s" % str(size.snappedf(.001))
+static func shared_box(size: Vector3) -> BoxMesh:
+	var key = "box" + str(size)
 	if not meshes.has(key):
 		var mesh = BoxMesh.new()
 		mesh.size = size
 		meshes[key] = mesh
-	return add_mesh(parent, meshes[key], position, color, emission)
+	return meshes[key]
+
+static func box(parent: Node3D, position: Vector3, size: Vector3, color: Color, emission := 0.0) -> MeshInstance3D:
+	return add_mesh(parent, shared_box(size), position, color, emission)
 
 static func sphere(parent: Node3D, position: Vector3, radius: float, color: Color, emission := 0.0) -> MeshInstance3D:
-	var key := "s%.3f" % radius
+	var key = "sphere%.4f" % radius
 	if not meshes.has(key):
 		var mesh = SphereMesh.new()
 		mesh.radius = radius
@@ -41,11 +41,11 @@ static func sphere(parent: Node3D, position: Vector3, radius: float, color: Colo
 		meshes[key] = mesh
 	return add_mesh(parent, meshes[key], position, color, emission)
 
-static func cylinder(parent: Node3D, position: Vector3, radius: float, height: float, color: Color, emission := 0.0) -> MeshInstance3D:
-	var key := "c%.3f:%.3f" % [radius, height]
+static func cylinder(parent: Node3D, position: Vector3, radius: float, height: float, color: Color, emission := 0.0, top := -1.0) -> MeshInstance3D:
+	var key = "cylinder%.4f/%.4f/%.4f" % [radius, height, top]
 	if not meshes.has(key):
 		var mesh = CylinderMesh.new()
-		mesh.top_radius = radius
+		mesh.top_radius = radius if top < 0 else top
 		mesh.bottom_radius = radius
 		mesh.height = height
 		mesh.radial_segments = 12
@@ -79,9 +79,28 @@ static func halo(parent: Node3D, position: Vector3, size: float, color: Color) -
 	var mat = ShaderMaterial.new()
 	mat.shader = preload("res://shaders/halo.gdshader")
 	mat.set_shader_parameter("tint", color)
-	mat.set_shader_parameter("room_cells", footprint)
 	instance.material_override = mat
 	# Keep unlit effects out of the GLES3 per-light/shadow rendering passes.
+	instance.layers = 2
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(instance)
+	instance.position = position
+	return instance
+
+## A bar of light added over whatever lies behind it: unlit, on the effects
+## layer, out of every shadow pass. Brightness is carried in the colour.
+static func glow_box(parent: Node3D, position: Vector3, size: Vector3, color: Color) -> MeshInstance3D:
+	var key = "glow" + str(color)
+	if not materials.has(key):
+		var mat = StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		mat.disable_fog = true
+		mat.albedo_color = Color(color.r, color.g, color.b, 1.0)
+		materials[key] = mat
+	var instance = MeshInstance3D.new()
+	instance.mesh = shared_box(size)
+	instance.material_override = materials[key]
 	instance.layers = 2
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(instance)
