@@ -240,7 +240,11 @@ func mark(at: Vector3, color: Color, spec: Dictionary) -> void:
 			if candidate.age > entry.age: entry = candidate
 	var size = float(spec.size) * rng.randf_range(.75, 1.2)
 	entry.merge({"age": 0.0, "life": float(spec.lifetime), "alpha": float(spec.alpha), "color": color}, true)
-	entry.node.position = Vector3(at.x, .012 + .001 * marks.find(entry), at.z)
+	var floor_height = 0.0
+	var owner_game = get_parent().get("game") if is_instance_valid(get_parent()) else null
+	if owner_game != null and owner_game.get("first_person") == true and is_instance_valid(owner_game.get("room")):
+		floor_height = owner_game.room.floor_height(at)
+	entry.node.position = Vector3(at.x, floor_height + .012 + .001 * marks.find(entry), at.z)
 	entry.node.scale = Vector3(size, 1, size)
 	entry.node.rotation.y = rng.randf() * TAU
 	entry.material.set_shader_parameter("seed", rng.randf())

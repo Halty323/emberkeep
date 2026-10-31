@@ -28,9 +28,7 @@ func setup(owner_game) -> void:
 	weapon_shape = Node3D.new()
 	weapon_shape.position = Vector3(.05, -.12, -.18)
 	weapon.add_child(weapon_shape)
-	Geo.box(weapon_shape, Vector3(.23, -.22, -.46), Vector3(.15, .16, .43), Color("61584a"))
-	Geo.cylinder(weapon_shape, Vector3(.23, -.15, -.52), .055, .22, Color("c5a570")).rotation.x = PI / 2
-	Geo.box(weapon_shape, Vector3(.23, -.12, -.64), Vector3(.06, .055, .045), Color("ffd395"), .25)
+	FirstPersonWeaponView.populate(weapon_shape)
 	for mesh in weapon_shape.find_children("*", "MeshInstance3D", true, false):
 		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	weapon.visible = false
@@ -119,11 +117,17 @@ func move_player(player, delta: float, move_input: Vector2) -> void:
 	var flat = Vector3(player.velocity.x, 0, player.velocity.z)
 	if player.dash_time > 0:
 		player.dash_time = maxf(0, player.dash_time - delta)
+		player.leaving_dash = player.dash_time <= 0
 		flat = player.dash_direction * player.DASH_SPEED
 		player.graze_grace = player.GRAZE_GRACE
 	else:
 		var drag: float = game.residue.slows(player.global_position) if game.residue else 1.0
 		var speed: float = player.RUN_SPEED * Run.stats.speed * drag
+		if player.leaving_dash:
+			# A short dodge must end at running pace rather than carrying
+			# another few metres of slide off the far edge of a gallery.
+			flat = flat.limit_length(speed)
+			player.leaving_dash = false
 		var icy: bool = game.residue and game.residue.kind_at(player.global_position) == "ice"
 		flat = flat.move_toward(direction * speed, delta * (4.5 if icy else (42.0 if player.is_on_floor() else 17.0)))
 	player.velocity.x = flat.x
@@ -151,10 +155,17 @@ func move_player(player, delta: float, move_input: Vector2) -> void:
 	var kept: Vector2 = game.room.geometry.recover(Vector2(player.last_valid.x, player.last_valid.z), Vector2(player.position.x, player.position.z), .34)
 	player.position.x = kept.x
 	player.position.z = kept.y
+	# Repair penetration from an old checkpoint or a changed solid surface.
+	# This never moves the player across a wall or teleports ordinary blocked
+	# movement; it only lifts feet that are already inside the terrain solid.
+	var ground: float = game.room.floor_height(player.position)
+	if player.position.y < ground - .12:
+		player.position.y = ground + .03
+		player.velocity.y = maxf(0, player.velocity.y)
 	if player.position.y < -3:
 		player.position = player.last_valid + Vector3.UP * .3
 		player.velocity = Vector3.ZERO
-	if player.is_on_floor(): player.last_valid = player.position
+	if player.is_on_floor() and absf(player.position.y - ground) < .15: player.last_valid = player.position
 	var old_stride = floori(player.walk_time / PI)
 	player.walk_time += flat.length() * delta * 2.7
 	if old_stride != floori(player.walk_time / PI) and player.is_on_floor():

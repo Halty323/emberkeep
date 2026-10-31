@@ -101,9 +101,9 @@ jobs:
           path = Path('export_presets.cfg')
           text = path.read_text()
           assert text.count('version/code=1\n') == 1
-          assert text.count('version/name="0.2.0"') == 1
+          assert text.count('version/name="0.2.1"') == 1
           text = text.replace('version/code=1\n', f'version/code={build}\n')
-          text = text.replace('version/name="0.2.0"', f'version/name="0.2.0-android.{build}"')
+          text = text.replace('version/name="0.2.1"', f'version/name="0.2.1-android.{build}"')
           path.write_text(text)
           PY
 

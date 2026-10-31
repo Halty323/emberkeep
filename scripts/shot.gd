@@ -14,6 +14,7 @@ var pierces = 0
 var bounces = 0
 var hit_ids: Dictionary = {}
 var radius = .14
+var light_radius := .14
 var alive = true
 var returning = false
 var start_position = Vector3.ZERO
@@ -25,6 +26,11 @@ var start_position = Vector3.ZERO
 const APPEAR := .09
 const VANISH := .16
 static var materials: Dictionary = {}
+# Mesh resources are immutable and shared by every projectile. Size/fade
+# belong to node transforms; a volley never builds new render geometry.
+static var core_mesh: SphereMesh
+static var quad_mesh: QuadMesh
+static var pool_mesh: PlaneMesh
 var lights: Array[MeshInstance3D] = []
 var core: MeshInstance3D
 var glow: MeshInstance3D
@@ -54,6 +60,7 @@ func setup(owner_game: Node3D, at: Vector3, travel: Vector3, power: float, veloc
 	base_speed = speed
 	if float(stats.get("linger", 0)) > 0: lifetime *= 2.2
 	radius = (.12 if friendly else .17) * float(stats.get("size", 1))
+	light_radius = radius
 	build_light(color)
 	if not friendly:
 		Geo.ring(self, Vector3.ZERO, radius * 1.4, Color("f39b88"), .025)
@@ -70,21 +77,26 @@ static func material(name: String, color: Color) -> ShaderMaterial:
 ## The ribbon and the floor pool are cosmetic, so they follow effects detail.
 func build_light(color: Color) -> void:
 	var level = Look.quality()
-	var sphere = SphereMesh.new()
-	sphere.radius = radius
-	sphere.height = radius * 2.0
-	sphere.radial_segments = 10
-	sphere.rings = 6
+	# A floor glow for every pellet adds a large transparent layer to GLES.
+	# The safe mobile path retains the body, halo and direction ribbon.
+	if RenderPolicy.current().lightweight_surfaces: level = mini(level, 1)
+	if core_mesh == null:
+		core_mesh = SphereMesh.new()
+		core_mesh.radius = 1.0
+		core_mesh.height = 2.0
+		core_mesh.radial_segments = 10
+		core_mesh.rings = 6
+		quad_mesh = QuadMesh.new()
+		pool_mesh = PlaneMesh.new()
+		pool_mesh.size = Vector2.ONE
 	var shade = color.lightened(.15)
-	core = add_light(sphere, "core", shade)
-	glow = add_light(QuadMesh.new(), "glow", shade)
+	core = add_light(core_mesh, "core", shade)
+	glow = add_light(quad_mesh, "glow", shade)
 	if level >= 1:
-		streak = add_light(QuadMesh.new(), "streak", shade)
+		streak = add_light(quad_mesh, "streak", shade)
 		streak.top_level = true
 	if level >= 2:
-		var pool = PlaneMesh.new()
-		pool.size = Vector2.ONE * radius * 14.0
-		splat = add_light(pool, "splat", shade)
+		splat = add_light(pool_mesh, "splat", shade)
 		splat.position = Vector3(0, -position.y + .04, 0)
 	shine()
 
@@ -103,12 +115,12 @@ func shine() -> void:
 	var rise = ease(clampf(appear, 0.0, 1.0), .4)
 	var fall = clampf(vanish, 0.0, 1.0) if vanish >= 0 else 0.0
 	var fade = maxf(.001, rise * (1.0 - fall))
-	core.scale = Vector3.ONE * maxf(.001, lerpf(1.8, 1.0, rise) * (1.0 - fall * .85))
+	core.scale = Vector3.ONE * maxf(.001, light_radius * lerpf(1.8, 1.0, rise) * (1.0 - fall * .85))
 	# The glow's X scale is its size, its Y scale (relative) its brightness.
 	var size = radius * 7.5 * (lerpf(1.6, 1.0, rise) + fall * 1.4)
 	glow.scale = Vector3(size, size * fade, size)
 	if splat:
-		splat.scale = Vector3.ONE * maxf(.001, fade)
+		splat.scale = Vector3.ONE * maxf(.001, light_radius * 14.0 * fade)
 		if game.first_person:
 			splat.global_position = Vector3(global_position.x, game.room.floor_height(global_position) + .04, global_position.z)
 	if streak:
@@ -164,22 +176,37 @@ func update_sim(delta: float) -> void:
 	if stats.get("wave", 0) > 0:
 		movement += direction.cross(Vector3.UP) * cos(age * 15) * delta * 3.0
 	var target_position = global_position + movement
-	# A shot through a dead lantern's glass lights it again.
+	var query = PhysicsRayQueryParameters3D.create(global_position, target_position, (1 | PropVisuals.FURNITURE_LAYER) if game.first_person else 1)
+	var hit = get_world_3d().direct_space_state.intersect_ray(query)
+	# A shot through dead lantern glass lights it again, but cover wins when
+	# it lies earlier on the sweep. Testing only the endpoint skips fast shots.
 	if friendly and is_instance_valid(game.room):
-		var lantern: int = game.room.lantern_near(Vector2(target_position.x, target_position.z), .6, false)
-		if lantern >= 0 and (not game.first_person or absf(target_position.y - game.room.lanterns[lantern].at.y - 1.6) < .65):
+		var lantern: int = -1
+		if game.first_person:
+			var nearest = global_position.distance_squared_to(hit.position) if not hit.is_empty() else INF
+			for index in game.room.lanterns.size():
+				var lamp: Dictionary = game.room.lanterns[index]
+				if lamp.burning: continue
+				var center: Vector3 = lamp.at + Vector3.UP * 1.6
+				var point = Geometry3D.get_closest_point_to_segment(center, global_position, target_position)
+				var reach = global_position.distance_squared_to(point)
+				if point.distance_squared_to(center) < .36 and reach < nearest:
+					nearest = reach
+					lantern = index
+		else:
+			lantern = game.room.lantern_near(Vector2(target_position.x, target_position.z), .6, false)
+		if lantern >= 0:
 			game.relight(lantern)
 			Effects.play("impact", global_position, Color("ffd08a"))
 			remove()
 			return
 	# Glass splits a shot crossing it into three, once.
-	if not stats.get("glassed", false) and game.residue and game.residue.crosses_glass(global_position, target_position):
+	var glass_end: Vector3 = hit.position if game.first_person and not hit.is_empty() else target_position
+	if not stats.get("glassed", false) and game.residue and game.residue.crosses_glass(global_position, glass_end):
 		stats["glassed"] = true
 		for side in [-1, 1]:
 			var copy = game.spawn_shot(global_position, direction.rotated(Vector3.UP, side * .32), damage * (.6 if friendly else 1.0), speed, stats, tint, friendly)
 			if copy: copy.hit_ids = hit_ids.duplicate()
-	var query = PhysicsRayQueryParameters3D.create(global_position, target_position, (1 | PropVisuals.FURNITURE_LAYER) if game.first_person else 1)
-	var hit = get_world_3d().direct_space_state.intersect_ray(query)
 	if not friendly and game.first_person:
 		var low: Vector3 = game.player.global_position + Vector3.UP * .32
 		var high: Vector3 = game.player.global_position + Vector3.UP * 1.38
@@ -194,8 +221,14 @@ func update_sim(delta: float) -> void:
 		var start = global_position
 		var wall_distance = start.distance_to(hit.position) if not hit.is_empty() else INF
 		var candidates: Array = []
+		var low_bound = start.min(target_position) - Vector3.ONE * radius
+		var high_bound = start.max(target_position) + Vector3.ONE * radius
 		for enemy in game.enemies:
 			if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable or hit_ids.has(enemy.entity_id): continue
+			# Scalar broad phase avoids allocating a closest-segments result
+			# for every distant body in every pellet's simulation tick.
+			var body: Vector3 = enemy.global_position
+			if body.x + enemy.radius < low_bound.x or body.x - enemy.radius > high_bound.x or body.z + enemy.radius < low_bound.z or body.z - enemy.radius > high_bound.z or body.y + enemy.hit_height < low_bound.y or body.y > high_bound.y: continue
 			var low: Vector3 = enemy.global_position + Vector3.UP * enemy.radius
 			var high: Vector3 = enemy.global_position + Vector3.UP * (enemy.hit_height - enemy.radius)
 			var pair = Geometry3D.get_closest_points_between_segments(start, target_position, low, high)
@@ -204,6 +237,7 @@ func update_sim(delta: float) -> void:
 				candidates.append({"enemy": enemy, "point": pair[0], "distance": distance})
 		candidates.sort_custom(func(a, b): return a.distance < b.distance)
 		for candidate in candidates:
+			if not is_instance_valid(candidate.enemy) or not candidate.enemy.alive or not candidate.enemy.targetable: continue
 			global_position = candidate.point
 			if candidate.enemy.catch_shot(self): return
 			hit_enemy(candidate.enemy)
@@ -229,6 +263,7 @@ func update_sim(delta: float) -> void:
 			if not hit.is_empty():
 				global_position = hit.position + normal * .12
 		else:
+			if game.first_person and not hit.is_empty(): global_position = hit.position
 			Effects.play("impact", global_position, tint)
 			splash()
 			finish()
@@ -295,7 +330,7 @@ func finish() -> void:
 ## Paint lands as a short-lived, budgeted floor mark; it deals no damage.
 func splash() -> void:
 	if friendly and float(stats.get("paint", 0)) > 0:
-		Effects.play("paint_splash", Vector3(global_position.x, .02, global_position.z), tint)
+		Effects.play("paint_splash", Vector3(global_position.x, (game.room.floor_height(global_position) if game.first_person else 0.0) + .02, global_position.z), tint)
 
 ## A forking shot splits three ways where its flight runs out.
 func fork() -> void:

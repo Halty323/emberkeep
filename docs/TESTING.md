@@ -4,6 +4,8 @@ Current first-person work uses **Godot 4.7.2 Standard** on Linux. The headless r
 
 ## First-person verification
 
+The [0.2.1 update report](PS2_UPDATE.md) describes the ramp reproduction, corrected collision, PS2 material budget and added coverage. `first_person_navigation` adds 330 physical traversal/save validation checks, `first_person_stress` adds 52 bounded combat/resource checks, and `dungeon_style` adds 104 material/policy checks.
+
 `tests/first_person.gd`: **75 checks**, covering perspective/eye position, upright collision, real floors, yaw-relative motion, jump/landing, vertical aim, pause, FOV validation, facing persistence, gallery/ramp reachability and stable blueprints, forged patterns, independent move/look/fire/jump touches, v2 migration, swept hits blocked by nearer cover, low-wave jumping, elevated enemy aim and six seconds of simulation for each of the eight bosses. Generated-room coverage found raised galleries in all six eligible furnished rooms across three representative seeds; a chest interaction test verifies its own collider is ignored while a separate wall still blocks it. FIRE-drag aiming supports two-thumb play.
 
 `tests/render_first_person.gd`: opt-in native Compatibility captures of the entry, a larger arena and overlapping steam under the simulated PowerVR policy. Run with a display, disposable XDG storage and `EMBERKEEP_FPS_CAPTURE` pointing to an existing output directory. The pixel checks measured mean RGB change 0.00966 for visible steam and zero luminance gain for coincident clouds. The existing nine GL enemy/mist visibility checks also pass on 4.7.2. These are eye-level visual checks on Mesa llvmpipe; real Pixel rendering, sustained frame rate and touch feel remain device gates.

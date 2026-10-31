@@ -166,6 +166,9 @@ func _ready() -> void:
 		fps = FirstPersonController.new()
 		add_child(fps)
 		fps.setup(self)
+		# Prewarm the three tiny painted material families before a run, so a
+		# newly encountered floor theme does not bake textures during combat.
+		for kind in 3: DungeonStyle.surface_maps(kind)
 	Run.item_gained.connect(on_item_gained)
 	actions = GameActions.new(self)
 	Session.command_received.connect(on_command)
@@ -857,7 +860,9 @@ func enter_room(spawn: Vector3, keep_view := false) -> void:
 func apply_floor_light() -> void:
 	FloorLight.apply(FloorLight.profile(0) if in_menu else FloorLight.current(), room_environment.environment, key_light, vignette)
 	if first_person and not in_menu:
-		room_environment.environment.ambient_light_energy = maxf(.10, room_environment.environment.ambient_light_energy)
+		room_environment.environment.ambient_light_energy = maxf(.115, room_environment.environment.ambient_light_energy)
+		room_environment.environment.fog_density = maxf(.009, room_environment.environment.fog_density)
+		room_environment.environment.fog_light_color = room_environment.environment.fog_light_color.lightened(.065)
 	screen_fx.set_grade({} if in_menu else Run.theme())
 
 ## Where the air shimmers: burning floor, a hot clinker, the Kilnmother.
@@ -913,8 +918,12 @@ func spawn_enemy(at: Vector3, kind: String, source := "") -> DungeonEnemy:
 ## cap: hostile projectiles keep a reserved share.
 func spawn_shot(at: Vector3, direction: Vector3, damage: float, speed_value: float, stats: Dictionary, color: Color, friendly: bool) -> EmberShot:
 	if shots.size() >= MAX_SHOTS: return null
-	var hostile = shots.filter(func(s): return is_instance_valid(s) and not s.friendly).size()
-	if friendly and shots.size() - hostile >= MAX_SHOTS - HOSTILE_SHOT_RESERVE: return null
+	if friendly:
+		var friendly_count := 0
+		for existing in shots:
+			if is_instance_valid(existing) and existing.friendly:
+				friendly_count += 1
+				if friendly_count >= MAX_SHOTS - HOSTILE_SHOT_RESERVE: return null
 	var shot = EmberShot.new()
 	scene_root.add_child(shot)
 	entity_counter += 1

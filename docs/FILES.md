@@ -42,6 +42,7 @@ docs/LORE.md
 docs/ONLINE.md
 docs/PAINTING_COLLECTION_PLAN.md
 docs/PAINTING_CREDITS.md
+docs/PS2_UPDATE.md
 docs/TESTING.md
 export_presets.cfg
 project.godot
@@ -82,6 +83,8 @@ scripts/first_person/controller.gd
 scripts/first_person/controller.gd.uid
 scripts/first_person/room_terrain.gd
 scripts/first_person/room_terrain.gd.uid
+scripts/first_person/weapon_view.gd
+scripts/first_person/weapon_view.gd.uid
 scripts/foes/archivist.gd
 scripts/foes/archivist.gd.uid
 scripts/foes/bailer.gd
@@ -148,6 +151,8 @@ scripts/fx.gd
 scripts/fx.gd.uid
 scripts/geo.gd
 scripts/geo.gd.uid
+scripts/graphics/dungeon_style.gd
+scripts/graphics/dungeon_style.gd.uid
 scripts/graphics/look.gd
 scripts/graphics/look.gd.uid
 scripts/graphics/render_policy.gd
@@ -202,6 +207,12 @@ scripts/world.gd
 scripts/world.gd.uid
 shaders/cone.gdshader
 shaders/cone.gdshader.uid
+shaders/dungeon_floor.gdshader
+shaders/dungeon_floor.gdshader.uid
+shaders/dungeon_wall.gdshader
+shaders/dungeon_wall.gdshader.uid
+shaders/dungeon_wood.gdshader
+shaders/dungeon_wood.gdshader.uid
 shaders/floor_mark.gdshader
 shaders/floor_mark.gdshader.uid
 shaders/floor_stone.gdshader
@@ -212,6 +223,8 @@ shaders/foe_rim.gdshader
 shaders/foe_rim.gdshader.uid
 shaders/halo.gdshader
 shaders/halo.gdshader.uid
+shaders/lantern_glass.gdshader
+shaders/lantern_glass.gdshader.uid
 shaders/light_shaft.gdshader
 shaders/light_shaft.gdshader.uid
 shaders/mist.gdshader
@@ -246,10 +259,16 @@ tests/combat.gd
 tests/combat.gd.uid
 tests/dungeon.gd
 tests/dungeon.gd.uid
+tests/dungeon_style.gd
+tests/dungeon_style.gd.uid
 tests/effects.gd
 tests/effects.gd.uid
 tests/first_person.gd
 tests/first_person.gd.uid
+tests/first_person_navigation.gd
+tests/first_person_navigation.gd.uid
+tests/first_person_stress.gd
+tests/first_person_stress.gd.uid
 tests/furniture.gd
 tests/furniture.gd.uid
 tests/items.gd
@@ -266,6 +285,8 @@ tests/render_mobile_startup.gd
 tests/render_mobile_startup.gd.uid
 tests/render_policy.gd
 tests/render_policy.gd.uid
+tests/render_ps2_update.gd
+tests/render_ps2_update.gd.uid
 tests/render_stress.gd
 tests/render_stress.gd.uid
 tests/render_ui.gd
@@ -292,6 +313,7 @@ tools/import_paintings.py
 tools/make_content.py
 tools/render_lighting.sh
 tools/render_mobile_startup.sh
+tools/render_ps2_update.sh
 tools/render_stress.sh
 tools/render_ui.sh
 tools/render_visibility.sh

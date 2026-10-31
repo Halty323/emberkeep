@@ -71,7 +71,7 @@ func _process(delta: float) -> void:
 	for w in waves: w.age += delta
 	waves = waves.filter(func(w): return w.age < WAVE_LIFE)
 	for i in MAX_WAVES:
-		if i < waves.size() and is_instance_valid(camera):
+		if i < waves.size() and is_instance_valid(camera) and not camera.is_position_behind(waves[i].at):
 			var w: Dictionary = waves[i]
 			var t = w.age / WAVE_LIFE
 			var at = camera.unproject_position(w.at) / size
@@ -83,6 +83,7 @@ func _process(delta: float) -> void:
 	var shimmer = 1.0 if Look.quality() == 2 else .6
 	if is_instance_valid(camera) and game.is_playing():
 		for source in game.heat_sources(MAX_HEAT):
+			if camera.is_position_behind(source.at): continue
 			var at = camera.unproject_position(source.at) / size
 			hot.append(Vector4(at.x, at.y, source.reach * .045, source.power * shimmer))
 	while hot.size() < MAX_HEAT: hot.append(Vector4.ZERO)

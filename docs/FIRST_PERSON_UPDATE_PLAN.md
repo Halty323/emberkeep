@@ -1,6 +1,8 @@
 # First-person Emberkeep: architecture and delivery status
 
-Status: first-person implementation on Godot **4.7.2 Standard**, version **0.2.0**. This document retains the design and records the implemented scope below. Android uses manual fire plus independent swipe-look; movement includes jump and dash. Multiplayer remains future work.
+Status: first-person implementation on Godot **4.7.2 Standard**, version **0.2.1**. This document retains the design and records the implemented scope below. Android uses manual fire plus independent swipe-look; movement includes jump and dash. Multiplayer remains future work.
+
+See [the traversal/PS2 update report](PS2_UPDATE.md) for the subsequent 0.2.1 fixes and validation.
 
 ## Implemented scope
 

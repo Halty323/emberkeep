@@ -52,6 +52,8 @@ var slow_factor = 0.0
 var last_valid = Vector3.ZERO
 var path := PackedVector2Array()
 var path_timer = 0.0
+var path_initialized := false
+var path_queries := 0
 var sight_timer = 0.0
 var has_sight = true
 # Shots, seeking and blasts pass a foe that is not targetable (on a ceiling,
@@ -178,6 +180,11 @@ func prepare() -> void:
 func place(at: Vector3) -> void:
 	position = at
 	last_valid = at
+	if game.first_person:
+		path = PackedVector2Array()
+		path_initialized = false
+		path_timer = 0.0
+		sight_timer = 0.0
 
 func clearance() -> float:
 	return 1.0 if radius > .7 else .5
@@ -197,10 +204,15 @@ func steer_toward(target: Vector3, delta: float) -> Vector3:
 		has_sight = nav.line_clear(from, to)
 	if has_sight:
 		path = PackedVector2Array()
+		path_initialized = false
 		return direct
 	path_timer -= delta
-	if path_timer <= 0 or path.is_empty():
+	# An empty result is still a completed search. Retrying it every frame
+	# turns an unreachable target into dozens of full A* searches per foe.
+	if path_timer <= 0 or (not path_initialized if game.first_person else path.is_empty()):
 		path = nav.find_path(from, to)
+		path_initialized = true
+		path_queries += 1
 		path_timer = .45 + float(entity_id % 7) * .06
 	while path.size() > 1 and from.distance_to(path[0]) < .45:
 		path.remove_at(0)
@@ -589,8 +601,9 @@ func throw_mote(direction: Vector3, distance: float) -> void:
 		if other.global_position.distance_to(global_position) > 3.0: continue
 		var land: Vector3 = game.player.global_position - direction * minf(1.2, distance * .2)
 		var safe = game.room.geometry.safe_point(Vector2(land.x, land.z), .5, game.room.blocked_at)
-		other.thrown = {"from": other.global_position, "to": Vector3(safe.x, 0, safe.y), "time": 0.0, "length": .9,
-			"mark": Geo.ring(game.scene_root, Vector3(safe.x, .05, safe.y), 1.1, Color("ed9b77"), .06)}
+		var height: float = game.room.floor_height(Vector3(safe.x, 0, safe.y)) if game.first_person else 0.0
+		other.thrown = {"from": other.global_position, "to": Vector3(safe.x, height, safe.y), "time": 0.0, "length": .9,
+			"mark": Geo.ring(game.scene_root, Vector3(safe.x, height + .05, safe.y), 1.1, Color("ed9b77"), .06)}
 		visual.scale = Vector3(1.2, .8, 1.2)
 		return
 

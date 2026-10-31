@@ -96,6 +96,8 @@ Safe rooms save automatically, as do bombs and item uses. If the app closes mid-
 
 ## First-person update
 
+The [0.2.1 traversal and visual update](docs/PS2_UPDATE.md) fixes the reported ramp trap and dash overrun, adds a PS2-inspired painted stone/timber look and expands physical movement and stress coverage.
+
 First-person gameplay is the default: full-height capsule movement, gravity, jumping, yaw-relative strafing, 3D aiming and swept projectile hits, a procedural held weapon, crosshair/hit confirmation and directional damage feedback. Full walls, ceilings, instanced vault ribs and beams give rooms an eye-level silhouette. Camera settings include FOV, mouse/touch sensitivity, invert Y and optional head bob (off by default). Existing weapons, relics, actives, bosses, paintings and secrets remain connected to the same run systems.
 
 The [migration plan and implementation status](docs/FIRST_PERSON_UPDATE_PLAN.md) records the architecture and remaining device/balance gates. PowerVR uses the existing safe Compatibility policy. Baked GI and perspective water reflections remain gated; they are not enabled by this update. The old presentation is available to maintain regression coverage via `--isometric`.
@@ -127,7 +129,7 @@ python3 tools/import_paintings.py --check
 python3 tools/make_content.py
 ```
 
-Seventeen headless suites cover settings, the content catalog, multi-cell geometry and generation, items, furniture and secrets, pooled effects, the painting collection, gameplay, lighting, combat, the tower (climbs, themes, twists, hazards, the new foes and bosses, forged weapons and the dark store), secret codes, camera presentation, UI and first-person movement/combat/touch/migration. See [docs/TESTING.md](docs/TESTING.md) for what is verified and what still needs real devices.
+Twenty headless suites cover settings, the content catalog, multi-cell geometry and generation, items, furniture and secrets, pooled effects, the painting collection, gameplay, lighting, combat, the tower (climbs, themes, twists, hazards, the new foes and bosses, forged weapons and the dark store), secret codes, camera presentation, UI and first-person movement/combat/touch/migration. See [docs/TESTING.md](docs/TESTING.md) for what is verified and what still needs real devices.
 
 | Location | Purpose |
 | --- | --- |

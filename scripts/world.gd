@@ -100,6 +100,7 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 		terrain.setup(self)
 		geometry.terrain = terrain
 	build_props(records)
+	if first_person_room: DungeonStyle.dress_props(self)
 	# Containers are solid: navigation and spawns route around them.
 	for chest in room.get("chests", []):
 		var at = Vector2(float(chest.position[0]), float(chest.position[1]))
@@ -136,11 +137,11 @@ static func socket_key(cell: Vector2i, direction: Vector2i) -> String:
 func build_floor() -> void:
 	# One finely divided stone sheet per cell, so a large room's floor is not
 	# one giant mesh receiving every distant lantern's lighting pass.
-	var material = Look.floor_material(look)
+	var material = DungeonStyle.floor_material(look) if first_person_room else Look.floor_material(look)
 	for cell in geometry.cells:
 		var center = RoomGeometry.cell_center(cell)
 		var sheet = MeshInstance3D.new()
-		sheet.mesh = Look.floor_mesh()
+		sheet.mesh = DungeonStyle.floor_mesh() if first_person_room else Look.floor_mesh()
 		sheet.material_override = material
 		sheet.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		sheet.position = Vector3(center.x, Look.FLOOR_TOP, center.y)
@@ -263,9 +264,9 @@ func make_gate(socket: Dictionary) -> void:
 
 func make_wall(at: Vector3, dimensions: Vector3, front_side := Vector2i.ZERO, line := 0.0, from := 0.0, to := 0.0) -> Dictionary:
 	var body = Geo.box(self, at, dimensions, Color(look.get("wall", "394148")))
-	body.material_override = Look.wall_material(Color(look.get("wall", "394148")))
+	body.material_override = DungeonStyle.wall_material(Color(look.get("wall", "394148"))) if first_person_room else Look.wall_material(Color(look.get("wall", "394148")))
 	var cap = Geo.box(self, at + Vector3(0, dimensions.y / 2 + .035, 0), Vector3(dimensions.x + .06, .09, dimensions.z + .06), Color(look.get("cap", "656358")))
-	cap.material_override = Look.wall_material(Color(look.get("cap", "656358")), true)
+	cap.material_override = DungeonStyle.wall_material(Color(look.get("cap", "656358")), true) if first_person_room else Look.wall_material(Color(look.get("cap", "656358")), true)
 	var collider = Geo.collider(self, at, dimensions + Vector3(0, 2, 0))
 	var entry = {"body": body, "cap": cap, "collider": collider}
 	if front_side != Vector2i.ZERO:
@@ -409,7 +410,7 @@ func make_lantern(p: Vector3, burning := true) -> void:
 	if burning: lantern_points.append(p)
 
 func show_lantern(lantern: Dictionary) -> void:
-	lantern.glass.material_override = Geo.material(Color("f7bb6d"), 1.05) if lantern.burning else Geo.material(Color("3d3a35"))
+	lantern.glass.material_override = (DungeonStyle.lantern_glass() if first_person_room else Geo.material(Color("f7bb6d"), 1.05)) if lantern.burning else Geo.material(Color("3d3a35"))
 	lantern.pool.visible = lantern.burning
 	lantern.glow.visible = lantern.burning
 
