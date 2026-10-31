@@ -35,6 +35,7 @@ docs/ANDROID.md
 docs/ANDROID_RENDERING_FIX.md
 docs/EXPANSION_PLAN.md
 docs/FILES.md
+docs/FIRST_PERSON_UPDATE_PLAN.md
 docs/IOS.md
 docs/LINUX.md
 docs/LORE.md

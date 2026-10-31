@@ -92,6 +92,10 @@ Codes work only during an active run. They ignore letter case and surrounding sp
 
 Safe rooms save automatically, as do bombs and item uses. If the app closes mid-fight, continuing restarts that encounter rather than restoring an exact combat frame: projectiles and enemy positions are not saved, but your resources, timers and lit fuses are, and a foe you already defeated never pays out twice. Timers never catch up on time spent away. Version 1 run saves load through an adapter that keeps their floor, offers, drops and RNG state, and later floors of such a run use the original generator. Death or victory removes the active run save; the profile remains.
 
+## First-person update proposal
+
+The [first-person migration plan](docs/FIRST_PERSON_UPDATE_PLAN.md) describes the proposed controls, combat conversion, modular rooms, lighting strategy, save compatibility and staged delivery. This is a design proposal; the released game remains isometric.
+
 ## Development
 
 ```sh
