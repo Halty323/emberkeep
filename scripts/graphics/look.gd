@@ -48,23 +48,28 @@ static func detail() -> ImageTexture:
 	detail_texture = ImageTexture.create_from_image(image)
 	return detail_texture
 
-## The floor sheet for one cell at the current detail.
+## The floor sheet for one cell at the current detail. The compatibility
+## fallback uses two triangles: changing a cosmetic preference must never
+## restore vertex-texture displacement on an affected driver.
 static func floor_mesh() -> PlaneMesh:
 	var level = quality()
-	if meshes.has(level): return meshes[level]
+	var lightweight: bool = RenderPolicy.current().lightweight_surfaces
+	var key = "mobile" if lightweight else str(level)
+	if meshes.has(key): return meshes[key]
 	var mesh = PlaneMesh.new()
 	mesh.size = CELL
-	mesh.subdivide_width = int(CELL.x) * DENSITY[level]
-	mesh.subdivide_depth = int(CELL.y) * DENSITY[level]
-	meshes[level] = mesh
+	mesh.subdivide_width = 0 if lightweight else int(CELL.x) * DENSITY[level]
+	mesh.subdivide_depth = 0 if lightweight else int(CELL.y) * DENSITY[level]
+	meshes[key] = mesh
 	return mesh
 
 static func floor_material(look: Dictionary) -> ShaderMaterial:
-	var key = "%s|%d" % [JSON.stringify(look.get("floor", [])) + JSON.stringify(look.get("surface", {})), quality()]
+	var lightweight: bool = RenderPolicy.current().lightweight_surfaces
+	var key = "%s|%d|%s" % [JSON.stringify(look.get("floor", [])) + JSON.stringify(look.get("surface", {})), quality(), lightweight]
 	if floor_materials.has(key): return floor_materials[key]
 	var surface: Dictionary = look.get("surface", {})
 	var mat = ShaderMaterial.new()
-	mat.shader = preload("res://shaders/floor_stone.gdshader")
+	mat.shader = preload("res://shaders/floor_stone_mobile.gdshader") if lightweight else preload("res://shaders/floor_stone.gdshader")
 	var colors: Array = look.get("floor", DEFAULT_PALETTE)
 	for i in 5: mat.set_shader_parameter("palette_" + "abcde"[i], Color(colors[i]))
 	mat.set_shader_parameter("pattern", maxi(0, PATTERNS.find(surface.get("pattern", "slabs"))))
@@ -75,7 +80,7 @@ static func floor_material(look: Dictionary) -> ShaderMaterial:
 		mat.set_shader_parameter(key_name, float(surface.get(key_name, .5 if key_name == "cracks" else 0.0)))
 	if surface.has("ember_color"): mat.set_shader_parameter("ember_color", Color(surface.ember_color))
 	if surface.has("moss_color"): mat.set_shader_parameter("moss_color", Color(surface.moss_color))
-	mat.set_shader_parameter("relief", RELIEF[quality()])
+	if not lightweight: mat.set_shader_parameter("relief", RELIEF[quality()])
 	mat.set_shader_parameter("detail", detail())
 	floor_materials[key] = mat
 	return mat

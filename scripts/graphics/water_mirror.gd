@@ -14,6 +14,8 @@ var mirror: Camera3D
 func setup(main_camera: Camera3D) -> void:
 	source = main_camera
 	render_target_update_mode = SubViewport.UPDATE_DISABLED
+	# Never inherit/use mobile MSAA for an auxiliary render target.
+	msaa_3d = Viewport.MSAA_DISABLED
 	positional_shadow_atlas_size = 0
 	mirror = Camera3D.new()
 	mirror.cull_mask = 0xFFFFF & ~(2 | 8)
@@ -21,12 +23,18 @@ func setup(main_camera: Camera3D) -> void:
 	mirror.current = true
 
 ## Runs the mirror when wanted, matching the game camera each frame.
-func follow(wanted: bool, screen: Vector2) -> void:
+func follow(wanted: bool, _screen: Vector2) -> void:
 	var level = Look.quality()
-	var active = wanted and level > 0 and is_instance_valid(source)
+	var policy = RenderPolicy.current()
+	var active = wanted and level > 0 and policy.reflections and is_instance_valid(source)
 	render_target_update_mode = SubViewport.UPDATE_ALWAYS if active else SubViewport.UPDATE_DISABLED
 	if not active: return
-	var target = Vector2i(maxi(64, int(screen.x * SCALE[level])), maxi(36, int(screen.y * SCALE[level])))
+	# Use physical 3D pixels, including render scale, then cap both dimensions.
+	# UI coordinates may be virtual on stretched/wide displays.
+	var pixels = Vector2(source.get_viewport().size) * source.get_viewport().scaling_3d_scale
+	var limit = Vector2(policy.reflection_limit)
+	var factor = minf(SCALE[level], minf(limit.x / maxf(pixels.x, 1.0), limit.y / maxf(pixels.y, 1.0)))
+	var target = Vector2i(maxi(1, int(pixels.x * factor)), maxi(1, int(pixels.y * factor)))
 	if size != target: size = target
 	mirror.projection = source.projection
 	mirror.size = source.size

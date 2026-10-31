@@ -62,7 +62,7 @@ func setup(owner_game: Node3D, room_geometry: RoomGeometry) -> void:
 		var mat = ShaderMaterial.new()
 		var plane = PlaneMesh.new()
 		plane.size = Vector2(grid_size) * TILE
-		if kind in WATERY:
+		if kind in WATERY and RenderPolicy.current().refraction:
 			# Water and ice: reflective, refracting, and for water, rolling.
 			mat.shader = preload("res://shaders/water.gdshader")
 			mat.set_shader_parameter("frozen", 1.0 if kind == "ice" else 0.0)
@@ -102,16 +102,18 @@ func ripple(at: Vector3, strength := 1.0) -> void:
 
 ## Whether anything here would show the mirror.
 func reflective() -> bool:
-	return WATERY.any(func(kind): return views[kind].count > 0)
+	return RenderPolicy.current().reflections and WATERY.any(func(kind): return views[kind].count > 0)
 
 ## Water and ice show the mirror only while it runs.
 func set_mirror(active: bool) -> void:
+	if not RenderPolicy.current().refraction: return
 	for kind in WATERY:
 		views[kind].material.set_shader_parameter("reflect_strength", .65 if active else 0.0)
 
 ## Visual only: rain on the cistern's pools, wading rings, the ripple clock.
 func animate(delta: float) -> void:
 	clock += delta
+	if not RenderPolicy.current().refraction: return
 	if views.water.count == 0: return
 	wade -= delta
 	if wade <= 0:

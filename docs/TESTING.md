@@ -6,6 +6,8 @@ Verified with Godot 4.6.3 Standard on Linux: headless suites, Mesa llvmpipe Open
 
 `./tools/test.sh` imports the project, runs every suite with disposable user storage, and fails on any script error even if Godot exits successfully. Last full run: **132,978 checks, zero failures**, plus the painting importer's offline test.
 
+The 2026-10-31 PowerVR safeguard run passed **133,052 checks** across all suites plus the importer test; the subsequently expanded policy suite passed **63 checks** (five additional checks). Android, Linux and iOS resource packs each passed their catalog check and 240 quickstart frames. A native desktop OpenGL smoke also rendered the full High post/glow/water-reflection path without shader errors.
+
 | Suite | Checks | What it covers |
 | --- | ---: | --- |
 | `catalog` | 28 | Every content family loads; validators reject duplicate ids, disconnected footprints, bad rotations, unknown roles and stray anchors; the content revision hash is the published FNV-1a. |
@@ -27,6 +29,8 @@ Verified with Godot 4.6.3 Standard on Linux: headless suites, Mesa llvmpipe Open
 ## OpenGL captures (opt-in)
 
 Run with a display or under Xvfb. All passed on llvmpipe:
+
+- `./tools/render_mobile_startup.sh`: 240 frames at a 2424×1080 viewport with High preferences under the simulated PowerVR Android policy, including title quality changes and three visible wet-room rebuilds. Zero failures or framebuffer warnings; peak 491 draw calls. Each equivalent wet-room visit measured 248 nodes, 34.09 MB texture memory and 40.42 MB video memory. This ran on desktop Mesa llvmpipe, not on PowerVR; it validates the fallback paths and allocation bounds, not Pixel stability or frame rate. `tests/render_policy.gd` separately passed 63 device-policy, shader-selection, settings and pixel-budget checks. See [the diagnosis and Pixel follow-up](ANDROID_RENDERING_FIX.md).
 
 - `./tools/render_lighting.sh`: lantern shadows on/off with no glow outside the floor; an L room in both shadow modes where a glow and a paint mark placed at the notch's corner leave the notch at background luminance; 50 % versus 100 % render scale with a HUD mean luminance difference of 0.006 and zero framing offset; a wide (Last Supper) and a tall (Arnolfini) painting keeping their proportions on the wall. The same room on floors 1, 2 and 3 measures a mean luminance of about 0.05, 0.13 and 0.25, and a foe in the cellar renders about seven times brighter than the floor beside it.
 - `./tools/render_ui.sh`: 20 renderer checks across title, the compact desktop and touch HUD (keys, bombs, wards, the held item and Item/Bomb buttons), pause, secret entry, settings, journal and rewards; a real lantern lights the stone HUD while text brightness stays stable.

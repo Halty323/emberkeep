@@ -30,6 +30,7 @@ content/paintings.json
 content/pickups.json
 content/rooms.json
 docs/ANDROID.md
+docs/ANDROID_RENDERING_FIX.md
 docs/EXPANSION_PLAN.md
 docs/FILES.md
 docs/IOS.md
@@ -139,6 +140,8 @@ scripts/geo.gd
 scripts/geo.gd.uid
 scripts/graphics/look.gd
 scripts/graphics/look.gd.uid
+scripts/graphics/render_policy.gd
+scripts/graphics/render_policy.gd.uid
 scripts/graphics/screen_fx.gd
 scripts/graphics/screen_fx.gd.uid
 scripts/graphics/water_mirror.gd
@@ -193,6 +196,8 @@ shaders/floor_mark.gdshader
 shaders/floor_mark.gdshader.uid
 shaders/floor_stone.gdshader
 shaders/floor_stone.gdshader.uid
+shaders/floor_stone_mobile.gdshader
+shaders/floor_stone_mobile.gdshader.uid
 shaders/foe_rim.gdshader
 shaders/foe_rim.gdshader.uid
 shaders/halo.gdshader
@@ -237,6 +242,10 @@ tests/presentation.gd
 tests/presentation.gd.uid
 tests/render_lighting.gd
 tests/render_lighting.gd.uid
+tests/render_mobile_startup.gd
+tests/render_mobile_startup.gd.uid
+tests/render_policy.gd
+tests/render_policy.gd.uid
 tests/render_stress.gd
 tests/render_stress.gd.uid
 tests/render_ui.gd
@@ -259,6 +268,7 @@ tools/export_android.sh
 tools/import_paintings.py
 tools/make_content.py
 tools/render_lighting.sh
+tools/render_mobile_startup.sh
 tools/render_stress.sh
 tools/render_ui.sh
 tools/test.sh

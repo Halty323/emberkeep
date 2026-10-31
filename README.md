@@ -106,6 +106,7 @@ godot --headless --editor --path . --import --quit
 ./tools/render_lighting.sh
 ./tools/render_ui.sh
 ./tools/render_stress.sh        # worst-case workload report
+./tools/render_mobile_startup.sh # PowerVR fallback startup and wet-room regression
 
 # Authoring only: fetch approved painting reproductions and record provenance.
 python3 tools/import_paintings.py

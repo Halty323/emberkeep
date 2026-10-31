@@ -4,7 +4,7 @@ render_mode unshaded;
 // and slams, hot air shimmers above fire, colour fringes at the edges when
 // you are hurt, each floor's grade, the vignette, and a breath of grain.
 // Effects detail Low draws only the vignette (vignette.gdshader) instead.
-uniform sampler2D screen : hint_screen_texture, filter_linear_mipmap, repeat_disable;
+uniform sampler2D screen : hint_screen_texture, filter_linear, repeat_disable;
 uniform float strength = 0.48;
 uniform float hurt = 0.0;
 // xy: centre in screen UV; z: radius in screen heights; w: amplitude.

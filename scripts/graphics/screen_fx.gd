@@ -32,9 +32,11 @@ func _exit_tree() -> void:
 ## Low draws the vignette alone and skips bloom; above it, the full pass.
 func apply_quality() -> void:
 	var level = Look.quality()
-	material.shader = post_shader if level > 0 else plain_shader
+	var policy = RenderPolicy.current()
+	material.shader = post_shader if level > 0 and policy.post_processing else plain_shader
 	var env: Environment = game.room_environment.environment
-	env.glow_enabled = level > 0
+	env.glow_enabled = level > 0 and policy.glow
+	if material.shader == plain_shader: waves.clear()
 	env.glow_intensity = .7 if level == 1 else .85
 	env.glow_bloom = .06
 	env.glow_hdr_threshold = 1.0
@@ -56,7 +58,7 @@ func apply_grade() -> void:
 
 ## A ring that bends the frame outward as it spreads from a world point.
 static func wave(at: Vector3, radius: float, power := 1.0) -> void:
-	if current == null or not is_instance_valid(current) or Look.quality() == 0: return
+	if current == null or not is_instance_valid(current) or Look.quality() == 0 or not RenderPolicy.current().post_processing: return
 	if current.waves.size() >= MAX_WAVES: current.waves.pop_front()
 	current.waves.append({"at": at, "age": 0.0, "reach": clampf(radius * .045, .06, .3), "power": power * (1.0 if Look.quality() == 2 else .7)})
 

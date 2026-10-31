@@ -12,7 +12,7 @@ uniform vec2 grid_size;
 uniform float tile = 0.8;
 uniform sampler2D reflection : filter_linear, repeat_disable;
 uniform float reflect_strength = 0.0;
-uniform sampler2D screen : hint_screen_texture, filter_linear_mipmap, repeat_disable;
+uniform sampler2D screen : hint_screen_texture, filter_linear, repeat_disable;
 uniform sampler2D detail : filter_linear_mipmap, repeat_enable;
 uniform vec4 deep : source_color = vec4(0.06, 0.16, 0.2, 1.0);
 uniform vec4 shallow : source_color = vec4(0.55, 0.78, 0.82, 1.0);
