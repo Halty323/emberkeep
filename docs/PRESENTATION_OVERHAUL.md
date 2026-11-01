@@ -38,3 +38,19 @@ Candles and the hearth share a lightweight animated flame shader. Candle cards f
 The full 22-suite regression run passed, including 2,917 interior checks over 48 furnished rooms and all eight themes. After packing the materials, all three affected suites passed again. Native Compatibility captures rendered the title, armament preparation and every floor theme without shader/framebuffer errors. The Linux pack passed its catalog/material check and 600 quickstart frames. Details and reproduction commands are in [TESTING.md](TESTING.md).
 
 The PowerVR policy still disables mobile MSAA and expensive screen/reflection paths and caps the 3D pixel budget. Desktop captures used Mesa llvmpipe; sustained frame time, touch comfort and the final appearance on the Pixel still need a physical-device playthrough. These cosmetic additions do not change enemy behavior, collision or rewards.
+
+## Verified native builds
+
+All four Godot 4.7.2 workflows succeeded for source commit `e94626cd2ea197460bfff659c8d35993e0c17df1` on 2026-11-01. Each job passed all 22 suites (136,696 checks) before export, then checked its actual packaged content.
+
+| Build | Download artifact | Workflow |
+| --- | --- | --- |
+| Android Preview | [Emberkeep-Preview](https://github.com/Halty323/emberkeep/actions/runs/41264203372/artifacts/13066541807) | [Android APK](https://github.com/Halty323/emberkeep/actions/runs/41264203372) |
+| Android standard | [Emberkeep-Android](https://github.com/Halty323/emberkeep/actions/runs/41264203372/artifacts/13066587568) | Same Android job |
+| Linux x86-64 | [Emberkeep-Linux-AppImage](https://github.com/Halty323/emberkeep/actions/runs/41264203461/artifacts/13066082530) | [Linux AppImage](https://github.com/Halty323/emberkeep/actions/runs/41264203461) |
+| Windows x86-64 | [Emberkeep-Windows](https://github.com/Halty323/emberkeep/actions/runs/41264203447/artifacts/13066901683) | [Windows build](https://github.com/Halty323/emberkeep/actions/runs/41264203447) |
+| iPhone/iPad | [Emberkeep-iOS-unsigned](https://github.com/Halty323/emberkeep/actions/runs/41264203497/artifacts/13066536982) | [iOS unsigned IPA](https://github.com/Halty323/emberkeep/actions/runs/41264203497) |
+
+Artifacts expire under the existing workflow retention policies; rerun the linked workflow for a new copy. The iOS build uses Xcode 26.3 and requires personal signing for installation.
+
+Both APKs are version `0.3.0-android.100006` (code 100006). Preview retains `org.emberkeep.preview`; standard retains `org.emberkeep.game`. Both use the existing cached development certificate, SHA-256 `4cf9cd28712f39670ea845ace110dba80c756a07db3bdfc264f3d560605bf3a9`. Preview's downloaded APK hash matches the report: `7203fa7a61efb7b92dc5c85a535d83752719f3406c06caaf75f7a02f66e9d162`. The downloaded AppImage also passes its supplied SHA-256 check. Signature, ZIP/native alignment, package namespace and 240 packaged quickstart frames passed in CI for both APKs.
