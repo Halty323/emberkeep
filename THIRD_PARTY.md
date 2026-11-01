@@ -18,9 +18,11 @@ The source fonts came from the environment’s Debian `fonts-open-sans` and `fon
 
 Godot is distributed separately under its MIT license and incorporates additional third-party components. Preserve the engine’s license and notices when distributing exported builds. See <https://godotengine.org/license/> and the matching Godot distribution’s copyright information.
 
-Game geometry, furniture, the icon, shaders and procedural audio are authored in this project. The first-person materials include four ambientCG assets by Lennart Demes under **CC0 1.0 Universal**:
+Game geometry, furniture, the icon, shaders and procedural audio are authored in this project. The `experiment/stylized-lighting` branch also uses five original carved/painted surface families; their [authoring notes](assets/materials/stylized/README.md) and manifest record the deterministic generation and outputs. No scanned images feed that artwork.
 
-| Runtime material | Original asset | Source |
+The previous material set, retained in source under `assets/materials/pbr/` and excluded from this experiment's game export, includes four ambientCG assets by Lennart Demes under **CC0 1.0 Universal**:
+
+| Retained material | Original asset | Source |
 | --- | --- | --- |
 | Weathered masonry | Bricks096 | <https://ambientcg.com/a/Bricks096> |
 | Worn flagstone | PavingStones149 | <https://ambientcg.com/a/PavingStones149> |

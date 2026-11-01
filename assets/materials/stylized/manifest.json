@@ -1,0 +1,235 @@
+{
+  "schema": 1,
+  "style": "carved storybook",
+  "seed": 18492,
+  "source": "Original deterministic Emberkeep artwork; no scanned inputs",
+  "rights": "Original Emberkeep artwork; no third-party source images",
+  "channels": "ORMH: occlusion, roughness, metallic, height",
+  "families": {
+    "masonry": {
+      "relief_metres": 0.095,
+      "outputs": {
+        "color.jpg": {
+          "sha256": "8a2c4a8f2fc63360713bf31502ac459de96f73cf003e2eb5b096717377621cef",
+          "bytes": 293351,
+          "size": [
+            2048,
+            1024
+          ]
+        },
+        "normal.jpg": {
+          "sha256": "48fe9cf28d849726cbd31b142cab2170bccfd3de651842afb2d8ee2fa9c27620",
+          "bytes": 526129,
+          "size": [
+            2048,
+            1024
+          ]
+        },
+        "color_mobile.jpg": {
+          "sha256": "87bfe338eb3d4cd845048b7ec75f1085c64a703b1398ef3d1966795f20ca1a9b",
+          "bytes": 105598,
+          "size": [
+            1024,
+            512
+          ]
+        },
+        "normal_mobile.jpg": {
+          "sha256": "67160fc75c1376569b439cf8527e86c582ffcfe6d94fcdc5829468191d1a8661",
+          "bytes": 228283,
+          "size": [
+            1024,
+            512
+          ]
+        },
+        "ormh.png": {
+          "sha256": "3c11fcd68a156e006bccd0723bd5c7f91528720578c14ae295e71982ded99400",
+          "bytes": 370980,
+          "size": [
+            1024,
+            512
+          ]
+        }
+      }
+    },
+    "flagstone": {
+      "relief_metres": 0.095,
+      "outputs": {
+        "color.jpg": {
+          "sha256": "32495e0c30d7659c8062bc7f4dacd546f49335368c3777b663a7b69509a3b06b",
+          "bytes": 283474,
+          "size": [
+            2048,
+            1024
+          ]
+        },
+        "normal.jpg": {
+          "sha256": "74a40fde2b2a022896ff07e308aaade27d3f6c9f5731b91595fb47a38136b236",
+          "bytes": 467111,
+          "size": [
+            2048,
+            1024
+          ]
+        },
+        "color_mobile.jpg": {
+          "sha256": "3cf48e3cd9c382b4448633f4e224b63feaadfdf37326224097d8b2bc1a394404",
+          "bytes": 98349,
+          "size": [
+            1024,
+            512
+          ]
+        },
+        "normal_mobile.jpg": {
+          "sha256": "6c01a4b6bbc6b4284c9aa596567ed03027d75b56b3fbdd2714e882a5a5fef43a",
+          "bytes": 200228,
+          "size": [
+            1024,
+            512
+          ]
+        },
+        "ormh.png": {
+          "sha256": "b56166efff5bef5b4f412ad4707a1c0e4e62475e1310aa5f98b81acd20d38a8e",
+          "bytes": 345082,
+          "size": [
+            1024,
+            512
+          ]
+        }
+      }
+    },
+    "rock": {
+      "relief_metres": 0.12,
+      "outputs": {
+        "color.jpg": {
+          "sha256": "758b2826fe962666642ed3807e64860cd4f8ade5045a003f94b23125a29a6857",
+          "bytes": 615476,
+          "size": [
+            2048,
+            2048
+          ]
+        },
+        "normal.jpg": {
+          "sha256": "9b93be2ccdcf979bd33c5b1bc7c7ff20011f7edc6b035bb4e9fdadb84fa9fcd0",
+          "bytes": 976449,
+          "size": [
+            2048,
+            2048
+          ]
+        },
+        "color_mobile.jpg": {
+          "sha256": "243620604270a57c169ff95349d90a458d1d63053a64aa6bbf5be5b6c831d6fe",
+          "bytes": 208274,
+          "size": [
+            1024,
+            1024
+          ]
+        },
+        "normal_mobile.jpg": {
+          "sha256": "965fa4f864090b94f4c63a370f68938283e4d790b5d9372b931e7f7d230837d8",
+          "bytes": 409152,
+          "size": [
+            1024,
+            1024
+          ]
+        },
+        "ormh.png": {
+          "sha256": "dda701264abc31b32214910aa762c84a11c14bcfed0294b83c73c98899c0acbd",
+          "bytes": 791689,
+          "size": [
+            1024,
+            1024
+          ]
+        }
+      }
+    },
+    "wood": {
+      "relief_metres": 0.045,
+      "outputs": {
+        "color.jpg": {
+          "sha256": "5c486116b75efddb90b25826af5b390f2f99c4adfc9a745ad5ccbb0615b3f2f1",
+          "bytes": 769257,
+          "size": [
+            2048,
+            2048
+          ]
+        },
+        "normal.jpg": {
+          "sha256": "e2071cc42144411209fdf1adf524d928bb59fcc93f64391e027ed133b9735fd0",
+          "bytes": 1017668,
+          "size": [
+            2048,
+            2048
+          ]
+        },
+        "color_mobile.jpg": {
+          "sha256": "d04e9e87ab5a0fb4fcd8d6c301abf1e4f489e35bb71cf4e692a7e029a978b2d5",
+          "bytes": 234846,
+          "size": [
+            1024,
+            1024
+          ]
+        },
+        "normal_mobile.jpg": {
+          "sha256": "e86750e9a1e12b800ae3b3184bdcd608e3dd5014fba4b14ab6358420923fe83e",
+          "bytes": 407965,
+          "size": [
+            1024,
+            1024
+          ]
+        },
+        "ormh.png": {
+          "sha256": "10d881dfbd7155bc1b2a37f7c8217268b1c24e4694ed4a8116f0c17d2e871a52",
+          "bytes": 664847,
+          "size": [
+            1024,
+            1024
+          ]
+        }
+      }
+    },
+    "metal": {
+      "relief_metres": 0.028,
+      "outputs": {
+        "color.jpg": {
+          "sha256": "746bad17b0d7456a6dab2ed5e2a4cfcc6822e2eb504dff86c7fc683d415a1447",
+          "bytes": 290934,
+          "size": [
+            2048,
+            2048
+          ]
+        },
+        "normal.jpg": {
+          "sha256": "8b0e34f6b4675bceb1374b36c84a0c9cc03252e8d0d7b63c3d81d0d5a1149ef3",
+          "bytes": 275195,
+          "size": [
+            2048,
+            2048
+          ]
+        },
+        "color_mobile.jpg": {
+          "sha256": "1f2c1e8698959e92a86296301389f9bdccfee769e3641b337cf21bbc26952ced",
+          "bytes": 112655,
+          "size": [
+            1024,
+            1024
+          ]
+        },
+        "normal_mobile.jpg": {
+          "sha256": "628d180ff5ed07a74778ab6d1ae8c668723f345577321b25ec85d316cfc48caf",
+          "bytes": 123579,
+          "size": [
+            1024,
+            1024
+          ]
+        },
+        "ormh.png": {
+          "sha256": "680244b2c66ed191f102c6dc769910999fc67848cff7186ff3a0cd149499a217",
+          "bytes": 664231,
+          "size": [
+            1024,
+            1024
+          ]
+        }
+      }
+    }
+  }
+}

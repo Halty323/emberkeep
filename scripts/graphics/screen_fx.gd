@@ -36,6 +36,7 @@ func apply_quality() -> void:
 	var policy = RenderPolicy.current()
 	material.shader = post_shader if level > 0 and policy.post_processing else plain_shader
 	var env: Environment = game.room_environment.environment
+	if game.first_person: DungeonAtmosphere.configure(env)
 	env.glow_enabled = level > 0 and policy.glow
 	if material.shader == plain_shader: waves.clear()
 	env.glow_intensity = .7 if level == 1 else .85

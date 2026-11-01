@@ -33,7 +33,7 @@ func capture() -> void:
 	for fixture in [
 		{"name":"cellar-entry", "theme":"cellar", "depth":1, "shape":"single"},
 		{"name":"cistern-bend", "theme":"cistern", "depth":3, "shape":"bend", "seed":64217},
-		{"name":"halls-gallery", "theme":"halls", "depth":3, "shape":"gallery"},
+		{"name":"halls-interior", "theme":"halls", "depth":3, "shape":"wide"},
 		{"name":"kiln-workshop", "theme":"kiln", "depth":3, "shape":"wide"}
 	]:
 		if not await compose(fixture):

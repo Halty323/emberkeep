@@ -31,6 +31,7 @@ func setup(owner_game) -> void:
 	FirstPersonWeaponView.populate(weapon_shape)
 	for mesh in weapon_shape.find_children("*", "MeshInstance3D", true, false):
 		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mesh.layers = Geo.VIEW_LAYER
 	weapon.visible = false
 
 func _input(event: InputEvent) -> void:

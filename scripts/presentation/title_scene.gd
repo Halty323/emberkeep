@@ -82,7 +82,7 @@ func build(game) -> void:
 	# Three motivated sources: contained fire, cold stair opening, table lamp.
 	# A dark indirect baseline lets high-resolution normals catch grazing
 	# highlights instead of washing every surface with a flat directional key.
-	hearth_light = Geo.light(self,Vector3(2.55,1.03,-2.25),Color("ffd093"),2.65,7.6,Settings.values.shadows)
+	hearth_light = Geo.light(self,Vector3(2.55,1.03,-2.25),Color("ffe0af"),2.65,7.6,Settings.values.shadows)
 	hearth_light.omni_attenuation = 1.35
 	hearth_light.light_specular = .8
 	hearth_light.shadow_bias = .035
@@ -90,7 +90,7 @@ func build(game) -> void:
 	hearth_light.shadow_opacity = .78
 	hearth_light.shadow_blur = 1.5
 	hearth_light.light_size = .32
-	var moon = Geo.light(self,Vector3(-2.95,2.8,-2.1),Color("83abc2"),.68,6.8)
+	var moon = Geo.light(self,Vector3(-2.95,2.8,-2.1),Color("8ec8ec"),.82,6.8)
 	moon.omni_attenuation = 1.45
 	moon.light_specular = .65
 	var table_light = Geo.light(self,Vector3(2.25,1.37,.61),Color("ffe3af"),.85,3.7)
@@ -161,21 +161,19 @@ func build(game) -> void:
 			finish.albedo_texture = DungeonTextures.aging()
 			aged[key] = finish
 		mesh.material_override = aged[key]
-	game.room_environment.environment.ambient_light_energy = .105
-	game.room_environment.environment.ambient_light_color = Color("6b8295")
+	game.room_environment.environment.ambient_light_energy = .13
+	game.room_environment.environment.ambient_light_color = Color("91afce")
 	game.room_environment.environment.background_color = Color("070b11")
 	game.room_environment.environment.fog_density = .009
 	game.room_environment.environment.fog_light_color = Color("111c25")
 	game.key_light.light_energy = .045
 	game.key_light.light_color = Color("92b2cb")
+	DungeonAtmosphere.configure(game.room_environment.environment)
 
 func lantern(at: Vector3) -> void:
 	# Open brass cage and a real candle silhouette, rather than a solid yellow
 	# cube pretending to be glass. The warm source above supplies the light.
-	var metal = StandardMaterial3D.new()
-	metal.albedo_color = Color("98815b")
-	metal.metallic = .7
-	metal.roughness = .4
+	var metal = DungeonStyle.metal_material(Color("b39463"))
 	var base = Geo.cylinder(self,at+Vector3(0,.045,0),.23,.09,Color("514735"))
 	base.material_override = metal
 	for x in [-.145,.145]:

@@ -441,7 +441,7 @@ func build_props(records: Array) -> void:
 			"health": float(definition.get("breakable", {}).get("health", 0))}
 		if definition.recipe == "pillar":
 			if first_person_room:
-				# The two existing stone plinth meshes get the shared scanned
+				# The two existing stone plinth meshes get the shared carved
 				# finish before wax/flame pieces are added above them.
 				for part in built.node.get_children():
 					if not part is MeshInstance3D: continue
@@ -528,7 +528,7 @@ func make_first_person_lantern(p: Vector3, burning: bool) -> void:
 	flame.mesh = first_person_lantern_flame
 	flame.material_override = DungeonStyle.candle_flame()
 	flame.position = p + Vector3(0, 1.58, 0)
-	flame.layers = 2
+	flame.layers = Geo.FLAME_LAYER
 	flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(flame)
 	# Retain the lantern view contract for gameplay without rendering fake
@@ -745,7 +745,7 @@ func make_candle(p: Vector3, height: float) -> void:
 		flame.material_override = DungeonStyle.candle_flame()
 		flame.position = p + Vector3(0,height+.13,0)
 		flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		flame.layers = 2
+		flame.layers = Geo.FLAME_LAYER
 		add_child(flame)
 	else:
 		var flame = Geo.sphere(self, p + Vector3(0, height + .1, 0), .11, Color("ffe0a1"), 2.0)

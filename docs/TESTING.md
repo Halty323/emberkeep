@@ -2,6 +2,10 @@
 
 Current first-person work uses **Godot 4.7.2 Standard** on Linux. The headless regression runner keeps original gameplay/presentation suites in explicit legacy mode (`EMBERKEEP_LEGACY_TEST=1`) and switches the dedicated `first_person` suite back to the default gameplay mode. Historical rendering/build measurements below retain their original engine context. Phone performance is not inferred from desktop software rendering.
 
+## Stylized-lighting branch
+
+The [style experiment report](STYLIZED_EXPERIMENT.md) records the original carved maps, relief, radiance and first-person mirror. All 31 suites passed (161,766 checks), followed by final affected policy/lighting checks after the reflection-atlas fix; the dedicated style suite then passed 44 checks. Android/Linux/iOS resource packs each passed catalog/material validation and 240 quickstart frames. Five-room native captures cover desktop and simulated PowerVR policies. A native image check catches the zero-size reflection-atlas failure that mathematical camera projection tests cannot see. Preview images and exact reproduction commands are in the report.
+
 ## Expedition update (0.5.0)
 
 The [expedition report](EXPEDITION_UPDATE.md) records the compact generator, dense partitions, split-level rooms, scarce rewards, physical doors, fullscreen/SSAO and stair cinematic. All **30 suites** completed with **161,692 checks and zero failures** after the legacy gallery/economy fixtures were explicitly pinned to v2. The old 330 physical ramp checks remain; new coverage tests both full-height upper and negative-height cellar spaces. The material provenance and painting importer checks also pass.

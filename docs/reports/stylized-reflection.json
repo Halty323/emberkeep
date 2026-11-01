@@ -1,0 +1,9 @@
+{
+  "mirror_size": [
+    480,
+    270
+  ],
+  "mirror_lit_scene_edges": 21161,
+  "pixels_changed_above_8_of_255": 29523,
+  "bottom_half_mean_absolute_difference": 1.9591290950775146
+}

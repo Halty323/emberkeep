@@ -7,18 +7,29 @@ extends SubViewport
 ## out, since they lie at or under the water. The image is mirrored left to
 ## right so the copy is a true rotation; the water shader flips it back.
 const SURFACE := .022
-const SCALE := [0.0, .35, .5]
+const SCALE := [0.0, .25, .375]
 var source: Camera3D
 var mirror: Camera3D
 
 func setup(main_camera: Camera3D) -> void:
 	source = main_camera
+	world_3d = source.get_world_3d()
+	# Share only the 3D world. The root's ordinary CanvasItems must never
+	# cover the auxiliary camera (CanvasLayers already target the root).
+	canvas_cull_mask = 0
 	render_target_update_mode = SubViewport.UPDATE_DISABLED
 	# Never inherit/use mobile MSAA for an auxiliary render target.
 	msaa_3d = Viewport.MSAA_DISABLED
-	positional_shadow_atlas_size = 0
+	# Compatibility's lit pass loses opaque geometry with a zero-size atlas
+	# while sharing a world containing a shadowed spotlight. Keep one tiny
+	# valid tile: no extra lights, cube shadows or full-size duplicate atlas.
+	positional_shadow_atlas_size = 256
+	positional_shadow_atlas_quad_0 = Viewport.SHADOW_ATLAS_QUADRANT_SUBDIV_1
+	positional_shadow_atlas_quad_1 = Viewport.SHADOW_ATLAS_QUADRANT_SUBDIV_DISABLED
+	positional_shadow_atlas_quad_2 = Viewport.SHADOW_ATLAS_QUADRANT_SUBDIV_DISABLED
+	positional_shadow_atlas_quad_3 = Viewport.SHADOW_ATLAS_QUADRANT_SUBDIV_DISABLED
 	mirror = Camera3D.new()
-	mirror.cull_mask = 0xFFFFF & ~(2 | 8)
+	mirror.cull_mask = 0xFFFFF & ~(2 | 8 | Geo.VIEW_LAYER)
 	add_child(mirror)
 	mirror.current = true
 
@@ -37,6 +48,9 @@ func follow(wanted: bool, _screen: Vector2) -> void:
 	var target = Vector2i(maxi(1, int(pixels.x * factor)), maxi(1, int(pixels.y * factor)))
 	if size != target: size = target
 	mirror.projection = source.projection
+	# Perspective first-person reflections must inherit the actual FOV. The
+	# old orthographic-only path copied size and silently kept the default FOV.
+	mirror.fov = source.fov
 	mirror.size = source.size
 	mirror.near = source.near
 	mirror.far = source.far

@@ -1,0 +1,97 @@
+[
+  {
+    "camera_projection": 0,
+    "cells": 1,
+    "depth": 1,
+    "draw_calls": 520.0,
+    "eye": [
+      6.5,
+      1.52999997138977,
+      4.19999980926514
+    ],
+    "nodes": 451.0,
+    "room": "-1,0",
+    "scene": "cellar-entry",
+    "seed": 18523427,
+    "standing_capsule_clear": true,
+    "texture_mb": 78.2793798446655,
+    "theme": "cellar",
+    "video_mb": 85.2088117599487
+  },
+  {
+    "camera_projection": 0,
+    "cells": 3,
+    "depth": 3,
+    "draw_calls": 690.0,
+    "eye": [
+      4.5,
+      1.52999997138977,
+      18.2000007629395
+    ],
+    "nodes": 821.0,
+    "room": "-3,-1",
+    "scene": "cistern-bend",
+    "seed": 64217,
+    "standing_capsule_clear": true,
+    "texture_mb": 78.2909460067749,
+    "theme": "cistern",
+    "video_mb": 85.5298643112183
+  },
+  {
+    "camera_projection": 0,
+    "cells": 2,
+    "depth": 3,
+    "draw_calls": 319.0,
+    "eye": [
+      3.63397455215454,
+      1.52999997138977,
+      3.69999980926514
+    ],
+    "nodes": 465.0,
+    "room": "-1,-1",
+    "scene": "mosslit-hall",
+    "seed": 18523427,
+    "standing_capsule_clear": true,
+    "texture_mb": 78.2835006713867,
+    "theme": "halls",
+    "video_mb": 85.5791473388672
+  },
+  {
+    "camera_projection": 0,
+    "cells": 2,
+    "depth": 3,
+    "draw_calls": 369.0,
+    "eye": [
+      3.63397455215454,
+      1.52999997138977,
+      3.69999980926514
+    ],
+    "nodes": 495.0,
+    "room": "-1,-1",
+    "scene": "kiln-workshop",
+    "seed": 18523427,
+    "standing_capsule_clear": true,
+    "texture_mb": 78.2835006713867,
+    "theme": "kiln",
+    "video_mb": 85.3028106689453
+  },
+  {
+    "camera_projection": 0,
+    "cells": 1,
+    "depth": 3,
+    "draw_calls": 306.0,
+    "eye": [
+      6.5,
+      1.52999997138977,
+      4.19999980926514
+    ],
+    "nodes": 333.0,
+    "room": "0,-1",
+    "scene": "reflection-room",
+    "seed": 18523427,
+    "standing_capsule_clear": true,
+    "texture_mb": 78.2793798446655,
+    "theme": "cistern",
+    "video_mb": 85.3306379318237
+  }
+]

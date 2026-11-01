@@ -1,6 +1,8 @@
 # Emberkeep
 
-A cozy, first-person 3D dungeon roguelike built in Godot for Android, iOS, Linux and Windows. High-resolution stone and wood, warm fixture lighting, cool shadows and restrained atmosphere give the tower its look. An animated hearth room welcomes you before each climb.
+A cozy, first-person 3D dungeon roguelike built in Godot for Android, iOS, Linux and Windows. Carved, painted stone and timber, warm fixture lighting and cool shadows give the tower its look. An animated hearth room welcomes you before each climb.
+
+**Style experiment:** `experiment/stylized-lighting` replaces the photographic look with original painted materials, chipped relief, forged metal, reflected indirect light and first-person water reflections. See the [experiment notes and previews](docs/STYLIZED_EXPERIMENT.md). The experiment is isolated from `main` and preserves the expedition gameplay/save format.
 
 You wake as a captive at the bottom of a tower, remembering nothing, with only a little light of your own. Each run climbs five floors toward the hearth at the top, and no two seeds climb the same tower or carry the same weapons. The tower's story is in [docs/LORE.md](docs/LORE.md).
 

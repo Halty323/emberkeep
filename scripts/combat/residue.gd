@@ -71,11 +71,11 @@ func setup(owner_game: Node3D, room_geometry: RoomGeometry) -> void:
 		plane.size = Vector2(grid_size) * TILE
 		if kind in WATERY and RenderPolicy.current().refraction:
 			# Water and ice: reflective, refracting, and for water, rolling.
-			mat.shader = preload("res://shaders/water.gdshader")
+			mat.shader = preload("res://shaders/water_stylized.gdshader") if first_person else preload("res://shaders/water.gdshader")
 			mat.set_shader_parameter("frozen", 1.0 if kind == "ice" else 0.0)
 			mat.set_shader_parameter("detail", Look.detail())
 			if game.get("mirror") and is_instance_valid(game.mirror): mat.set_shader_parameter("reflection", game.mirror.get_texture())
-			if kind == "water" and Look.quality() > 0:
+			if kind == "water" and Look.quality() > 0 and not first_person:
 				plane.subdivide_width = int(plane.size.x * 3)
 				plane.subdivide_depth = int(plane.size.y * 3)
 		else:
@@ -183,6 +183,9 @@ func ripple(at: Vector3, strength := 1.0) -> void:
 
 ## Whether anything here would show the mirror.
 func reflective() -> bool:
+	# One reflection plane cannot correctly represent both storeys. Keep
+	# their existing lit surface response rather than mirror the wrong floor.
+	if first_person and geometry.terrain and geometry.terrain.ledge.has_area(): return false
 	return RenderPolicy.current().reflections and WATERY.any(func(kind): return views[kind].count > 0)
 
 ## Water and ice show the mirror only while it runs.

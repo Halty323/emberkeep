@@ -594,7 +594,7 @@ func _process(delta: float) -> void:
 	update_camera(delta)
 	vignette.set_shader_parameter("hurt", hurt_flash)
 	# The water's mirror runs only where there is water or ice to show it.
-	var wet = not first_person and not in_menu and residue != null and is_instance_valid(residue) and residue.reflective()
+	var wet = not in_menu and residue != null and is_instance_valid(residue) and residue.reflective()
 	mirror.follow(wet, get_viewport().get_visible_rect().size)
 	if residue and is_instance_valid(residue):
 		residue.set_mirror(mirror.render_target_update_mode == SubViewport.UPDATE_ALWAYS)
@@ -890,6 +890,7 @@ func apply_floor_light() -> void:
 	var light := FloorLight.profile(0) if in_menu else FloorLight.current()
 	if first_person and not in_menu: light = FloorLight.first_person(light)
 	FloorLight.apply(light, room_environment.environment, key_light, vignette)
+	if first_person: DungeonAtmosphere.configure(room_environment.environment, light)
 	screen_fx.set_grade({} if in_menu else Run.theme())
 
 ## Where the air shimmers: burning floor, a hot clinker, the Kilnmother.

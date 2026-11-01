@@ -46,12 +46,7 @@ static func build_parts() -> void:
 			cylinder(metal,Vector3(.23+side*.068,-.18,z),.009,.008,BRASS,Basis(Vector3.FORWARD,PI/2))
 	# A small open trigger guard replaces another solid block silhouette.
 	ring(metal,Vector3(.23,-.30,-.385),.029,.036,IRON,Basis(Vector3.FORWARD,PI/2).scaled(Vector3(1,1,1.35)))
-	var finish = StandardMaterial3D.new()
-	finish.albedo_color = Color.WHITE
-	finish.vertex_color_use_as_albedo = true
-	finish.vertex_color_is_srgb = true
-	finish.metallic = .78
-	finish.roughness = .43
+	var finish = DungeonStyle.metal_material(Color.WHITE,true,true)
 	parts = {"wood": wood.commit(), "metal": metal.commit(), "finish": finish}
 
 static func cylinder(tool: SurfaceTool, at: Vector3, radius: float, length_value: float, color: Color, basis: Basis) -> void:
