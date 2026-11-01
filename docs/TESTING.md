@@ -10,7 +10,7 @@ Focused results: `room_layouts` 24,423; `vertical_rooms` 359; `expedition_reward
 
 Native Compatibility checks rendered open/closed doors, the new crust hazard, upper/cellar annexes, SSAO Off/Low/High and seven integrated stair-climb keyframes without shader or framebuffer errors. The SSAO fixture measured contact darkening 0.0594, unchanged HUD pixels and exactly zero scene-color error at zero intensity. Its depth-only pass adds one draw and approximately 3.52 MB at 1280×720. PowerVR retains its safe disabled path. The final upper/cellar captures measured 252/370 draw calls on Mesa llvmpipe; these are workload measurements, not phone frame-rate claims.
 
-Use `EMBERKEEP_DOOR_CAPTURE` with `tests/doors_lava.gd`, `EMBERKEEP_VERTICAL_CAPTURE` with `tests/render_vertical_rooms.gd`, `EMBERKEEP_SSAO_CAPTURE` with `tests/render_ssao.gd`, and `EMBERKEEP_STAIR_CAPTURE` with `tests/render_stair_cinematic.gd` under a real display and disposable user storage for the opt-in captures. The Linux resource pack also passes catalog/material checks and 600 quickstart frames.
+Use `EMBERKEEP_DOOR_CAPTURE` with `tests/doors_lava.gd`, `EMBERKEEP_VERTICAL_CAPTURE` with `tests/render_vertical_rooms.gd`, `EMBERKEEP_SSAO_CAPTURE` with `tests/render_ssao.gd`, and `EMBERKEEP_STAIR_CAPTURE` with `tests/render_stair_cinematic.gd` under a real display and disposable user storage for the opt-in captures. The Linux resource pack also passes catalog/material checks and 600 quickstart frames. Android standard/Preview, AppImage, Windows and unsigned iOS workflows passed for `6c37f39`; the Android and AppImage jobs each repeated all 30 suites with the same 161,692 passing checks. Artifact links are in the expedition report.
 
 ## Lighting and high-resolution materials (0.4.0)
 

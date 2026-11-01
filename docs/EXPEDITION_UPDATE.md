@@ -65,7 +65,7 @@ The sequence advances on the simulation clock, pauses without drift and restores
 
 Start a **new run** to use generator v3 and the new economy. Existing generator-1/2 runs continue with their original topology and balance; permanent collections are preserved. Door rendering, fullscreen and supported SSAO also work when continuing an older run.
 
-The regression runner now includes 30 suites, with 161,692 completed checks and zero failures. Focused coverage includes 24,423 layout checks, 359 split-level checks, 181 reward checks, 23 full game/reload transaction checks, 50 door/fire checks, 18 SSAO/fullscreen checks and 33 stair-camera checks, plus the existing gameplay/navigation/stress suites. The exported Linux resource pack passes catalog/material validation and 600 quickstart frames. Native build results and downloads are recorded below after the platform workflows finish.
+The regression runner now includes 30 suites, with 161,692 completed checks and zero failures. Focused coverage includes 24,423 layout checks, 359 split-level checks, 181 reward checks, 23 full game/reload transaction checks, 50 door/fire checks, 18 SSAO/fullscreen checks and 33 stair-camera checks, plus the existing gameplay/navigation/stress suites. The exported Linux resource pack passes catalog/material validation and 600 quickstart frames. All four native export workflows passed after repeating the complete 30-suite run. Verified artifacts are linked below.
 
 
 ## Native captures
@@ -77,3 +77,20 @@ Compatibility captures under the simulated PowerVR policy:
 ![Carved cellar with its ordinary chest](images/expedition-cellar.png)
 
 ![Third-person character following the spiral stair](images/expedition-stairs.png)
+
+
+## Verified native builds
+
+All four Godot 4.7.2 workflows succeeded for source commit `6c37f390d4453ab008e933a68d15636086d635d3` on 2026-11-01. Android and AppImage CI each recorded **30 suites / 161,692 checks / zero failures** before validating their packaged games; Windows and iOS also completed their full test and export jobs successfully.
+
+| Build | Download artifact | Workflow |
+| --- | --- | --- |
+| Android Preview | [Emberkeep-Preview](https://github.com/Halty323/emberkeep/actions/runs/41346324752/artifacts/13099218971) | [Android APK](https://github.com/Halty323/emberkeep/actions/runs/41346324752) |
+| Android standard | [Emberkeep-Android](https://github.com/Halty323/emberkeep/actions/runs/41346324752/artifacts/13099821084) | Same Android job |
+| Linux x86-64 | [Emberkeep-Linux-AppImage](https://github.com/Halty323/emberkeep/actions/runs/41346324874/artifacts/13099292285) | [Linux AppImage](https://github.com/Halty323/emberkeep/actions/runs/41346324874) |
+| Windows x86-64 | [Emberkeep-Windows](https://github.com/Halty323/emberkeep/actions/runs/41346324867/artifacts/13099032885) | [Windows build](https://github.com/Halty323/emberkeep/actions/runs/41346324867) |
+| iPhone/iPad | [Emberkeep-iOS-unsigned](https://github.com/Halty323/emberkeep/actions/runs/41346324751/artifacts/13099736369) | [iOS unsigned IPA](https://github.com/Halty323/emberkeep/actions/runs/41346324751) |
+
+Unzip each artifact first. Both APKs use `0.5.0-android.100009` (code 100009), the existing standard/Preview package identifiers and the same cached development signing certificate as the previous release. CI verifies signatures, native-library alignment, catalog/material inclusion and 240 packaged quickstart frames. The downloaded Preview checksum is `5e43e650ce0be3c58d18fdee9a6aabfa735e86170ec4d638861bc19df705d355`; it matches the CI report. The downloaded AppImage also passes its supplied checksum.
+
+Artifacts follow the existing retention periods; rerun their workflow when an artifact expires. iOS requires personal signing for installation. Physical-device balance, sustained performance and touch comfort still need playtesting; the native GL figures above describe the tested workload only.
