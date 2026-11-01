@@ -31,3 +31,28 @@ The complete **23-suite** run passed **136,774 checks** with zero failures, foll
 The four scene captures measured approximately 18.32 MB texture residency and 25.2–25.5 MB total video memory under the simulated PowerVR policy. The desktop path uses 2K maps and the existing post-processing stack: approximately 63.27 MB textures and 70.3 MB video memory. All eight floor-theme captures passed without shader/framebuffer errors.
 
 See [TESTING.md](TESTING.md) for reproduction details and packaged-build results. Desktop software rendering validates the paths and resource bounds; sustained Pixel frame time and the final device appearance require a physical playthrough.
+
+
+## Captures
+
+Native Godot 4.7.2 Compatibility captures under the simulated PowerVR policy, at 1280×720:
+
+![Warm fixture light and cool stone shadows at gameplay eye level](images/lighting-gameplay.png)
+
+![The hearth title scene with scanned stone and localized firelight](images/lighting-hearth.png)
+
+## Verified downloads
+
+All four workflows passed for source commit `73cf8614cd54cf9eb67ec4c83cb1dc80988f1298` on 2026-11-01. Each native job repeated the complete 23-suite regression run before checking the actual exported game.
+
+| Build | Download artifact | Workflow |
+| --- | --- | --- |
+| Android Preview | [Emberkeep-Preview](https://github.com/Halty323/emberkeep/actions/runs/41294376495/artifacts/13078393828) | [Android APK](https://github.com/Halty323/emberkeep/actions/runs/41294376495) |
+| Android standard | [Emberkeep-Android](https://github.com/Halty323/emberkeep/actions/runs/41294376495/artifacts/13077933410) | Same Android job |
+| Linux x86-64 | [Emberkeep-Linux-AppImage](https://github.com/Halty323/emberkeep/actions/runs/41294376531/artifacts/13078199097) | [Linux AppImage](https://github.com/Halty323/emberkeep/actions/runs/41294376531) |
+| Windows x86-64 | [Emberkeep-Windows](https://github.com/Halty323/emberkeep/actions/runs/41294376536/artifacts/13078293917) | [Windows build](https://github.com/Halty323/emberkeep/actions/runs/41294376536) |
+| iPhone/iPad | [Emberkeep-iOS-unsigned](https://github.com/Halty323/emberkeep/actions/runs/41294376499/artifacts/13078592331) | [iOS unsigned IPA](https://github.com/Halty323/emberkeep/actions/runs/41294376499) |
+
+Both APKs are `0.4.0-android.100007` (code 100007), with the existing standard/Preview package identifiers and development signing certificate. Signature, native-library alignment, content/material validation and 240 packaged quickstart frames pass for both. The downloaded Preview APK matches SHA-256 `f204e924e594cc11cb64898add1fabd9dc76c1a2d7e08401ff2bb1ae7b322252`; the downloaded AppImage also passes its supplied checksum. The standalone Linux resource pack passed material/catalog validation and 600 quickstart frames locally.
+
+Artifacts follow the existing retention periods; rerun the linked workflow after they expire. The unsigned iOS build needs personal signing for installation. No physical Pixel/iPhone performance result is claimed by these export checks.

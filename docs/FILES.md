@@ -143,6 +143,9 @@ docs/PAINTING_CREDITS.md
 docs/PRESENTATION_OVERHAUL.md
 docs/PS2_UPDATE.md
 docs/TESTING.md
+docs/images/.gdignore
+docs/images/lighting-gameplay.png
+docs/images/lighting-hearth.png
 export_presets.cfg
 project.godot
 scenes/main.tscn
