@@ -4,7 +4,7 @@ Current first-person work uses **Godot 4.7.2 Standard** on Linux. The headless r
 
 ## Stylized-lighting branch
 
-The [style experiment report](STYLIZED_EXPERIMENT.md) records the original carved maps, relief, radiance and first-person mirror. All 31 suites passed (161,766 checks), followed by final affected material/policy/lighting checks after the reflection-atlas and live-quality fixes; the dedicated style suite then passed 48 checks. Android/Linux/iOS resource packs each passed catalog/material validation and 240 quickstart frames. Five-room native captures cover desktop and simulated PowerVR policies. A native image check catches the zero-size reflection-atlas failure that mathematical camera projection tests cannot see. Preview images and exact reproduction commands are in the report.
+The [style experiment report](STYLIZED_EXPERIMENT.md) records the original carved maps, relief, radiance and first-person mirror. Final CI passed all **31 suites / 161,771 checks**, including **48 style checks** and **178 material checks**, after the reflection-atlas and live-quality fixes. Android/Linux/iOS resource packs each passed catalog/material validation and 240 quickstart frames; the Linux pack also ran 180 native OpenGL frames. Five-room native captures cover desktop and simulated PowerVR policies. A native image check catches the zero-size reflection-atlas failure that mathematical camera projection tests cannot see. Android Preview, Windows and AppImage builds all succeeded for `ddea955` and their downloaded artifacts passed hash checks. Previews, downloads and reproduction commands are in the report.
 
 ## Expedition update (0.5.0)
 

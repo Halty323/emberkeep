@@ -42,9 +42,25 @@ The screenshots below are native eye-level Godot captures of generated rooms, wi
 
 ![Room geometry reflected in dark glazed water](images/stylized-water.png)
 
-The complete **31-suite** regression run passed **161,766 checks**, including the original gameplay/save/navigation coverage and new material/reflection tests. After the final atlas and live-quality corrections, the affected material, render-policy and lighting suites passed again, with the dedicated stylized suite at **48 checks**. Android, Linux and iOS resource packs loaded the complete catalog and all required material assets, then each ran 240 quickstart frames.
+The final export CI passed the complete **31-suite** regression run with **161,771 checks and zero failures**, including original gameplay/save/navigation coverage and **48 stylized-lighting checks**. The material suite passed 178 checks. Android, Linux and iOS resource packs loaded the complete catalog and all required material assets, then each ran 240 quickstart frames. The exported Linux pack also completed 180 frames with the real OpenGL renderer without script, shader or framebuffer errors.
 
 Native Compatibility review covered five generated rooms under desktop and simulated PowerVR policies, plus the title and the water on/off comparison. At the captured viewpoints, the safe policy used approximately **23.65–23.66 MB** of texture memory and **30.6–31.0 MB** total video memory; desktop used approximately **78.3 MB** textures and **85–86 MB** video memory. These are renderer measurements, not source JPEG sizes or estimates of Android FPS.
+
+The five-scene tables measure each composed room before the extra broad comparison pool is added; the active planar mirror adds its own rendering cost. [Desktop measurements](reports/stylized-desktop.json), [safe-policy measurements](reports/stylized-mobile-safe.json) and [reflection comparison](reports/stylized-reflection.json) are recorded separately.
+
+## Verified test builds
+
+All three workflows succeeded for source **`ddea955674d1ac389b8b44592083a0abbe0a5635`** on 1 November 2026. The downloaded ZIPs passed GitHub artifact-digest and CRC checks; the extracted files match their recorded SHA-256 hashes.
+
+| Platform | Download |
+| --- | --- |
+| Android Preview APK | [Emberkeep-Preview](https://github.com/Halty323/emberkeep/actions/runs/41359115137/artifacts/13104672585) |
+| Windows x86-64 | [Emberkeep-Windows](https://github.com/Halty323/emberkeep/actions/runs/41359118538/artifacts/13103659612) |
+| Linux x86-64 AppImage | [Emberkeep-Linux-AppImage](https://github.com/Halty323/emberkeep/actions/runs/41359121651/artifacts/13104652810) |
+
+The Preview APK is **0.5.0-android.100011**, package **`org.emberkeep.preview`**, so it can be installed alongside the regular game. It uses the existing cached development certificate `4cf9cd28712f39670ea845ace110dba80c756a07db3bdfc264f3d560605bf3a9`. The downloaded APK's SHA-256 is `9ae357a7434afef77ee051b50a6a1379b0262cc050097c98e5f3ca94b245bf19`; its packaged catalog has no errors and its 240-frame quickstart passed.
+
+Downloads are ZIP artifacts retained until 8 November 2026. After that, dispatch the existing workflow with this branch selected to rebuild them. The game source and screenshots remain on the branch.
 
 ## Reproduce
 
