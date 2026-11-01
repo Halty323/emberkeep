@@ -1,560 +1,564 @@
-# Project files
+# Completed project files
 
-- `.github/workflows/android.yml`
-- `.github/workflows/appimage.yml`
-- `.github/workflows/ios-unsigned.yml`
-- `.github/workflows/windows.yml`
-- `.gitignore`
-- `README.md`
-- `THIRD_PARTY.md`
-- `assets/data.json`
-- `assets/fonts/body.ttf`
-- `assets/fonts/body.ttf.import`
-- `assets/fonts/bold.ttf`
-- `assets/fonts/bold.ttf.import`
-- `assets/fonts/display.ttf`
-- `assets/fonts/display.ttf.import`
-- `assets/fonts/licenses/Apache-2.0.txt`
-- `assets/fonts/licenses/Bitstream-Vera.txt`
-- `assets/fonts/licenses/Open-Sans-Notice.txt`
-- `assets/icon.svg`
-- `assets/icon.svg.import`
-- `assets/materials/README.md`
-- `assets/materials/aging.png`
-- `assets/materials/aging.png.import`
-- `assets/materials/floor_0_normal.png`
-- `assets/materials/floor_0_normal.png.import`
-- `assets/materials/floor_0_paint.png`
-- `assets/materials/floor_0_paint.png.import`
-- `assets/materials/floor_1_normal.png`
-- `assets/materials/floor_1_normal.png.import`
-- `assets/materials/floor_1_paint.png`
-- `assets/materials/floor_1_paint.png.import`
-- `assets/materials/floor_2_normal.png`
-- `assets/materials/floor_2_normal.png.import`
-- `assets/materials/floor_2_paint.png`
-- `assets/materials/floor_2_paint.png.import`
-- `assets/materials/pbr/.gdignore`
-- `assets/materials/pbr/README.md`
-- `assets/materials/pbr/flagstone/color.jpg`
-- `assets/materials/pbr/flagstone/color.jpg.import`
-- `assets/materials/pbr/flagstone/color_mobile.jpg`
-- `assets/materials/pbr/flagstone/color_mobile.jpg.import`
-- `assets/materials/pbr/flagstone/normal.jpg`
-- `assets/materials/pbr/flagstone/normal.jpg.import`
-- `assets/materials/pbr/flagstone/normal_mobile.jpg`
-- `assets/materials/pbr/flagstone/normal_mobile.jpg.import`
-- `assets/materials/pbr/flagstone/orm.png`
-- `assets/materials/pbr/flagstone/orm.png.import`
-- `assets/materials/pbr/manifest.json`
-- `assets/materials/pbr/masonry/color.jpg`
-- `assets/materials/pbr/masonry/color.jpg.import`
-- `assets/materials/pbr/masonry/color_mobile.jpg`
-- `assets/materials/pbr/masonry/color_mobile.jpg.import`
-- `assets/materials/pbr/masonry/normal.jpg`
-- `assets/materials/pbr/masonry/normal.jpg.import`
-- `assets/materials/pbr/masonry/normal_mobile.jpg`
-- `assets/materials/pbr/masonry/normal_mobile.jpg.import`
-- `assets/materials/pbr/masonry/orm.png`
-- `assets/materials/pbr/masonry/orm.png.import`
-- `assets/materials/pbr/rock/color.jpg`
-- `assets/materials/pbr/rock/color.jpg.import`
-- `assets/materials/pbr/rock/color_mobile.jpg`
-- `assets/materials/pbr/rock/color_mobile.jpg.import`
-- `assets/materials/pbr/rock/normal.jpg`
-- `assets/materials/pbr/rock/normal.jpg.import`
-- `assets/materials/pbr/rock/normal_mobile.jpg`
-- `assets/materials/pbr/rock/normal_mobile.jpg.import`
-- `assets/materials/pbr/rock/orm.png`
-- `assets/materials/pbr/rock/orm.png.import`
-- `assets/materials/pbr/wood/color.jpg`
-- `assets/materials/pbr/wood/color.jpg.import`
-- `assets/materials/pbr/wood/color_mobile.jpg`
-- `assets/materials/pbr/wood/color_mobile.jpg.import`
-- `assets/materials/pbr/wood/normal.jpg`
-- `assets/materials/pbr/wood/normal.jpg.import`
-- `assets/materials/pbr/wood/normal_mobile.jpg`
-- `assets/materials/pbr/wood/normal_mobile.jpg.import`
-- `assets/materials/pbr/wood/orm.png`
-- `assets/materials/pbr/wood/orm.png.import`
-- `assets/materials/stylized/README.md`
-- `assets/materials/stylized/flagstone/color.jpg`
-- `assets/materials/stylized/flagstone/color.jpg.import`
-- `assets/materials/stylized/flagstone/color_mobile.jpg`
-- `assets/materials/stylized/flagstone/color_mobile.jpg.import`
-- `assets/materials/stylized/flagstone/normal.jpg`
-- `assets/materials/stylized/flagstone/normal.jpg.import`
-- `assets/materials/stylized/flagstone/normal_mobile.jpg`
-- `assets/materials/stylized/flagstone/normal_mobile.jpg.import`
-- `assets/materials/stylized/flagstone/ormh.png`
-- `assets/materials/stylized/flagstone/ormh.png.import`
-- `assets/materials/stylized/manifest.json`
-- `assets/materials/stylized/masonry/color.jpg`
-- `assets/materials/stylized/masonry/color.jpg.import`
-- `assets/materials/stylized/masonry/color_mobile.jpg`
-- `assets/materials/stylized/masonry/color_mobile.jpg.import`
-- `assets/materials/stylized/masonry/normal.jpg`
-- `assets/materials/stylized/masonry/normal.jpg.import`
-- `assets/materials/stylized/masonry/normal_mobile.jpg`
-- `assets/materials/stylized/masonry/normal_mobile.jpg.import`
-- `assets/materials/stylized/masonry/ormh.png`
-- `assets/materials/stylized/masonry/ormh.png.import`
-- `assets/materials/stylized/metal/color.jpg`
-- `assets/materials/stylized/metal/color.jpg.import`
-- `assets/materials/stylized/metal/color_mobile.jpg`
-- `assets/materials/stylized/metal/color_mobile.jpg.import`
-- `assets/materials/stylized/metal/normal.jpg`
-- `assets/materials/stylized/metal/normal.jpg.import`
-- `assets/materials/stylized/metal/normal_mobile.jpg`
-- `assets/materials/stylized/metal/normal_mobile.jpg.import`
-- `assets/materials/stylized/metal/ormh.png`
-- `assets/materials/stylized/metal/ormh.png.import`
-- `assets/materials/stylized/rock/color.jpg`
-- `assets/materials/stylized/rock/color.jpg.import`
-- `assets/materials/stylized/rock/color_mobile.jpg`
-- `assets/materials/stylized/rock/color_mobile.jpg.import`
-- `assets/materials/stylized/rock/normal.jpg`
-- `assets/materials/stylized/rock/normal.jpg.import`
-- `assets/materials/stylized/rock/normal_mobile.jpg`
-- `assets/materials/stylized/rock/normal_mobile.jpg.import`
-- `assets/materials/stylized/rock/ormh.png`
-- `assets/materials/stylized/rock/ormh.png.import`
-- `assets/materials/stylized/wood/color.jpg`
-- `assets/materials/stylized/wood/color.jpg.import`
-- `assets/materials/stylized/wood/color_mobile.jpg`
-- `assets/materials/stylized/wood/color_mobile.jpg.import`
-- `assets/materials/stylized/wood/normal.jpg`
-- `assets/materials/stylized/wood/normal.jpg.import`
-- `assets/materials/stylized/wood/normal_mobile.jpg`
-- `assets/materials/stylized/wood/normal_mobile.jpg.import`
-- `assets/materials/stylized/wood/ormh.png`
-- `assets/materials/stylized/wood/ormh.png.import`
-- `assets/materials/wall_archive_normal.png`
-- `assets/materials/wall_archive_normal.png.import`
-- `assets/materials/wall_archive_paint.png`
-- `assets/materials/wall_archive_paint.png.import`
-- `assets/materials/wall_belfry_normal.png`
-- `assets/materials/wall_belfry_normal.png.import`
-- `assets/materials/wall_belfry_paint.png`
-- `assets/materials/wall_belfry_paint.png.import`
-- `assets/materials/wall_cellar_normal.png`
-- `assets/materials/wall_cellar_normal.png.import`
-- `assets/materials/wall_cellar_paint.png`
-- `assets/materials/wall_cellar_paint.png.import`
-- `assets/materials/wall_cistern_normal.png`
-- `assets/materials/wall_cistern_normal.png.import`
-- `assets/materials/wall_cistern_paint.png`
-- `assets/materials/wall_cistern_paint.png.import`
-- `assets/materials/wall_crypt_normal.png`
-- `assets/materials/wall_crypt_normal.png.import`
-- `assets/materials/wall_crypt_paint.png`
-- `assets/materials/wall_crypt_paint.png.import`
-- `assets/materials/wall_dressed_normal.png`
-- `assets/materials/wall_dressed_normal.png.import`
-- `assets/materials/wall_dressed_paint.png`
-- `assets/materials/wall_dressed_paint.png.import`
-- `assets/materials/wall_halls_normal.png`
-- `assets/materials/wall_halls_normal.png.import`
-- `assets/materials/wall_halls_paint.png`
-- `assets/materials/wall_halls_paint.png.import`
-- `assets/materials/wall_hearth_normal.png`
-- `assets/materials/wall_hearth_normal.png.import`
-- `assets/materials/wall_hearth_paint.png`
-- `assets/materials/wall_hearth_paint.png.import`
-- `assets/materials/wall_kiln_normal.png`
-- `assets/materials/wall_kiln_normal.png.import`
-- `assets/materials/wall_kiln_paint.png`
-- `assets/materials/wall_kiln_paint.png.import`
-- `assets/materials/wall_masonry_normal.png`
-- `assets/materials/wall_masonry_normal.png.import`
-- `assets/materials/wall_masonry_paint.png`
-- `assets/materials/wall_masonry_paint.png.import`
-- `content/actives.json`
-- `content/collections.json`
-- `content/drop_tables.json`
-- `content/effects.json`
-- `content/floors.json`
-- `content/furniture.json`
-- `content/paintings.json`
-- `content/pickups.json`
-- `content/rooms.json`
-- `docs/ANDROID.md`
-- `docs/ANDROID_RENDERING_FIX.md`
-- `docs/EXPANSION_PLAN.md`
-- `docs/EXPEDITION_UPDATE.md`
-- `docs/FILES.md`
-- `docs/FIRST_PERSON_UPDATE_PLAN.md`
-- `docs/IOS.md`
-- `docs/LIGHTING_UPDATE.md`
-- `docs/LINUX.md`
-- `docs/LORE.md`
-- `docs/ONLINE.md`
-- `docs/PAINTING_COLLECTION_PLAN.md`
-- `docs/PAINTING_CREDITS.md`
-- `docs/PRESENTATION_OVERHAUL.md`
-- `docs/PS2_UPDATE.md`
-- `docs/STYLIZED_EXPERIMENT.md`
-- `docs/TESTING.md`
-- `docs/images/.gdignore`
-- `docs/images/expedition-cellar.png`
-- `docs/images/expedition-door.png`
-- `docs/images/expedition-stairs.png`
-- `docs/images/lighting-gameplay.png`
-- `docs/images/lighting-hearth.png`
-- `docs/images/stylized-cellar.png`
-- `docs/images/stylized-hall.png`
-- `docs/images/stylized-hearth.png`
-- `docs/images/stylized-water.png`
-- `docs/reports/stylized-desktop.json`
-- `docs/reports/stylized-mobile-safe.json`
-- `docs/reports/stylized-reflection.json`
-- `export_presets.cfg`
-- `project.godot`
-- `scenes/main.tscn`
-- `scripts/audio.gd`
-- `scripts/audio.gd.uid`
-- `scripts/avatar.gd`
-- `scripts/avatar.gd.uid`
-- `scripts/combat/floor_hazards.gd`
-- `scripts/combat/floor_hazards.gd.uid`
-- `scripts/combat/residue.gd`
-- `scripts/combat/residue.gd.uid`
-- `scripts/content.gd`
-- `scripts/content.gd.uid`
-- `scripts/dungeon/detail_batch.gd`
-- `scripts/dungeon/detail_batch.gd.uid`
-- `scripts/dungeon/floor_generator.gd`
-- `scripts/dungeon/floor_generator.gd.uid`
-- `scripts/dungeon/floor_light.gd`
-- `scripts/dungeon/floor_light.gd.uid`
-- `scripts/dungeon/furnisher.gd`
-- `scripts/dungeon/furnisher.gd.uid`
-- `scripts/dungeon/prop_visuals.gd`
-- `scripts/dungeon/prop_visuals.gd.uid`
-- `scripts/dungeon/room_geometry.gd`
-- `scripts/dungeon/room_geometry.gd.uid`
-- `scripts/dungeon/room_navigation.gd`
-- `scripts/dungeon/room_navigation.gd.uid`
-- `scripts/dungeon/room_partitions.gd`
-- `scripts/dungeon/room_partitions.gd.uid`
-- `scripts/dungeon/staircase.gd`
-- `scripts/dungeon/staircase.gd.uid`
-- `scripts/dungeon/themed_interiors.gd`
-- `scripts/dungeon/themed_interiors.gd.uid`
-- `scripts/effects/effects_pool.gd`
-- `scripts/effects/effects_pool.gd.uid`
-- `scripts/enemy.gd`
-- `scripts/enemy.gd.uid`
-- `scripts/first_person/architecture.gd`
-- `scripts/first_person/architecture.gd.uid`
-- `scripts/first_person/controller.gd`
-- `scripts/first_person/controller.gd.uid`
-- `scripts/first_person/room_terrain.gd`
-- `scripts/first_person/room_terrain.gd.uid`
-- `scripts/first_person/weapon_view.gd`
-- `scripts/first_person/weapon_view.gd.uid`
-- `scripts/foes/archivist.gd`
-- `scripts/foes/archivist.gd.uid`
-- `scripts/foes/bailer.gd`
-- `scripts/foes/bailer.gd.uid`
-- `scripts/foes/bellows.gd`
-- `scripts/foes/bellows.gd.uid`
-- `scripts/foes/bulb.gd`
-- `scripts/foes/bulb.gd.uid`
-- `scripts/foes/chandler.gd`
-- `scripts/foes/chandler.gd.uid`
-- `scripts/foes/chime.gd`
-- `scripts/foes/chime.gd.uid`
-- `scripts/foes/cinderling.gd`
-- `scripts/foes/cinderling.gd.uid`
-- `scripts/foes/clinker.gd`
-- `scripts/foes/clinker.gd.uid`
-- `scripts/foes/cog.gd`
-- `scripts/foes/cog.gd.uid`
-- `scripts/foes/drip.gd`
-- `scripts/foes/drip.gd.uid`
-- `scripts/foes/effigy.gd`
-- `scripts/foes/effigy.gd.uid`
-- `scripts/foes/fixture.gd`
-- `scripts/foes/fixture.gd.uid`
-- `scripts/foes/foes.gd`
-- `scripts/foes/foes.gd.uid`
-- `scripts/foes/hourkeeper.gd`
-- `scripts/foes/hourkeeper.gd.uid`
-- `scripts/foes/kilnmother.gd`
-- `scripts/foes/kilnmother.gd.uid`
-- `scripts/foes/lampwright.gd`
-- `scripts/foes/lampwright.gd.uid`
-- `scripts/foes/last_light.gd`
-- `scripts/foes/last_light.gd.uid`
-- `scripts/foes/lichen.gd`
-- `scripts/foes/lichen.gd.uid`
-- `scripts/foes/lurker.gd`
-- `scripts/foes/lurker.gd.uid`
-- `scripts/foes/mosskeeper.gd`
-- `scripts/foes/mosskeeper.gd.uid`
-- `scripts/foes/mourner.gd`
-- `scripts/foes/mourner.gd.uid`
-- `scripts/foes/pages.gd`
-- `scripts/foes/pages.gd.uid`
-- `scripts/foes/prism.gd`
-- `scripts/foes/prism.gd.uid`
-- `scripts/foes/rootling.gd`
-- `scripts/foes/rootling.gd.uid`
-- `scripts/foes/scrivener.gd`
-- `scripts/foes/scrivener.gd.uid`
-- `scripts/foes/shackled.gd`
-- `scripts/foes/shackled.gd.uid`
-- `scripts/foes/sluice.gd`
-- `scripts/foes/sluice.gd.uid`
-- `scripts/foes/snuffer.gd`
-- `scripts/foes/snuffer.gd.uid`
-- `scripts/foes/sporecap.gd`
-- `scripts/foes/sporecap.gd.uid`
-- `scripts/foes/tallow.gd`
-- `scripts/foes/tallow.gd.uid`
-- `scripts/foes/warden.gd`
-- `scripts/foes/warden.gd.uid`
-- `scripts/fx.gd`
-- `scripts/fx.gd.uid`
-- `scripts/geo.gd`
-- `scripts/geo.gd.uid`
-- `scripts/graphics/ambient_occlusion.gd`
-- `scripts/graphics/ambient_occlusion.gd.uid`
-- `scripts/graphics/dungeon_atmosphere.gd`
-- `scripts/graphics/dungeon_atmosphere.gd.uid`
-- `scripts/graphics/dungeon_style.gd`
-- `scripts/graphics/dungeon_style.gd.uid`
-- `scripts/graphics/dungeon_textures.gd`
-- `scripts/graphics/dungeon_textures.gd.uid`
-- `scripts/graphics/look.gd`
-- `scripts/graphics/look.gd.uid`
-- `scripts/graphics/pbr_materials.gd`
-- `scripts/graphics/pbr_materials.gd.uid`
-- `scripts/graphics/render_policy.gd`
-- `scripts/graphics/render_policy.gd.uid`
-- `scripts/graphics/screen_fx.gd`
-- `scripts/graphics/screen_fx.gd.uid`
-- `scripts/graphics/water_mirror.gd`
-- `scripts/graphics/water_mirror.gd.uid`
-- `scripts/interactions/game_actions.gd`
-- `scripts/interactions/game_actions.gd.uid`
-- `scripts/interactions/interaction_registry.gd`
-- `scripts/interactions/interaction_registry.gd.uid`
-- `scripts/items/active_items.gd`
-- `scripts/items/active_items.gd.uid`
-- `scripts/items/bomb_view.gd`
-- `scripts/items/bomb_view.gd.uid`
-- `scripts/items/drops.gd`
-- `scripts/items/drops.gd.uid`
-- `scripts/items/expedition_balance.gd`
-- `scripts/items/expedition_balance.gd.uid`
-- `scripts/items/forge.gd`
-- `scripts/items/forge.gd.uid`
-- `scripts/items/item_views.gd`
-- `scripts/items/item_views.gd.uid`
-- `scripts/items/moth_companion.gd`
-- `scripts/items/moth_companion.gd.uid`
-- `scripts/items/pickup_rules.gd`
-- `scripts/items/pickup_rules.gd.uid`
-- `scripts/main.gd`
-- `scripts/main.gd.uid`
-- `scripts/pickup.gd`
-- `scripts/pickup.gd.uid`
-- `scripts/presentation/dungeon_doorway.gd`
-- `scripts/presentation/dungeon_doorway.gd.uid`
-- `scripts/presentation/stair_cinematic.gd`
-- `scripts/presentation/stair_cinematic.gd.uid`
-- `scripts/presentation/title_scene.gd`
-- `scripts/presentation/title_scene.gd.uid`
-- `scripts/progression/collection_service.gd`
-- `scripts/progression/collection_service.gd.uid`
-- `scripts/progression/painting_library.gd`
-- `scripts/progression/painting_library.gd.uid`
-- `scripts/progression/painting_view.gd`
-- `scripts/progression/painting_view.gd.uid`
-- `scripts/run.gd`
-- `scripts/run.gd.uid`
-- `scripts/session.gd`
-- `scripts/session.gd.uid`
-- `scripts/settings_service.gd`
-- `scripts/settings_service.gd.uid`
-- `scripts/shot.gd`
-- `scripts/shot.gd.uid`
-- `scripts/ui.gd`
-- `scripts/ui.gd.uid`
-- `scripts/ui_setting_row.gd`
-- `scripts/ui_setting_row.gd.uid`
-- `scripts/ui_surface.gd`
-- `scripts/ui_surface.gd.uid`
-- `scripts/world.gd`
-- `scripts/world.gd.uid`
-- `shaders/ambient_occlusion.gdshader`
-- `shaders/ambient_occlusion.gdshader.uid`
-- `shaders/carved_relief.gdshaderinc`
-- `shaders/carved_relief.gdshaderinc.uid`
-- `shaders/cone.gdshader`
-- `shaders/cone.gdshader.uid`
-- `shaders/dungeon_floor.gdshader`
-- `shaders/dungeon_floor.gdshader.uid`
-- `shaders/dungeon_metal.gdshader`
-- `shaders/dungeon_metal.gdshader.uid`
-- `shaders/dungeon_radiance.gdshader`
-- `shaders/dungeon_radiance.gdshader.uid`
-- `shaders/dungeon_wall.gdshader`
-- `shaders/dungeon_wall.gdshader.uid`
-- `shaders/dungeon_wood.gdshader`
-- `shaders/dungeon_wood.gdshader.uid`
-- `shaders/floor_mark.gdshader`
-- `shaders/floor_mark.gdshader.uid`
-- `shaders/floor_stone.gdshader`
-- `shaders/floor_stone.gdshader.uid`
-- `shaders/floor_stone_mobile.gdshader`
-- `shaders/floor_stone_mobile.gdshader.uid`
-- `shaders/foe_rim.gdshader`
-- `shaders/foe_rim.gdshader.uid`
-- `shaders/halo.gdshader`
-- `shaders/halo.gdshader.uid`
-- `shaders/hearth_flame.gdshader`
-- `shaders/hearth_flame.gdshader.uid`
-- `shaders/lantern_glass.gdshader`
-- `shaders/lantern_glass.gdshader.uid`
-- `shaders/light_shaft.gdshader`
-- `shaders/light_shaft.gdshader.uid`
-- `shaders/mist.gdshader`
-- `shaders/mist.gdshader.uid`
-- `shaders/mist_eye.gdshader`
-- `shaders/mist_eye.gdshader.uid`
-- `shaders/post.gdshader`
-- `shaders/post.gdshader.uid`
-- `shaders/residue.gdshader`
-- `shaders/residue.gdshader.uid`
-- `shaders/shot_core.gdshader`
-- `shaders/shot_core.gdshader.uid`
-- `shaders/shot_glow.gdshader`
-- `shaders/shot_glow.gdshader.uid`
-- `shaders/shot_splat.gdshader`
-- `shaders/shot_splat.gdshader.uid`
-- `shaders/shot_streak.gdshader`
-- `shaders/shot_streak.gdshader.uid`
-- `shaders/ui_stone.gdshader`
-- `shaders/ui_stone.gdshader.uid`
-- `shaders/vignette.gdshader`
-- `shaders/vignette.gdshader.uid`
-- `shaders/water.gdshader`
-- `shaders/water.gdshader.uid`
-- `shaders/water_stylized.gdshader`
-- `shaders/water_stylized.gdshader.uid`
-- `tests/catalog.gd`
-- `tests/catalog.gd.uid`
-- `tests/cloud_surfaces.gd`
-- `tests/cloud_surfaces.gd.uid`
-- `tests/collection.gd`
-- `tests/collection.gd.uid`
-- `tests/combat.gd`
-- `tests/combat.gd.uid`
-- `tests/doors_lava.gd`
-- `tests/doors_lava.gd.uid`
-- `tests/dungeon.gd`
-- `tests/dungeon.gd.uid`
-- `tests/dungeon_style.gd`
-- `tests/dungeon_style.gd.uid`
-- `tests/effects.gd`
-- `tests/effects.gd.uid`
-- `tests/expedition_integration.gd`
-- `tests/expedition_integration.gd.uid`
-- `tests/expedition_rewards.gd`
-- `tests/expedition_rewards.gd.uid`
-- `tests/first_person.gd`
-- `tests/first_person.gd.uid`
-- `tests/first_person_navigation.gd`
-- `tests/first_person_navigation.gd.uid`
-- `tests/first_person_stress.gd`
-- `tests/first_person_stress.gd.uid`
-- `tests/furniture.gd`
-- `tests/furniture.gd.uid`
-- `tests/items.gd`
-- `tests/items.gd.uid`
-- `tests/lighting.gd`
-- `tests/lighting.gd.uid`
-- `tests/lighting_centered.gd`
-- `tests/lighting_centered.gd.uid`
-- `tests/presentation.gd`
-- `tests/presentation.gd.uid`
-- `tests/render_first_person.gd`
-- `tests/render_first_person.gd.uid`
-- `tests/render_light_materials.gd`
-- `tests/render_light_materials.gd.uid`
-- `tests/render_lighting.gd`
-- `tests/render_lighting.gd.uid`
-- `tests/render_mobile_startup.gd`
-- `tests/render_mobile_startup.gd.uid`
-- `tests/render_policy.gd`
-- `tests/render_policy.gd.uid`
-- `tests/render_ps2_update.gd`
-- `tests/render_ps2_update.gd.uid`
-- `tests/render_ssao.gd`
-- `tests/render_ssao.gd.uid`
-- `tests/render_stair_cinematic.gd`
-- `tests/render_stair_cinematic.gd.uid`
-- `tests/render_stress.gd`
-- `tests/render_stress.gd.uid`
-- `tests/render_stylized.gd`
-- `tests/render_stylized.gd.uid`
-- `tests/render_themed_interiors.gd`
-- `tests/render_themed_interiors.gd.uid`
-- `tests/render_title.gd`
-- `tests/render_title.gd.uid`
-- `tests/render_ui.gd`
-- `tests/render_ui.gd.uid`
-- `tests/render_vertical_rooms.gd`
-- `tests/render_vertical_rooms.gd.uid`
-- `tests/render_visibility.gd`
-- `tests/render_visibility.gd.uid`
-- `tests/room_layouts.gd`
-- `tests/room_layouts.gd.uid`
-- `tests/secret_codes.gd`
-- `tests/secret_codes.gd.uid`
-- `tests/settings.gd`
-- `tests/settings.gd.uid`
-- `tests/smoke.gd`
-- `tests/smoke.gd.uid`
-- `tests/ssao_fullscreen.gd`
-- `tests/ssao_fullscreen.gd.uid`
-- `tests/stair_cinematic.gd`
-- `tests/stair_cinematic.gd.uid`
-- `tests/stylized_lighting.gd`
-- `tests/stylized_lighting.gd.uid`
-- `tests/themed_interiors.gd`
-- `tests/themed_interiors.gd.uid`
-- `tests/title_presentation.gd`
-- `tests/title_presentation.gd.uid`
-- `tests/tower.gd`
-- `tests/tower.gd.uid`
-- `tests/ui_presentation.gd`
-- `tests/ui_presentation.gd.uid`
-- `tests/vertical_rooms.gd`
-- `tests/vertical_rooms.gd.uid`
-- `tools/bake_dungeon_materials.gd`
-- `tools/bake_dungeon_materials.gd.uid`
-- `tools/bake_stylized_materials.py`
-- `tools/build_appimage.sh`
-- `tools/build_ios_unsigned.sh`
-- `tools/build_windows.sh`
-- `tools/configure_android.gd`
-- `tools/configure_android.gd.uid`
-- `tools/export_android.sh`
-- `tools/import_dungeon_materials.py`
-- `tools/import_paintings.py`
-- `tools/make_content.py`
-- `tools/render_lighting.sh`
-- `tools/render_mobile_startup.sh`
-- `tools/render_ps2_update.sh`
-- `tools/render_stress.sh`
-- `tools/render_ui.sh`
-- `tools/render_visibility.sh`
-- `tools/test.sh`
-- `tools/test_import_paintings.py`
-- `tools/verify_android_apk.py`
-- `tools/verify_ios_ipa.py`
-- `tools/verify_pack.sh`
+Godot import caches, Python bytecode and Git internals are generated locally and excluded from the source archive. Original stylized materials and their manifest are under `assets/materials/stylized/`; the retained photographic set and its provenance are under `assets/materials/pbr/`. Painting reproductions appear under `assets/paintings/` once `tools/import_paintings.py` has been run.
+
+```text
+.github/workflows/android.yml
+.github/workflows/appimage.yml
+.github/workflows/ios-unsigned.yml
+.github/workflows/windows.yml
+.gitignore
+README.md
+THIRD_PARTY.md
+assets/data.json
+assets/fonts/body.ttf
+assets/fonts/body.ttf.import
+assets/fonts/bold.ttf
+assets/fonts/bold.ttf.import
+assets/fonts/display.ttf
+assets/fonts/display.ttf.import
+assets/fonts/licenses/Apache-2.0.txt
+assets/fonts/licenses/Bitstream-Vera.txt
+assets/fonts/licenses/Open-Sans-Notice.txt
+assets/icon.svg
+assets/icon.svg.import
+assets/materials/README.md
+assets/materials/aging.png
+assets/materials/aging.png.import
+assets/materials/floor_0_normal.png
+assets/materials/floor_0_normal.png.import
+assets/materials/floor_0_paint.png
+assets/materials/floor_0_paint.png.import
+assets/materials/floor_1_normal.png
+assets/materials/floor_1_normal.png.import
+assets/materials/floor_1_paint.png
+assets/materials/floor_1_paint.png.import
+assets/materials/floor_2_normal.png
+assets/materials/floor_2_normal.png.import
+assets/materials/floor_2_paint.png
+assets/materials/floor_2_paint.png.import
+assets/materials/pbr/.gdignore
+assets/materials/pbr/README.md
+assets/materials/pbr/flagstone/color.jpg
+assets/materials/pbr/flagstone/color.jpg.import
+assets/materials/pbr/flagstone/color_mobile.jpg
+assets/materials/pbr/flagstone/color_mobile.jpg.import
+assets/materials/pbr/flagstone/normal.jpg
+assets/materials/pbr/flagstone/normal.jpg.import
+assets/materials/pbr/flagstone/normal_mobile.jpg
+assets/materials/pbr/flagstone/normal_mobile.jpg.import
+assets/materials/pbr/flagstone/orm.png
+assets/materials/pbr/flagstone/orm.png.import
+assets/materials/pbr/manifest.json
+assets/materials/pbr/masonry/color.jpg
+assets/materials/pbr/masonry/color.jpg.import
+assets/materials/pbr/masonry/color_mobile.jpg
+assets/materials/pbr/masonry/color_mobile.jpg.import
+assets/materials/pbr/masonry/normal.jpg
+assets/materials/pbr/masonry/normal.jpg.import
+assets/materials/pbr/masonry/normal_mobile.jpg
+assets/materials/pbr/masonry/normal_mobile.jpg.import
+assets/materials/pbr/masonry/orm.png
+assets/materials/pbr/masonry/orm.png.import
+assets/materials/pbr/rock/color.jpg
+assets/materials/pbr/rock/color.jpg.import
+assets/materials/pbr/rock/color_mobile.jpg
+assets/materials/pbr/rock/color_mobile.jpg.import
+assets/materials/pbr/rock/normal.jpg
+assets/materials/pbr/rock/normal.jpg.import
+assets/materials/pbr/rock/normal_mobile.jpg
+assets/materials/pbr/rock/normal_mobile.jpg.import
+assets/materials/pbr/rock/orm.png
+assets/materials/pbr/rock/orm.png.import
+assets/materials/pbr/wood/color.jpg
+assets/materials/pbr/wood/color.jpg.import
+assets/materials/pbr/wood/color_mobile.jpg
+assets/materials/pbr/wood/color_mobile.jpg.import
+assets/materials/pbr/wood/normal.jpg
+assets/materials/pbr/wood/normal.jpg.import
+assets/materials/pbr/wood/normal_mobile.jpg
+assets/materials/pbr/wood/normal_mobile.jpg.import
+assets/materials/pbr/wood/orm.png
+assets/materials/pbr/wood/orm.png.import
+assets/materials/stylized/README.md
+assets/materials/stylized/flagstone/color.jpg
+assets/materials/stylized/flagstone/color.jpg.import
+assets/materials/stylized/flagstone/color_mobile.jpg
+assets/materials/stylized/flagstone/color_mobile.jpg.import
+assets/materials/stylized/flagstone/normal.jpg
+assets/materials/stylized/flagstone/normal.jpg.import
+assets/materials/stylized/flagstone/normal_mobile.jpg
+assets/materials/stylized/flagstone/normal_mobile.jpg.import
+assets/materials/stylized/flagstone/ormh.png
+assets/materials/stylized/flagstone/ormh.png.import
+assets/materials/stylized/manifest.json
+assets/materials/stylized/masonry/color.jpg
+assets/materials/stylized/masonry/color.jpg.import
+assets/materials/stylized/masonry/color_mobile.jpg
+assets/materials/stylized/masonry/color_mobile.jpg.import
+assets/materials/stylized/masonry/normal.jpg
+assets/materials/stylized/masonry/normal.jpg.import
+assets/materials/stylized/masonry/normal_mobile.jpg
+assets/materials/stylized/masonry/normal_mobile.jpg.import
+assets/materials/stylized/masonry/ormh.png
+assets/materials/stylized/masonry/ormh.png.import
+assets/materials/stylized/metal/color.jpg
+assets/materials/stylized/metal/color.jpg.import
+assets/materials/stylized/metal/color_mobile.jpg
+assets/materials/stylized/metal/color_mobile.jpg.import
+assets/materials/stylized/metal/normal.jpg
+assets/materials/stylized/metal/normal.jpg.import
+assets/materials/stylized/metal/normal_mobile.jpg
+assets/materials/stylized/metal/normal_mobile.jpg.import
+assets/materials/stylized/metal/ormh.png
+assets/materials/stylized/metal/ormh.png.import
+assets/materials/stylized/rock/color.jpg
+assets/materials/stylized/rock/color.jpg.import
+assets/materials/stylized/rock/color_mobile.jpg
+assets/materials/stylized/rock/color_mobile.jpg.import
+assets/materials/stylized/rock/normal.jpg
+assets/materials/stylized/rock/normal.jpg.import
+assets/materials/stylized/rock/normal_mobile.jpg
+assets/materials/stylized/rock/normal_mobile.jpg.import
+assets/materials/stylized/rock/ormh.png
+assets/materials/stylized/rock/ormh.png.import
+assets/materials/stylized/wood/color.jpg
+assets/materials/stylized/wood/color.jpg.import
+assets/materials/stylized/wood/color_mobile.jpg
+assets/materials/stylized/wood/color_mobile.jpg.import
+assets/materials/stylized/wood/normal.jpg
+assets/materials/stylized/wood/normal.jpg.import
+assets/materials/stylized/wood/normal_mobile.jpg
+assets/materials/stylized/wood/normal_mobile.jpg.import
+assets/materials/stylized/wood/ormh.png
+assets/materials/stylized/wood/ormh.png.import
+assets/materials/wall_archive_normal.png
+assets/materials/wall_archive_normal.png.import
+assets/materials/wall_archive_paint.png
+assets/materials/wall_archive_paint.png.import
+assets/materials/wall_belfry_normal.png
+assets/materials/wall_belfry_normal.png.import
+assets/materials/wall_belfry_paint.png
+assets/materials/wall_belfry_paint.png.import
+assets/materials/wall_cellar_normal.png
+assets/materials/wall_cellar_normal.png.import
+assets/materials/wall_cellar_paint.png
+assets/materials/wall_cellar_paint.png.import
+assets/materials/wall_cistern_normal.png
+assets/materials/wall_cistern_normal.png.import
+assets/materials/wall_cistern_paint.png
+assets/materials/wall_cistern_paint.png.import
+assets/materials/wall_crypt_normal.png
+assets/materials/wall_crypt_normal.png.import
+assets/materials/wall_crypt_paint.png
+assets/materials/wall_crypt_paint.png.import
+assets/materials/wall_dressed_normal.png
+assets/materials/wall_dressed_normal.png.import
+assets/materials/wall_dressed_paint.png
+assets/materials/wall_dressed_paint.png.import
+assets/materials/wall_halls_normal.png
+assets/materials/wall_halls_normal.png.import
+assets/materials/wall_halls_paint.png
+assets/materials/wall_halls_paint.png.import
+assets/materials/wall_hearth_normal.png
+assets/materials/wall_hearth_normal.png.import
+assets/materials/wall_hearth_paint.png
+assets/materials/wall_hearth_paint.png.import
+assets/materials/wall_kiln_normal.png
+assets/materials/wall_kiln_normal.png.import
+assets/materials/wall_kiln_paint.png
+assets/materials/wall_kiln_paint.png.import
+assets/materials/wall_masonry_normal.png
+assets/materials/wall_masonry_normal.png.import
+assets/materials/wall_masonry_paint.png
+assets/materials/wall_masonry_paint.png.import
+content/actives.json
+content/collections.json
+content/drop_tables.json
+content/effects.json
+content/floors.json
+content/furniture.json
+content/paintings.json
+content/pickups.json
+content/rooms.json
+docs/ANDROID.md
+docs/ANDROID_RENDERING_FIX.md
+docs/EXPANSION_PLAN.md
+docs/EXPEDITION_UPDATE.md
+docs/FILES.md
+docs/FIRST_PERSON_UPDATE_PLAN.md
+docs/IOS.md
+docs/LIGHTING_UPDATE.md
+docs/LINUX.md
+docs/LORE.md
+docs/ONLINE.md
+docs/PAINTING_COLLECTION_PLAN.md
+docs/PAINTING_CREDITS.md
+docs/PRESENTATION_OVERHAUL.md
+docs/PS2_UPDATE.md
+docs/STYLIZED_EXPERIMENT.md
+docs/TESTING.md
+docs/images/.gdignore
+docs/images/expedition-cellar.png
+docs/images/expedition-door.png
+docs/images/expedition-stairs.png
+docs/images/lighting-gameplay.png
+docs/images/lighting-hearth.png
+docs/images/stylized-cellar.png
+docs/images/stylized-hall.png
+docs/images/stylized-hearth.png
+docs/images/stylized-water.png
+docs/reports/stylized-desktop.json
+docs/reports/stylized-mobile-safe.json
+docs/reports/stylized-reflection.json
+export_presets.cfg
+project.godot
+scenes/main.tscn
+scripts/audio.gd
+scripts/audio.gd.uid
+scripts/avatar.gd
+scripts/avatar.gd.uid
+scripts/combat/floor_hazards.gd
+scripts/combat/floor_hazards.gd.uid
+scripts/combat/residue.gd
+scripts/combat/residue.gd.uid
+scripts/content.gd
+scripts/content.gd.uid
+scripts/dungeon/detail_batch.gd
+scripts/dungeon/detail_batch.gd.uid
+scripts/dungeon/floor_generator.gd
+scripts/dungeon/floor_generator.gd.uid
+scripts/dungeon/floor_light.gd
+scripts/dungeon/floor_light.gd.uid
+scripts/dungeon/furnisher.gd
+scripts/dungeon/furnisher.gd.uid
+scripts/dungeon/prop_visuals.gd
+scripts/dungeon/prop_visuals.gd.uid
+scripts/dungeon/room_geometry.gd
+scripts/dungeon/room_geometry.gd.uid
+scripts/dungeon/room_navigation.gd
+scripts/dungeon/room_navigation.gd.uid
+scripts/dungeon/room_partitions.gd
+scripts/dungeon/room_partitions.gd.uid
+scripts/dungeon/staircase.gd
+scripts/dungeon/staircase.gd.uid
+scripts/dungeon/themed_interiors.gd
+scripts/dungeon/themed_interiors.gd.uid
+scripts/effects/effects_pool.gd
+scripts/effects/effects_pool.gd.uid
+scripts/enemy.gd
+scripts/enemy.gd.uid
+scripts/first_person/architecture.gd
+scripts/first_person/architecture.gd.uid
+scripts/first_person/controller.gd
+scripts/first_person/controller.gd.uid
+scripts/first_person/room_terrain.gd
+scripts/first_person/room_terrain.gd.uid
+scripts/first_person/weapon_view.gd
+scripts/first_person/weapon_view.gd.uid
+scripts/foes/archivist.gd
+scripts/foes/archivist.gd.uid
+scripts/foes/bailer.gd
+scripts/foes/bailer.gd.uid
+scripts/foes/bellows.gd
+scripts/foes/bellows.gd.uid
+scripts/foes/bulb.gd
+scripts/foes/bulb.gd.uid
+scripts/foes/chandler.gd
+scripts/foes/chandler.gd.uid
+scripts/foes/chime.gd
+scripts/foes/chime.gd.uid
+scripts/foes/cinderling.gd
+scripts/foes/cinderling.gd.uid
+scripts/foes/clinker.gd
+scripts/foes/clinker.gd.uid
+scripts/foes/cog.gd
+scripts/foes/cog.gd.uid
+scripts/foes/drip.gd
+scripts/foes/drip.gd.uid
+scripts/foes/effigy.gd
+scripts/foes/effigy.gd.uid
+scripts/foes/fixture.gd
+scripts/foes/fixture.gd.uid
+scripts/foes/foes.gd
+scripts/foes/foes.gd.uid
+scripts/foes/hourkeeper.gd
+scripts/foes/hourkeeper.gd.uid
+scripts/foes/kilnmother.gd
+scripts/foes/kilnmother.gd.uid
+scripts/foes/lampwright.gd
+scripts/foes/lampwright.gd.uid
+scripts/foes/last_light.gd
+scripts/foes/last_light.gd.uid
+scripts/foes/lichen.gd
+scripts/foes/lichen.gd.uid
+scripts/foes/lurker.gd
+scripts/foes/lurker.gd.uid
+scripts/foes/mosskeeper.gd
+scripts/foes/mosskeeper.gd.uid
+scripts/foes/mourner.gd
+scripts/foes/mourner.gd.uid
+scripts/foes/pages.gd
+scripts/foes/pages.gd.uid
+scripts/foes/prism.gd
+scripts/foes/prism.gd.uid
+scripts/foes/rootling.gd
+scripts/foes/rootling.gd.uid
+scripts/foes/scrivener.gd
+scripts/foes/scrivener.gd.uid
+scripts/foes/shackled.gd
+scripts/foes/shackled.gd.uid
+scripts/foes/sluice.gd
+scripts/foes/sluice.gd.uid
+scripts/foes/snuffer.gd
+scripts/foes/snuffer.gd.uid
+scripts/foes/sporecap.gd
+scripts/foes/sporecap.gd.uid
+scripts/foes/tallow.gd
+scripts/foes/tallow.gd.uid
+scripts/foes/warden.gd
+scripts/foes/warden.gd.uid
+scripts/fx.gd
+scripts/fx.gd.uid
+scripts/geo.gd
+scripts/geo.gd.uid
+scripts/graphics/ambient_occlusion.gd
+scripts/graphics/ambient_occlusion.gd.uid
+scripts/graphics/dungeon_atmosphere.gd
+scripts/graphics/dungeon_atmosphere.gd.uid
+scripts/graphics/dungeon_style.gd
+scripts/graphics/dungeon_style.gd.uid
+scripts/graphics/dungeon_textures.gd
+scripts/graphics/dungeon_textures.gd.uid
+scripts/graphics/look.gd
+scripts/graphics/look.gd.uid
+scripts/graphics/pbr_materials.gd
+scripts/graphics/pbr_materials.gd.uid
+scripts/graphics/render_policy.gd
+scripts/graphics/render_policy.gd.uid
+scripts/graphics/screen_fx.gd
+scripts/graphics/screen_fx.gd.uid
+scripts/graphics/water_mirror.gd
+scripts/graphics/water_mirror.gd.uid
+scripts/interactions/game_actions.gd
+scripts/interactions/game_actions.gd.uid
+scripts/interactions/interaction_registry.gd
+scripts/interactions/interaction_registry.gd.uid
+scripts/items/active_items.gd
+scripts/items/active_items.gd.uid
+scripts/items/bomb_view.gd
+scripts/items/bomb_view.gd.uid
+scripts/items/drops.gd
+scripts/items/drops.gd.uid
+scripts/items/expedition_balance.gd
+scripts/items/expedition_balance.gd.uid
+scripts/items/forge.gd
+scripts/items/forge.gd.uid
+scripts/items/item_views.gd
+scripts/items/item_views.gd.uid
+scripts/items/moth_companion.gd
+scripts/items/moth_companion.gd.uid
+scripts/items/pickup_rules.gd
+scripts/items/pickup_rules.gd.uid
+scripts/main.gd
+scripts/main.gd.uid
+scripts/pickup.gd
+scripts/pickup.gd.uid
+scripts/presentation/dungeon_doorway.gd
+scripts/presentation/dungeon_doorway.gd.uid
+scripts/presentation/stair_cinematic.gd
+scripts/presentation/stair_cinematic.gd.uid
+scripts/presentation/title_scene.gd
+scripts/presentation/title_scene.gd.uid
+scripts/progression/collection_service.gd
+scripts/progression/collection_service.gd.uid
+scripts/progression/painting_library.gd
+scripts/progression/painting_library.gd.uid
+scripts/progression/painting_view.gd
+scripts/progression/painting_view.gd.uid
+scripts/run.gd
+scripts/run.gd.uid
+scripts/session.gd
+scripts/session.gd.uid
+scripts/settings_service.gd
+scripts/settings_service.gd.uid
+scripts/shot.gd
+scripts/shot.gd.uid
+scripts/ui.gd
+scripts/ui.gd.uid
+scripts/ui_setting_row.gd
+scripts/ui_setting_row.gd.uid
+scripts/ui_surface.gd
+scripts/ui_surface.gd.uid
+scripts/world.gd
+scripts/world.gd.uid
+shaders/ambient_occlusion.gdshader
+shaders/ambient_occlusion.gdshader.uid
+shaders/carved_relief.gdshaderinc
+shaders/carved_relief.gdshaderinc.uid
+shaders/cone.gdshader
+shaders/cone.gdshader.uid
+shaders/dungeon_floor.gdshader
+shaders/dungeon_floor.gdshader.uid
+shaders/dungeon_metal.gdshader
+shaders/dungeon_metal.gdshader.uid
+shaders/dungeon_radiance.gdshader
+shaders/dungeon_radiance.gdshader.uid
+shaders/dungeon_wall.gdshader
+shaders/dungeon_wall.gdshader.uid
+shaders/dungeon_wood.gdshader
+shaders/dungeon_wood.gdshader.uid
+shaders/floor_mark.gdshader
+shaders/floor_mark.gdshader.uid
+shaders/floor_stone.gdshader
+shaders/floor_stone.gdshader.uid
+shaders/floor_stone_mobile.gdshader
+shaders/floor_stone_mobile.gdshader.uid
+shaders/foe_rim.gdshader
+shaders/foe_rim.gdshader.uid
+shaders/halo.gdshader
+shaders/halo.gdshader.uid
+shaders/hearth_flame.gdshader
+shaders/hearth_flame.gdshader.uid
+shaders/lantern_glass.gdshader
+shaders/lantern_glass.gdshader.uid
+shaders/light_shaft.gdshader
+shaders/light_shaft.gdshader.uid
+shaders/mist.gdshader
+shaders/mist.gdshader.uid
+shaders/mist_eye.gdshader
+shaders/mist_eye.gdshader.uid
+shaders/post.gdshader
+shaders/post.gdshader.uid
+shaders/residue.gdshader
+shaders/residue.gdshader.uid
+shaders/shot_core.gdshader
+shaders/shot_core.gdshader.uid
+shaders/shot_glow.gdshader
+shaders/shot_glow.gdshader.uid
+shaders/shot_splat.gdshader
+shaders/shot_splat.gdshader.uid
+shaders/shot_streak.gdshader
+shaders/shot_streak.gdshader.uid
+shaders/ui_stone.gdshader
+shaders/ui_stone.gdshader.uid
+shaders/vignette.gdshader
+shaders/vignette.gdshader.uid
+shaders/water.gdshader
+shaders/water.gdshader.uid
+shaders/water_stylized.gdshader
+shaders/water_stylized.gdshader.uid
+tests/catalog.gd
+tests/catalog.gd.uid
+tests/cloud_surfaces.gd
+tests/cloud_surfaces.gd.uid
+tests/collection.gd
+tests/collection.gd.uid
+tests/combat.gd
+tests/combat.gd.uid
+tests/doors_lava.gd
+tests/doors_lava.gd.uid
+tests/dungeon.gd
+tests/dungeon.gd.uid
+tests/dungeon_style.gd
+tests/dungeon_style.gd.uid
+tests/effects.gd
+tests/effects.gd.uid
+tests/expedition_integration.gd
+tests/expedition_integration.gd.uid
+tests/expedition_rewards.gd
+tests/expedition_rewards.gd.uid
+tests/first_person.gd
+tests/first_person.gd.uid
+tests/first_person_navigation.gd
+tests/first_person_navigation.gd.uid
+tests/first_person_stress.gd
+tests/first_person_stress.gd.uid
+tests/furniture.gd
+tests/furniture.gd.uid
+tests/items.gd
+tests/items.gd.uid
+tests/lighting.gd
+tests/lighting.gd.uid
+tests/lighting_centered.gd
+tests/lighting_centered.gd.uid
+tests/presentation.gd
+tests/presentation.gd.uid
+tests/render_first_person.gd
+tests/render_first_person.gd.uid
+tests/render_light_materials.gd
+tests/render_light_materials.gd.uid
+tests/render_lighting.gd
+tests/render_lighting.gd.uid
+tests/render_mobile_startup.gd
+tests/render_mobile_startup.gd.uid
+tests/render_policy.gd
+tests/render_policy.gd.uid
+tests/render_ps2_update.gd
+tests/render_ps2_update.gd.uid
+tests/render_ssao.gd
+tests/render_ssao.gd.uid
+tests/render_stair_cinematic.gd
+tests/render_stair_cinematic.gd.uid
+tests/render_stress.gd
+tests/render_stress.gd.uid
+tests/render_stylized.gd
+tests/render_stylized.gd.uid
+tests/render_themed_interiors.gd
+tests/render_themed_interiors.gd.uid
+tests/render_title.gd
+tests/render_title.gd.uid
+tests/render_ui.gd
+tests/render_ui.gd.uid
+tests/render_vertical_rooms.gd
+tests/render_vertical_rooms.gd.uid
+tests/render_visibility.gd
+tests/render_visibility.gd.uid
+tests/room_layouts.gd
+tests/room_layouts.gd.uid
+tests/secret_codes.gd
+tests/secret_codes.gd.uid
+tests/settings.gd
+tests/settings.gd.uid
+tests/smoke.gd
+tests/smoke.gd.uid
+tests/ssao_fullscreen.gd
+tests/ssao_fullscreen.gd.uid
+tests/stair_cinematic.gd
+tests/stair_cinematic.gd.uid
+tests/stylized_lighting.gd
+tests/stylized_lighting.gd.uid
+tests/themed_interiors.gd
+tests/themed_interiors.gd.uid
+tests/title_presentation.gd
+tests/title_presentation.gd.uid
+tests/tower.gd
+tests/tower.gd.uid
+tests/ui_presentation.gd
+tests/ui_presentation.gd.uid
+tests/vertical_rooms.gd
+tests/vertical_rooms.gd.uid
+tools/bake_dungeon_materials.gd
+tools/bake_dungeon_materials.gd.uid
+tools/bake_stylized_materials.py
+tools/build_appimage.sh
+tools/build_ios_unsigned.sh
+tools/build_windows.sh
+tools/configure_android.gd
+tools/configure_android.gd.uid
+tools/export_android.sh
+tools/import_dungeon_materials.py
+tools/import_paintings.py
+tools/make_content.py
+tools/render_lighting.sh
+tools/render_mobile_startup.sh
+tools/render_ps2_update.sh
+tools/render_stress.sh
+tools/render_ui.sh
+tools/render_visibility.sh
+tools/test.sh
+tools/test_import_paintings.py
+tools/verify_android_apk.py
+tools/verify_ios_ipa.py
+tools/verify_pack.sh
+```
