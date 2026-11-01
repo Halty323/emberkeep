@@ -47,7 +47,7 @@ static func boss_name(kind: String) -> String:
 	return kind.to_upper()
 
 static func elite_chance(depth: int) -> float:
-	return ELITE_CHANCE[clampi(depth, 1, ELITE_CHANCE.size()) - 1]
+	return minf(.55, ELITE_CHANCE[clampi(depth, 1, ELITE_CHANCE.size()) - 1] + ((.04 if depth == 1 else .07) if ExpeditionBalance.active_new_run() else 0.0))
 
 ## [kind, weight, most per room] for a floor: its own roster, then the
 ## signature foes of the floors below it in this run's climb.
@@ -66,6 +66,7 @@ static func roster_for(theme_id: String, depth: int, plan: Array) -> Array:
 ## room's own seeded stream so a restarted fight is the same fight. A rootling
 ## takes two places: they grow in pairs.
 static func compose(roster: Array, chance: float, count: int, gen: RandomNumberGenerator) -> Array:
+	if ExpeditionBalance.active_new_run(): count = ExpeditionBalance.encounter_count(count,Run.floor_number)
 	var plan: Array = []
 	var taken := {}
 	while plan.size() < count:

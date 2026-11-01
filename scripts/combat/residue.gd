@@ -52,6 +52,7 @@ var grid_origin := Vector2i.ZERO
 var grid_size := Vector2i.ONE
 var dirty := {}
 var tick = 0.0
+var elevated_surface: ArrayMesh
 
 func setup(owner_game: Node3D, room_geometry: RoomGeometry) -> void:
 	game = owner_game
@@ -84,17 +85,22 @@ func setup(owner_game: Node3D, room_geometry: RoomGeometry) -> void:
 			mat.set_shader_parameter("flicker", look[2])
 			mat.set_shader_parameter("roughness_value", look[3])
 			mat.set_shader_parameter("kind", KINDS.find(kind))
+			mat.set_shader_parameter("first_person", first_person)
 			mat.set_shader_parameter("detail", Look.detail())
 		mat.set_shader_parameter("mask", texture)
 		mat.set_shader_parameter("grid_origin", Vector2(grid_origin) * TILE)
 		mat.set_shader_parameter("grid_size", Vector2(grid_size))
 		mat.set_shader_parameter("tile", TILE)
 		var view = MeshInstance3D.new()
-		view.mesh = plane
+		if first_person and geometry.terrain and geometry.terrain.ledge.has_area():
+			if not elevated_surface: elevated_surface = build_elevated_surface()
+			view.mesh = elevated_surface
+		else:
+			view.mesh = plane
 		view.material_override = mat
 		view.layers = 8
 		view.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		view.position = Vector3((grid_origin.x + grid_size.x / 2.0) * TILE, look[4], (grid_origin.y + grid_size.y / 2.0) * TILE)
+		view.position = Vector3(0,look[4],0) if elevated_surface else Vector3((grid_origin.x + grid_size.x / 2.0) * TILE, look[4], (grid_origin.y + grid_size.y / 2.0) * TILE)
 		view.visible = false
 		add_child(view)
 		views[kind] = {"view": view, "image": image, "texture": texture, "count": 0, "material": mat}
@@ -138,12 +144,21 @@ func refresh_cloud_surface() -> void:
 		fields.append(Vector4.ZERO)
 		tints.append(Color.TRANSPARENT)
 	var center = area.get_center()
+	var low_height := 0.0
+	var high_height := 0.0
+	if first_person:
+		low_height = float(clouds[0].at.y)
+		high_height = low_height
+		for cloud in clouds:
+			low_height = minf(low_height,cloud.at.y)
+			high_height = maxf(high_height,cloud.at.y)
+	var sheet_height := (low_height+high_height)*.5
 	var plane = cloud_view.mesh
 	var dimensions = area.size
 	if first_person:
 		var radius_max = 0.0
 		for cloud in clouds: radius_max = maxf(radius_max, cloud.radius)
-		dimensions = Vector2(area.size.length(), radius_max * 1.8)
+		dimensions = Vector2(area.size.length(),radius_max*1.8+high_height-low_height)
 		cloud_view.rotation.y = game.fps.yaw
 		# Project centres into the shared billboard's local plane. Keeping
 		# shader fields in that plane avoids per-fragment 3D projections.
@@ -151,10 +166,10 @@ func refresh_cloud_surface() -> void:
 		for index in clouds.size():
 			var field: Vector4 = fields[index]
 			var offset = Vector3(field.x - center.x, 0, field.y - center.y)
-			fields[index] = Vector4(offset.dot(right), 0, field.z, field.w)
+			fields[index] = Vector4(offset.dot(right),(clouds[index].at.y-sheet_height)*1.3,field.z,field.w)
 	if plane.size != dimensions: plane.size = dimensions
 	if first_person: mist_material.set_shader_parameter("sheet_size", dimensions)
-	cloud_view.position = Vector3(center.x, .8 if first_person else .62, center.y)
+	cloud_view.position = Vector3(center.x,sheet_height+.8 if first_person else .62,center.y)
 	mist_material.set_shader_parameter("sheet_origin", center)
 	mist_material.set_shader_parameter("cloud_fields", fields)
 	mist_material.set_shader_parameter("cloud_tints", tints)
@@ -208,8 +223,36 @@ static func key(at: Vector3) -> Vector2i:
 static func center(tile: Vector2i) -> Vector3:
 	return Vector3((tile.x + .5) * TILE, 0, (tile.y + .5) * TILE)
 
+func ground_height(at: Vector3) -> float:
+	return geometry.terrain.height(Vector2(at.x,at.z)) if first_person and geometry.terrain else 0.0
+
+func touches_floor(at: Vector3, tolerance := .35) -> bool:
+	return not first_person or absf(at.y-ground_height(at)) <= tolerance
+
 func kind_at(at: Vector3) -> String:
-	return tiles.get(key(at), {}).get("kind", "")
+	return tiles.get(key(at), {}).get("kind", "") if touches_floor(at) else ""
+
+## One shared mesh follows the room's physical floor, including cellar ramps.
+## Cliff-crossing quads are omitted instead of stretching a puddle up a wall.
+func build_elevated_surface() -> ArrayMesh:
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for x in range(grid_origin.x,grid_origin.x+grid_size.x):
+		for z in range(grid_origin.y,grid_origin.y+grid_size.y):
+			var points: Array[Vector3] = [Vector3(x*TILE,0,z*TILE),Vector3((x+1)*TILE,0,z*TILE),Vector3((x+1)*TILE,0,(z+1)*TILE),Vector3(x*TILE,0,(z+1)*TILE)]
+			if not geometry.contains(Vector2((x+.5)*TILE,(z+.5)*TILE),.05): continue
+			var low := INF
+			var high := -INF
+			for i in 4:
+				points[i].y = ground_height(points[i])
+				low = minf(low,points[i].y)
+				high = maxf(high,points[i].y)
+			if high-low > .65: continue
+			for index in [0,1,2,0,2,3]:
+				surface.set_uv(Vector2(points[index].x,points[index].z))
+				surface.add_vertex(points[index])
+	surface.generate_normals()
+	return surface.commit()
 
 ## Tiles inside the floor within a radius of a point.
 func tiles_in(at: Vector3, radius: float) -> Array:
@@ -220,6 +263,7 @@ func tiles_in(at: Vector3, radius: float) -> Array:
 		for y in range(low.y, high.y + 1):
 			var tile = Vector2i(x, y)
 			var c = center(tile)
+			if first_person and absf(at.y-ground_height(c)) > maxf(.9,radius*.7): continue
 			if Vector2(c.x - at.x, c.z - at.z).length() <= radius and geometry.contains(Vector2(c.x, c.z), .2):
 				result.append(tile)
 	return result
@@ -278,6 +322,7 @@ func ignite(at: Vector3, radius: float) -> void:
 		elif current == "water": boiled = true
 	if boiled and cloud_at(at) < 0: add_cloud(at, maxf(1.2, radius * 1.4), "steam")
 	for i in range(clouds.size() - 1, -1, -1):
+		if first_person and absf(at.y-clouds[i].at.y) > maxf(1.4,radius*.5): continue
 		if clouds[i].kind == "spores" and Vector2(clouds[i].at.x - at.x, clouds[i].at.z - at.z).length() < clouds[i].radius + radius * .5:
 			explode_cloud(i)
 
@@ -288,7 +333,7 @@ func freeze(at: Vector3, radius: float) -> void:
 		elif current == "fire": set_tile(tile, "wax" if tiles[tile].under == "wax" else "")
 
 func slows(at: Vector3) -> float:
-	if first_person and at.y > .3: return 1.0
+	if not touches_floor(at,.35): return 1.0
 	var factor: float = DRAG.get(kind_at(at), 1.0)
 	var cloud = cloud_at(at)
 	if cloud >= 0 and clouds[cloud].kind == "spores": factor *= .8
@@ -297,14 +342,14 @@ func slows(at: Vector3) -> float:
 ## Lightning striking a foe in water runs through the whole pool: every foe
 ## standing in the same water takes a share. Returns how many it reached.
 func shock(at: Vector3, damage: float, struck: Dictionary = {}) -> int:
-	if first_person and at.y > .5: return 0
+	if not touches_floor(at,.5): return 0
 	if kind_at(at) != "water": return 0
 	var pool := {}
 	for tile in moss_linked(at, .5, ["water"]).slice(0, SHOCK_REACH): pool[tile] = true
 	var reached = 0
 	for enemy in game.enemies.duplicate():
 		if not is_instance_valid(enemy) or not enemy.alive or struck.has(enemy.entity_id): continue
-		if not pool.has(key(enemy.global_position)) or (first_person and enemy.position.y > .3): continue
+		if not pool.has(key(enemy.global_position)) or not touches_floor(enemy.global_position): continue
 		Effects.beam(game, at + Vector3.UP * .1, enemy.global_position + Vector3.UP * .4, Color("c4e2ff"))
 		enemy.shocked(damage)
 		reached += 1
@@ -312,7 +357,7 @@ func shock(at: Vector3, damage: float, struck: Dictionary = {}) -> int:
 
 ## Whether a segment crosses glass; the first crossing splits a shot.
 func crosses_glass(from: Vector3, to: Vector3) -> bool:
-	if first_person and minf(from.y, to.y) > .9: return false
+	if first_person and not touches_floor(from,.9) and not touches_floor(to,.9): return false
 	var steps = maxi(1, ceili(from.distance_to(to) / (TILE * .5)))
 	for i in steps + 1:
 		if kind_at(from.lerp(to, float(i) / steps)) == "glass": return true
@@ -330,6 +375,7 @@ func moss_linked(at: Vector3, reach: float, kinds := ["moss"]) -> Array:
 		for step in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
 			var next: Vector2i = tile + step
 			if seen.has(next) or not tiles.has(next) or tiles[next].kind not in kinds: continue
+			if first_person and absf(ground_height(center(tile))-ground_height(center(next))) > .65: continue
 			seen[next] = true
 			queue.append(next)
 	return queue
@@ -340,14 +386,15 @@ func add_cloud(at: Vector3, radius: float, kind := "spores") -> void:
 	if clouds.size() >= MAX_CLOUDS: remove_cloud(0)
 	var view = Node3D.new()
 	add_child(view)
-	view.position = Vector3(at.x, 0, at.z)
-	clouds.append({"at": Vector3(at.x, 0, at.z), "radius": radius, "age": 0.0, "poisoned": false, "view": view, "kind": kind,
+	var height := ground_height(at)
+	view.position = Vector3(at.x,height,at.z)
+	clouds.append({"at": Vector3(at.x,height,at.z), "radius": radius, "age": 0.0, "poisoned": false, "view": view, "kind": kind,
 		"life": STEAM_LIFE if kind == "steam" else CLOUD_LIFE})
 	refresh_cloud_surface()
 
 func cloud_at(at: Vector3) -> int:
-	if first_person and at.y > 2.0: return -1
 	for i in clouds.size():
+		if first_person and absf(at.y-clouds[i].at.y) > 1.8: continue
 		if Vector2(clouds[i].at.x - at.x, clouds[i].at.z - at.z).length() < clouds[i].radius: return i
 	return -1
 
@@ -374,9 +421,10 @@ func explode_cloud(index: int) -> void:
 	Audio.play_sound("kill", .7)
 	game.make_noise(cloud.at, 3.0)
 	for enemy in game.enemies.duplicate():
+		if first_person and is_instance_valid(enemy) and absf(enemy.global_position.y-cloud.at.y) > 1.8: continue
 		if is_instance_valid(enemy) and enemy.alive and enemy.targetable and Vector2(enemy.global_position.x - cloud.at.x, enemy.global_position.z - cloud.at.z).length() < cloud.radius + enemy.radius:
 			enemy.take_hit(CLOUD_BLAST, (enemy.global_position - cloud.at).normalized() * 2.0, false, false, "blast")
-	if Vector2(game.player.global_position.x - cloud.at.x, game.player.global_position.z - cloud.at.z).length() < cloud.radius:
+	if (not first_person or absf(game.player.global_position.y-cloud.at.y)<=1.8) and Vector2(game.player.global_position.x - cloud.at.x, game.player.global_position.z - cloud.at.z).length() < cloud.radius:
 		game.player.hurt(1.0, cloud.at)
 	ignite(cloud.at, cloud.radius * .8)
 
@@ -411,18 +459,18 @@ func update_sim(delta: float) -> void:
 		if touch:
 			for enemy in game.enemies:
 				if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable: continue
-				var inside = Vector2(enemy.global_position.x - cloud.at.x, enemy.global_position.z - cloud.at.z).length() < cloud.radius
+				var inside = (not first_person or absf(enemy.global_position.y-cloud.at.y)<=1.8) and Vector2(enemy.global_position.x - cloud.at.x, enemy.global_position.z - cloud.at.z).length() < cloud.radius
 				if not inside: continue
 				if cloud.poisoned: enemy.apply_status({"poison": .8})
 				elif enemy.poison_time > 0: poison_cloud(i)
 	if touch:
 		for enemy in game.enemies:
 			if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable: continue
-			var under = kind_at(enemy.global_position) if not first_person or enemy.position.y < .3 else ""
+			var under = kind_at(enemy.global_position)
 			if under == "fire": enemy.apply_status({"burn": 1.2})
 			# Water puts a burning foe out.
 			elif under == "water": enemy.burn_time = 0.0
-		if kind_at(game.player.global_position) == "fire" and (not first_person or game.player.position.y < .3):
+		if kind_at(game.player.global_position) == "fire":
 			game.player.hurt(1.0, game.player.global_position)
 	for kind in dirty.keys():
 		if views.has(kind): rebuild(kind)

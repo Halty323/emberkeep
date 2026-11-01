@@ -113,6 +113,7 @@ static func solid_cylinder(radius: float, height: float) -> StaticBody3D:
 	var body = StaticBody3D.new()
 	body.collision_layer = 1
 	body.collision_mask = 0
+	body.set_meta("stair_camera_ignore",true)
 	var shape = CollisionShape3D.new()
 	var cylinder = CylinderShape3D.new()
 	cylinder.radius = radius
@@ -180,6 +181,7 @@ static func make_well(parent: Node3D, at: Vector3) -> Node3D:
 	disc.bottom_radius = OUTER + .1
 	disc.height = .02
 	hole.mesh = disc
+	hole.set_meta("stairwell_hole",true)
 	var dark = StandardMaterial3D.new()
 	dark.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	dark.albedo_color = Color("030405")

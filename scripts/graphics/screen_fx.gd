@@ -13,6 +13,7 @@ var overlay: ColorRect
 var material: ShaderMaterial
 var post_shader: Shader = preload("res://shaders/post.gdshader")
 var plain_shader: Shader = preload("res://shaders/vignette.gdshader")
+var ambient_occlusion: ScreenAmbientOcclusion
 # {"at": world point, "age", "reach" (screen heights), "power"}.
 var waves: Array = []
 var grade := {"gain": Color.WHITE, "lift": Color.BLACK, "saturation": 1.0}
@@ -23,7 +24,7 @@ func setup(owner_game: Node3D, rect: ColorRect, shader_material: ShaderMaterial)
 	material = shader_material
 	current = self
 	Settings.changed.connect(func(key):
-		if key == "effects_detail": apply_quality())
+		if key in ["effects_detail", "ssao"]: apply_quality())
 	apply_quality()
 
 func _exit_tree() -> void:
@@ -42,7 +43,14 @@ func apply_quality() -> void:
 	env.glow_hdr_threshold = 1.0
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
 	for i in 7: env.set_glow_level(i, 1.0 if i in ([1, 3, 5] if level == 2 else [2, 4]) else 0.0)
+	apply_occlusion()
 	apply_grade()
+
+func apply_occlusion() -> void:
+	var enabled: bool = game.first_person and Settings.ssao_supported() and Settings.values.ssao != "off"
+	if enabled and not is_instance_valid(ambient_occlusion):
+		ambient_occlusion = ScreenAmbientOcclusion.create(game.camera)
+	if is_instance_valid(ambient_occlusion): ambient_occlusion.configure(Settings.values.ssao,enabled)
 
 ## A floor's colour grade; the title keeps none.
 func set_grade(theme: Dictionary) -> void:

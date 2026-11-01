@@ -43,7 +43,7 @@ const REWARD_WIDTH := 340.0
 const REWARD_GAP := 26.0
 const SETTINGS_PAGES := [["display", "Display"], ["graphics", "Graphics"], ["controls", "Controls"], ["camera", "Camera"]]
 const SETTINGS_NOTES := {"display": "Resolution scales only the dungeon; text and controls stay sharp. Your display or device can still cap the frame rate.",
-	"graphics": "Detail changes decoration and cosmetic effects only. Walls, furniture collision, loot and combat stay identical.",
+	"graphics": "SSAO shades surface contacts on supported GPUs. Detail changes appearance; room collision and combat stay identical.",
 	"camera": "Comfort settings affect presentation, never movement speed or weapon damage.",
 	"controls": "Touch controls show the on-screen sticks and action buttons on any device."}
 var game: Node3D
@@ -667,8 +667,8 @@ func build_settings() -> void:
 		button(page[1], Rect2(330 + i * 157, 154, 149, 56), func(): open_settings_page(page[0]), page[0] == settings_page)
 	var rows = settings_rows(settings_page)
 	for i in rows.size():
-		setting_row(Rect2(330, 228 + i * 68, 620, 56), rows[i])
-	button("← Back", Rect2(396, 572, 488, 58), func(): close_subscreen())
+		setting_row(Rect2(330, 218 + i * 61, 620, 54), rows[i])
+	button("← Back", Rect2(396, 592, 488, 58), func(): close_subscreen())
 
 func open_settings_page(page: String) -> void:
 	settings_page = page
@@ -692,7 +692,8 @@ func settings_rows(page: String) -> Array:
 				vsync[2] += " · driver " + Settings.effective_vsync().capitalize()
 			return [["render_scale", "Render resolution", "%s  ·  %d×%d" % [scale, pixels.x, pixels.y], true],
 				["fps_limit", "FPS limit", "Unlimited" if Settings.values.fps_limit == 0 else str(Settings.values.fps_limit), true],
-				vsync, ["show_fps", "Show FPS", on_off("show_fps"), true]]
+				vsync, ["show_fps", "Show FPS", on_off("show_fps"), true],
+				["fullscreen", "Fullscreen", on_off("fullscreen") if Settings.fullscreen_supported() else "System controlled", Settings.fullscreen_supported()]]
 		"camera":
 			return [["fov", "Field of view", "%d°" % Settings.values.fov, true],
 				["mouse_sensitivity", "Mouse sensitivity", "%.4f" % Settings.values.mouse_sensitivity, true],
@@ -702,7 +703,8 @@ func settings_rows(page: String) -> Array:
 		"graphics":
 			return [["effects_detail", "Effects detail", Settings.values.effects_detail.capitalize(), true],
 				["small_details", "Small details", Settings.values.small_details.capitalize(), true],
-				["shadows", "Lantern shadows", on_off("shadows"), true]]
+				["shadows", "Lantern shadows", on_off("shadows"), true],
+				["ssao", "SSAO", Settings.values.ssao.capitalize() if Settings.ssao_supported() else "Off · device safe mode", Settings.ssao_supported()]]
 	return [["sound", "Sound effects", on_off("sound"), true], ["music", "Ambient music", on_off("music"), true],
 		["shake", "Camera shake", on_off("shake"), true], ["touch", "Touch controls", on_off("touch"), true]]
 
@@ -891,7 +893,11 @@ func _input(event: InputEvent) -> void:
 			else: right_vector = (from_right(p) - right_origin).limit_length(58) / 58.0
 			get_viewport().set_input_as_handled()
 
+func stair_presentation_active() -> bool:
+	return is_instance_valid(game) and game.first_person and game.transition.get("kind","") == "stairs"
+
 func touch_hud_visible() -> bool:
+	if stair_presentation_active(): return false
 	return touch_used or Settings.values.touch or is_touch_platform()
 
 func action_at(point: Vector2) -> String:
@@ -948,7 +954,7 @@ func _draw() -> void:
 		"settings":
 			hearth_emblem(Vector2(640, 76), 11)
 			centered("Make yourself at home", 640, 134, 32, INK, heading)
-			draw_multiline_string(body, Vector2(340, 516), SETTINGS_NOTES[settings_page], HORIZONTAL_ALIGNMENT_CENTER, 600, 17, 2, MUTED)
+			draw_multiline_string(body, Vector2(340, 546), SETTINGS_NOTES[settings_page], HORIZONTAL_ALIGNMENT_CENTER, 600, 17, 2, MUTED)
 		"journal":
 			match journal_tab:
 				"relics": draw_journal()
@@ -1052,7 +1058,7 @@ func draw_hud() -> void:
 	draw_hud_left()
 	anchor(widen() / 2.0)
 	draw_hud_middle()
-	if game.first_person:
+	if game.first_person and not stair_presentation_active():
 		var aim_center = Vector2(640, 360)
 		draw_circle(aim_center, 2.0, GOLD if game.fps.hit_time > 0 else INK)
 		if game.fps.hit_time > 0:
@@ -1099,7 +1105,7 @@ func draw_hud_left() -> void:
 		diamond(Vector2(28 + i * 17, HUD_RECT.end.y + 16), 6, Content.RARITY_COLORS[item.rarity])
 	if Run.inventory.size() > 12:
 		text("+%d" % (Run.inventory.size() - 12), Vector2(232, HUD_RECT.end.y + 21), 14, GOLD)
-	if not touch_hud_visible():
+	if not touch_hud_visible() and not stair_presentation_active():
 		text("WASD move · Mouse aim/fire · Space jump · Shift dash · E interact" if game.first_person else "WASD move · Mouse fire · Space dash · F item · B bomb", Vector2(28, 668), 15, MUTED)
 	text("SEED %d" % Run.seed_value, Vector2(28, 697), 13, MUTED)
 	if touch_hud_visible():
@@ -1123,6 +1129,7 @@ func draw_kindle(at: Vector2) -> void:
 		draw_circle(at - Vector2(54 + i * 9, -1), 2.6, Color("fff3c4"))
 
 func draw_hud_middle() -> void:
+	if stair_presentation_active(): return
 	var boss_enemy = game.get_boss()
 	if boss_enemy:
 		centered(Foes.boss_name(boss_enemy.kind), 640, 40, 15, Color("efbd9f"), bold)

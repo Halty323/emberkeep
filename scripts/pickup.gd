@@ -63,6 +63,11 @@ func update_sim(delta: float) -> void:
 	var to_player: Vector3 = game.player.global_position - global_position
 	if not game.first_person: to_player.y = 0
 	if to_player.length() < float(Run.stats.magnet):
+		if game.first_person:
+			# A magnet cannot pull loot through an interior wall or the floor
+			# separating a cellar from the main room.
+			var ray := PhysicsRayQueryParameters3D.create(global_position+Vector3.UP*.14,game.player.global_position+Vector3.UP*.25,1|PropVisuals.FURNITURE_LAYER)
+			if not get_world_3d().direct_space_state.intersect_ray(ray).is_empty(): return
 		position += to_player.normalized() * delta * 8.0
 	if to_player.length() < .65:
 		game.submit({"type": "collect_pickup", "target": drop_id})

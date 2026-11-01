@@ -1,6 +1,6 @@
 extends SceneTree
 ## Device settings service: validation, one-time profile migration, engine
-## application, and the three settings pages. Run through tools/test.sh.
+## application, and the display/graphics/controls/camera pages. Run through tools/test.sh.
 var checks = 0
 var failures = 0
 var settings: Node
@@ -116,7 +116,7 @@ func test_settings() -> void:
 	var native = Vector2(DisplayServer.window_get_size())
 	if native.x <= 0: native = Vector2(root.size)
 	check(pixels == Vector2i(roundi(native.x * .5), roundi(native.y * .5)), "reported pixel dimensions match the scale")
-	# Three settings pages, each with rows that own their background and target.
+	# All settings pages have rows that own their background and target.
 	game.ui.open_settings("pause")
 	for page in game.ui.SETTINGS_PAGES:
 		game.ui.open_settings_page(page[0])

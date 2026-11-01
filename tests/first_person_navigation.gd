@@ -41,6 +41,8 @@ func exercise() -> void:
 	game.set_physics_process(false)
 	for seed_value in [18523427, 64217, 81031]:
 		game.start_run("candle", seed_value, false)
+		run.generator_version = 2
+		run.generate_floor()
 		for id in run.rooms:
 			if run.rooms[id].type != "combat" or run.rooms[id].cells.size() < 2: continue
 			run.current_room = id
@@ -48,6 +50,9 @@ func exercise() -> void:
 			game.paused = true
 			for enemy in game.enemies: enemy.queue_free()
 			game.enemies.clear()
+			# This suite measures collider reachability at ordinary run speed;
+			# persistent water/ink drag has separate environmental coverage.
+			game.residue.tiles.clear()
 			await step(Vector2.ZERO, 2)
 			var terrain = game.room.terrain
 			if not terrain or not terrain.ramp.has_area(): continue
@@ -160,6 +165,8 @@ func check_more_seeded_rooms() -> void:
 	var inspected := 0
 	for seed_value in [99, 421, 9001, 26018, 73021, 109321, 468103, 992301]:
 		game.start_run("candle", seed_value, false)
+		run.generator_version = 2
+		run.generate_floor()
 		for id in run.rooms:
 			if run.rooms[id].type != "combat" or run.rooms[id].cells.size() < 2: continue
 			run.current_room = id

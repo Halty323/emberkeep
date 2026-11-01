@@ -78,8 +78,16 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 	if room.has("pedestal"):
 		pedestal = Vector3(float(room.pedestal[0]), 0, float(room.pedestal[1]))
 	collect_sockets(room, preview)
+	if first_person_room:
+		resolve_vertical_openings()
+		terrain = FirstPersonTerrain.new()
+		terrain.setup(self,false)
+		geometry.terrain = terrain
 	build_floor()
 	build_walls()
+	if first_person_room:
+		terrain.build(self)
+		RoomPartitions.build(self)
 	var points: Array = room.get("lights", default_lights())
 	var burning: Array = FloorLight.lit_lanterns(points.size(), light, int(room.get("seed", 53)))
 	# A room remembers lanterns relit or put out once its fight was over.
@@ -100,10 +108,6 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 		var pillars = FloorGenerator.pillar_points(geometry.cells, int(room.seed), Vector2(pedestal.x, pedestal.z))
 		for i in pillars.size():
 			records.append({"id": "%s:p%d" % [room.get("id", ""), i], "kind": "pillar", "position": [pillars[i].x, pillars[i].y], "rotation": 0, "size": [1.3, 1.3]})
-	if first_person_room and not preview:
-		terrain = FirstPersonTerrain.new()
-		terrain.setup(self)
-		geometry.terrain = terrain
 	build_props(records)
 	if first_person_room: DungeonStyle.dress_props(self)
 	# Containers are solid: navigation and spawns route around them.
@@ -142,29 +146,93 @@ func collect_sockets(room: Dictionary, preview: bool) -> void:
 static func socket_key(cell: Vector2i, direction: Vector2i) -> String:
 	return "%d,%d,%d,%d" % [cell.x, cell.y, direction.x, direction.y]
 
+## Resolve a shaft for old saves before floor/ceiling collision is built.
+## Fresh floors already carry these deterministic reservations.
+func resolve_vertical_openings() -> void:
+	var field := "stairs" if data.get("type","") == "boss" else ("stairwell" if data.get("type","") == "start" and Run.floor_number > 1 else "")
+	if field.is_empty() or data.has(field): return
+	var zones: Array = FloorGenerator.reserved_zones({"portals":Run.portals},data)
+	var blockers: Array = []
+	for prop in data.get("props",[]):
+		if not prop.get("destroyed",false): blockers.append(Furnisher.record_rect(prop))
+	for chest in data.get("chests",[]):
+		var at := Vector2(float(chest.position[0]),float(chest.position[1]))
+		blockers.append(Rect2(at-Vector2(.5,.33),Vector2(1,.66)))
+	for wall in data.get("partitions",[]): blockers.append(RoomPartitions.rect(wall))
+	data[field] = FloorGenerator.point_array(Staircase.find_spot(geometry,zones,Vector2(pedestal.x,pedestal.z),blockers))
+
+static var section_meshes: Dictionary = {}
+
 func build_floor() -> void:
-	# One finely divided stone sheet per cell, so a large room's floor is not
-	# one giant mesh receiving every distant lantern's lighting pass.
 	var material = DungeonStyle.floor_material(look) if first_person_room else Look.floor_material(look)
 	for cell in geometry.cells:
-		var center = RoomGeometry.cell_center(cell)
-		var sheet = MeshInstance3D.new()
-		sheet.mesh = DungeonStyle.floor_mesh() if first_person_room else Look.floor_mesh()
-		sheet.material_override = material
-		sheet.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		sheet.position = Vector3(center.x, Look.FLOOR_TOP, center.y)
-		sheet.layers = GROUND_LAYER
+		var center := RoomGeometry.cell_center(cell)
 		if first_person_room:
-			Geo.collider(self, Vector3(center.x, -.12, center.y), Vector3(18, .24, 14))
-			var ceiling = Geo.box(self, Vector3(center.x, 5.6, center.y), Vector3(18, .3, 14), Color("454847"))
-			ceiling.material_override = DungeonStyle.wall_material(Color("454847"), false, "masonry")
-			Geo.collider(self, Vector3(center.x, 5.6, center.y), Vector3(18, .3, 14))
-			for beam in [-1, 1]:
-				var joist = Geo.box(self, Vector3(center.x + beam * 5.4, 5.15, center.y), Vector3(.24, .5, 14), Color("514839"))
-				joist.material_override = DungeonStyle.wood_material(Color("514839"))
-		add_child(sheet)
-		Geo.box(self, Vector3(center.x, -.55, center.y), Vector3(18.6, .7, 14.6), Color(look.get("base", "242d31"))).layers = GROUND_LAYER
-		Geo.box(self, Vector3(center.x, -.96, center.y), Vector3(17.9, .25, 13.9), Color(look.get("under", "19232b"))).layers = GROUND_LAYER
+			var whole := Rect2(center-RoomGeometry.HALF,RoomGeometry.CELL)
+			var sections: Array[Rect2] = terrain.floor_sections(whole)
+			if data.has("stairwell"):
+				var well := FloorGenerator.vec2(data.stairwell)
+				# Existing well collision blocks the whole opening from normal
+				# play; the scripted arrival fits inside this smaller square.
+				sections = FirstPersonTerrain.subtract_rects(sections,Rect2(well-Vector2.ONE*1.25,Vector2.ONE*2.5))
+			for area in sections: build_ground_section(area,material)
+			var roof_sections: Array[Rect2] = [whole]
+			for key in ["stairs","stairwell"]:
+				if not data.has(key): continue
+				var at := FloorGenerator.vec2(data[key])
+				var radius := Staircase.OUTER+.65
+				roof_sections = FirstPersonTerrain.subtract_rects(roof_sections,Rect2(at-Vector2.ONE*radius,Vector2.ONE*radius*2.0))
+			for roof in roof_sections:
+				var at := roof.get_center()
+				var ceiling = Geo.box(self,Vector3(at.x,5.6,at.y),Vector3(roof.size.x,.3,roof.size.y),Color("454847"))
+				ceiling.material_override = DungeonStyle.wall_material(Color("454847"),false,"masonry")
+				Geo.collider(self,ceiling.position,Vector3(roof.size.x,.3,roof.size.y))
+			for beam in [-1,1]:
+				var beam_rect := Rect2(center+Vector2(beam*5.4-.12,-7),Vector2(.24,14))
+				var beams: Array[Rect2] = [beam_rect]
+				for key in ["stairs","stairwell"]:
+					if not data.has(key): continue
+					var at := FloorGenerator.vec2(data[key])
+					beams = FirstPersonTerrain.subtract_rects(beams,Rect2(at-Vector2.ONE*2.2,Vector2.ONE*4.4))
+				for beam_part in beams:
+					var at := beam_part.get_center()
+					var joist = Geo.box(self,Vector3(at.x,5.15,at.y),Vector3(beam_part.size.x,.5,beam_part.size.y),Color("514839"))
+					joist.material_override = DungeonStyle.wood_material(Color("514839"))
+		else:
+			var sheet := MeshInstance3D.new()
+			sheet.mesh = Look.floor_mesh()
+			sheet.material_override = material
+			sheet.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			sheet.position = Vector3(center.x,Look.FLOOR_TOP,center.y)
+			sheet.layers = GROUND_LAYER
+			add_child(sheet)
+			Geo.box(self,Vector3(center.x,-.55,center.y),Vector3(18.6,.7,14.6),Color(look.get("base","242d31"))).layers = GROUND_LAYER
+			Geo.box(self,Vector3(center.x,-.96,center.y),Vector3(17.9,.25,13.9),Color(look.get("under","19232b"))).layers = GROUND_LAYER
+	if first_person_room:
+		for key in ["stairs","stairwell"]:
+			if data.has(key): StairCinematic.build_shaft(self,FloorGenerator.vec2(data[key]),Staircase.OUTER+.65)
+
+func build_ground_section(area: Rect2, material: Material) -> void:
+	if area.size.x < .01 or area.size.y < .01: return
+	var key := str(area.size)
+	if not section_meshes.has(key):
+		if section_meshes.size() >= 96: section_meshes.clear()
+		var plane := PlaneMesh.new()
+		plane.size = area.size
+		section_meshes[key] = plane
+	var at := area.get_center()
+	var sheet := MeshInstance3D.new()
+	sheet.mesh = section_meshes[key]
+	sheet.material_override = material
+	sheet.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	sheet.position = Vector3(at.x,Look.FLOOR_TOP,at.y)
+	sheet.layers = GROUND_LAYER
+	add_child(sheet)
+	Geo.collider(self,Vector3(at.x,-.12,at.y),Vector3(area.size.x,.24,area.size.y))
+	# Under-floor facing is cut along the same cellar/stair opening. A full
+	# slab here would hide the lower room even after its top sheet was cut.
+	Geo.box(self,Vector3(at.x,-.55,at.y),Vector3(area.size.x,.7,area.size.y),Color(look.get("base","242d31"))).layers = GROUND_LAYER
+	Geo.box(self,Vector3(at.x,-.96,at.y),Vector3(area.size.x,.25,area.size.y),Color(look.get("under","19232b"))).layers = GROUND_LAYER
 
 func build_walls() -> void:
 	for segment in geometry.wall_segments():
@@ -235,6 +303,11 @@ func reveal_socket(portal_id: String) -> void:
 		Effects.burst(self, Vector3(at.x, .8, at.y), Color("8f8a7c"), 12, 1.4)
 
 func make_gate(socket: Dictionary) -> void:
+	if first_person_room:
+		var doorway := DungeonDoorway.build(self,socket)
+		socket["gate"] = doorway
+		gates.append(doorway)
+		return
 	var direction: Vector2i = socket.dir
 	var at = RoomGeometry.socket_point(socket.cell, direction) + Vector2(direction) * .15
 	var gate = Node3D.new()

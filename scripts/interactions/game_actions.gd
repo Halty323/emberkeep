@@ -140,18 +140,42 @@ func open_chest(chest_id: String) -> Dictionary:
 	chest.opened = true
 	var loot = RandomNumberGenerator.new()
 	loot.seed = Content.stable_hash("loot:%d:%d:%s" % [Run.seed_value, Run.floor_number, chest.id])
-	var front = Vector3(float(chest.position[0]), 0, float(chest.position[1])) + Vector3(0, 0, 1.0)
-	var drops = Drops.roll(chest.table, loot, Run.stats.luck, 0.0, Run.active_item.get("def", ""))
+	var chest_at = Vector3(float(chest.position[0]), float(chest.get("height",0)), float(chest.position[1]))
+	if game.first_person and not chest.has("height"): chest_at.y = game.room.floor_height(chest_at)
+	var front = chest_at + Vector3(0, 0, 1.0)
+	var drops = Drops.roll(chest.table, loot, Run.stats.luck, 0.0, Run.active_item.get("def", ""), -1, "chest")
 	for i in drops.size():
 		var place = game.room.geometry.safe_point(Vector2(Drops.scatter(drops.size(), i, front).x, Drops.scatter(drops.size(), i, front).z), .4, game.room.blocked_at)
+		var at := Vector3(place.x,front.y,place.y)
+		if game.first_person: at.y = game.room.floor_height(at)
 		if drops[i].has("active"):
-			game.add_item_record(drops[i].active, Vector3(place.x, 0, place.y))
+			game.add_item_record(drops[i].active,at)
+			var record: Dictionary = data.items.back()
+			record["source"] = "chest"
+			record["chest"] = chest.id
+			record["height"] = at.y
 		else:
-			game.spawn_pickup(Vector3(place.x, 0, place.y), drops[i].def)
+			game.spawn_pickup(at,drops[i].def)
 	Run.save_run()
 	Run.changed.emit()
 	game.chest_opened(chest)
 	return result(true)
+
+## Adds the ordinary chest earned by an optional vertical challenge.
+## The caller places its view and saves this together with room-clear credit.
+## A stable id and ledger make reload/repeated clear notifications harmless.
+func award_clear_chest(data: Dictionary, at: Vector3) -> Dictionary:
+	var id := str(data.id) + ":vertical-clear"
+	var existing := find_record(data.get("chests",[]),id)
+	if not existing.is_empty(): return existing
+	if data.get("challenge_chest_awarded",false): return {}
+	if not data.has("chests"): data["chests"] = []
+	var chest := {"id":id,"position":[snappedf(at.x,.001),snappedf(at.z,.001)],
+		"height":snappedf(at.y,.001),"locked":false,"opened":false,"table":"normal_chest",
+		"size":[1.0,.66],"source":"vertical_clear"}
+	data.chests.append(chest)
+	data["challenge_chest_awarded"] = true
+	return chest
 
 ## Taking a dropped item swaps it into the single slot; the item in hand is
 ## set down where the player stands, keeping its instance and its timer.
@@ -164,8 +188,10 @@ func take_item(instance_id: String) -> Dictionary:
 	var previous: Dictionary = Run.active_item
 	if not previous.is_empty():
 		data.items.append({"id": previous.instance, "def": previous.def,
-			"position": [snappedf(game.player.position.x, .001), snappedf(game.player.position.z, .001)], "height": game.room.floor_height(game.player.position) if game.first_person else 0.0})
-	Run.active_item = {"instance": record.id, "def": record.def}
+			"position": [snappedf(game.player.position.x, .001), snappedf(game.player.position.z, .001)], "height": game.room.floor_height(game.player.position) if game.first_person else 0.0,
+			"source": previous.get("source","legacy_swap"), "chest": previous.get("chest","")})
+	Run.active_item = {"instance": record.id, "def": record.def,
+		"source":record.get("source","legacy"),"chest":record.get("chest","")}
 	if not Run.cooldowns.has(record.def):
 		Run.cooldowns[record.def] = 0.0
 	Run.save_run()
@@ -182,7 +208,8 @@ func collect_pickup(drop_id: String) -> Dictionary:
 	var node = game.pickup_node(drop_id)
 	if record.is_empty() or node == null:
 		return result(false, "gone")
-	if InteractionRegistry.flat_distance(game.player.position, node.position) > .9:
+	var reach: float = game.player.position.distance_to(node.position) if game.first_person else InteractionRegistry.flat_distance(game.player.position,node.position)
+	if reach > .9:
 		return result(false, "too far away")
 	var definition: Dictionary = Content.record("pickups", record.def)
 	if not PickupRules.can_collect(definition):

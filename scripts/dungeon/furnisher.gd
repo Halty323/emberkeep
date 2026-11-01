@@ -76,7 +76,8 @@ static func make_record(room_id: String, index: int, definition: Dictionary, rec
 	return record
 
 static func furnish(room: Dictionary, geometry: RoomGeometry, zones: Array, placed: Array, gen: RandomNumberGenerator) -> Array:
-	var layouts = Content.families.layouts.filter(func(layout): return room.type in layout.roles)
+	var generation := int(room.get("generation",2))
+	var layouts = Content.families.layouts.filter(func(layout): return room.type in layout.roles and int(layout.get("generation",2)) <= generation)
 	if layouts.is_empty():
 		return []
 	var layout: Dictionary = layouts[gen.randi_range(0, layouts.size() - 1)]
@@ -87,6 +88,10 @@ static func furnish(room: Dictionary, geometry: RoomGeometry, zones: Array, plac
 		var definition: Dictionary = Content.record("furniture", piece.prop)
 		# Larger rooms get proportionally more furniture.
 		var count = gen.randi_range(int(piece.count[0]), int(piece.count[1])) * (1 + (geometry.cells.size() - 1) / 2)
+		if generation >= 3:
+			# Fill each architectural cell rather than leaving a long hall's
+			# far end barren. Placement still honors every reserved lane.
+			count = mini(16,ceili(float(count) * (1.25 if geometry.cells.size()==1 else 1.5)))
 		var cluster_anchor = null
 		for i in count:
 			var record = place(room, geometry, definition, zones, all, gen, cluster_anchor)
@@ -112,7 +117,7 @@ static func place(room: Dictionary, geometry: RoomGeometry, definition: Dictiona
 			for segment in geometry.wall_segments():
 				# Tall pieces stand only against rear walls, so they never hide
 				# the room from the camera.
-				if definition.get("tall", false) and RoomGeometry.is_front(segment.dir): continue
+				if int(room.get("generation",2)) < 3 and definition.get("tall", false) and RoomGeometry.is_front(segment.dir): continue
 				var rotation = facing(-segment.dir)
 				var size = Vector2(float(definition.size[0]), float(definition.size[1]))
 				var along = segment.from + size.x / 2.0 + .7
@@ -123,7 +128,7 @@ static func place(room: Dictionary, geometry: RoomGeometry, definition: Dictiona
 					along += .75
 		"center", "floor":
 			for cell in geometry.cells:
-				for offset in CENTER_OFFSETS:
+				for offset in CENTER_OFFSETS + ([Vector2(-5.8,0),Vector2(5.8,0),Vector2(-2.7,-4.1),Vector2(2.7,4.1)] if int(room.get("generation",2))>=3 else []):
 					var center = RoomGeometry.cell_center(cell) + offset
 					var rotation = 0 if gen.randf() < .7 else 1
 					var rect = footprint(definition, center, rotation)

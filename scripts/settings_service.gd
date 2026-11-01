@@ -9,7 +9,8 @@ const LEGACY_PROFILE_PATH := "user://profile.json"
 const RENDER_SCALES := [0.5, 0.67, 0.75, 1.0]
 const FPS_LIMITS := [30, 60, 90, 120, 0]
 const DETAIL_LEVELS := ["low", "balanced", "high"]
-const DEFAULTS := {"render_scale": 1.0, "fps_limit": 60, "vsync": true, "show_fps": false,
+const SSAO_LEVELS := ["off", "low", "high"]
+const DEFAULTS := {"render_scale": 1.0, "fps_limit": 60, "vsync": true, "show_fps": false, "fullscreen": false, "ssao": "low",
 	"effects_detail": "balanced", "small_details": "balanced",
 	"fov": 78, "mouse_sensitivity": .0025, "touch_sensitivity": .004, "invert_y": false, "head_bob": false,
 	"sound": true, "music": true, "shake": true, "touch": false, "shadows": true}
@@ -21,6 +22,8 @@ const EFFECT_BUDGETS := {"low": {"ambient": 28, "transient": 96, "marks": 24},
 	"high": {"ambient": 64, "transient": 256, "marks": 64}}
 var values: Dictionary = DEFAULTS.duplicate()
 var _applied: Dictionary = {}
+var _windowed_size := Vector2i.ZERO
+var _windowed_position := Vector2i.ZERO
 
 func _ready() -> void:
 	load_settings()
@@ -68,6 +71,8 @@ func validate(key: String, value) -> Variant:
 			return int(value) if int(value) in FPS_LIMITS else null
 		"effects_detail", "small_details":
 			return value if value is String and value in DETAIL_LEVELS else null
+		"ssao":
+			return value if value is String and value in SSAO_LEVELS else null
 		_:
 			return value if value is bool else null
 
@@ -95,6 +100,7 @@ func options(key: String) -> Array:
 		"render_scale": return RENDER_SCALES
 		"fps_limit": return FPS_LIMITS
 		"effects_detail", "small_details": return DETAIL_LEVELS
+		"ssao": return SSAO_LEVELS
 	return [false, true]
 
 func cycle(key: String, step := 1) -> void:
@@ -124,6 +130,8 @@ func apply(key: String) -> void:
 			apply_render_policy()
 		"fps_limit":
 			Engine.max_fps = values.fps_limit
+		"fullscreen":
+			apply_fullscreen()
 		"vsync":
 			if vsync_supported():
 				DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if values.vsync else DisplayServer.VSYNC_DISABLED)
@@ -158,3 +166,28 @@ func effect_budget(channel: String) -> int:
 
 func detail_level() -> int:
 	return DETAIL_LEVELS.find(values.small_details)
+
+func fullscreen_supported() -> bool:
+	return OS.get_name() not in ["Android", "iOS", "Web"] and DisplayServer.get_name() != "headless"
+
+func apply_fullscreen() -> void:
+	if not fullscreen_supported(): return
+	var mode := DisplayServer.window_get_mode()
+	if values.fullscreen:
+		if mode not in [DisplayServer.WINDOW_MODE_FULLSCREEN,DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN]:
+			_windowed_size = DisplayServer.window_get_size()
+			_windowed_position = DisplayServer.window_get_position()
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+	else:
+		if mode in [DisplayServer.WINDOW_MODE_FULLSCREEN,DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN]:
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+			if _windowed_size.x>0:
+				DisplayServer.window_set_size(_windowed_size)
+				DisplayServer.window_set_position(_windowed_position)
+
+func ssao_supported() -> bool:
+	# Retain the affected PowerVR driver's established screen-copy safeguard.
+	return bool(RenderPolicy.current().post_processing)
+
+func effective_ssao() -> String:
+	return str(values.ssao) if ssao_supported() else "off"

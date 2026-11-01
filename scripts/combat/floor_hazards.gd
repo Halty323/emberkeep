@@ -62,19 +62,27 @@ func spot(gen: RandomNumberGenerator, cell: Vector2i, keep_clear: Array, margin 
 	for attempt in 12:
 		var at = center + Vector2(gen.randf_range(-6.5, 6.5), gen.randf_range(-4.5, 4.5))
 		if not geometry.contains(at, margin): continue
-		if game.first_person and game.room.floor_height(Vector3(at.x, 0, at.y)) > .05: continue
+		if game.first_person and (absf(game.room.floor_height(Vector3(at.x, 0, at.y))) > .05 or game.room.blocked_at(at)): continue
 		if keep_clear.any(func(point): return point.distance_to(at) < CLEAR_OF): continue
 		return at
+	if game.first_person:
+		return geometry.safe_point(best,margin,func(point: Vector2): return game.room.blocked_at(point) or absf(game.room.floor_height(Vector3(point.x,0,point.y)))>.05 or keep_clear.any(func(reserved): return reserved.distance_to(point)<CLEAR_OF))
 	return best
 
 func add_vent(at: Vector2, gen: RandomNumberGenerator) -> void:
 	var node = Node3D.new()
 	add_child(node)
 	node.position = Vector3(at.x, 0, at.y)
-	Geo.box(node, Vector3(0, .02, 0), Vector3(1.1, .05, 1.1), Color("2a2522"))
+	var bank = Geo.box(node,Vector3(0,.025,0),Vector3(1.35,.07,1.35),Color("2a2522"))
+	if game.first_person:
+		bank.material_override = DungeonStyle.wall_material(Color("34312b"),true)
+		Geo.box(node,Vector3(0,.07,0),Vector3(1.07,.04,1.07),Color("17191b"))
 	var slits: Array = []
 	for i in 4:
-		slits.append(Geo.box(node, Vector3(-.36 + i * .24, .05, 0), Vector3(.08, .02, .9), Color("ff7a3a"), .3))
+		slits.append(Geo.box(node,Vector3(-.36+i*.24,.085 if game.first_person else .05,0),Vector3(.065 if game.first_person else .08,.02,.9),Color("b74716") if game.first_person else Color("ff7a3a"),.18 if game.first_person else .3))
+	if game.first_person:
+		for across in [-.39,.39]:
+			Geo.box(node,Vector3(0,.11,across),Vector3(1.04,.045,.065),Color("3a3c3b"))
 	var warning = Geo.ring(node, Vector3(0, .06, 0), VENT_REACH, Color("ff8a4a"), .05)
 	warning.visible = false
 	vents.append({"at": node.position, "node": node, "slits": slits, "warning": warning, "state": "rest",
@@ -119,9 +127,9 @@ func update_vent(vent: Dictionary, delta: float, running: bool) -> void:
 			glow = 1.0 - vent.timer / VENT_WARNING
 			if vent.timer <= 0: erupt(vent)
 	# Stepped, so the shared material cache stays small.
-	var heat = snappedf(.3 + glow * 2.5, .5)
+	var heat = snappedf(.18+glow*1.15,.25) if game.first_person else snappedf(.3+glow*2.5,.5)
 	for slit in vent.slits:
-		slit.material_override = Geo.material(Color("ff7a3a"), heat)
+		slit.material_override = Geo.material(Color("b74716") if game.first_person else Color("ff7a3a"),heat)
 
 func erupt(vent: Dictionary) -> void:
 	vent.state = "rest"

@@ -4,9 +4,10 @@ extends RefCounted
 ## split into silver (5) and copper (1) coins, so every value comes from the
 ## pickup catalog instead of a special case.
 
-static func roll(table_id: String, rng: RandomNumberGenerator, luck := 0.0, coin_bonus := 0.0, exclude_active := "") -> Array:
+static func roll(table_id: String, rng: RandomNumberGenerator, luck := 0.0, coin_bonus := 0.0, exclude_active := "", balance_version := -1, source := "") -> Array:
 	var result: Array = []
-	for entry in Content.record("drop_tables", table_id).rolls:
+	var selected: String = ExpeditionBalance.table_id(table_id,balance_version)
+	for entry in Content.record("drop_tables", selected).rolls:
 		if entry.has("coins"):
 			var expected = float(entry.coins) * (1.0 + coin_bonus)
 			var amount = int(floor(expected)) + int(rng.randf() < fposmod(expected, 1.0))
@@ -25,6 +26,9 @@ static func roll(table_id: String, rng: RandomNumberGenerator, luck := 0.0, coin
 					for i in int(choice.get("count", 1)): result.append({"def": choice.pickup})
 					break
 		elif entry.has("active"):
+			# A table alone never grants equipment: only the chest transaction
+			# may authorize this channel, even if a future foe table is edited.
+			if not ExpeditionBalance.allows_active(selected,source): continue
 			var roll_value = rng.randf()
 			var pool = Content.families.actives.filter(func(active): return active.id != exclude_active)
 			if roll_value < float(entry.active) and not pool.is_empty():

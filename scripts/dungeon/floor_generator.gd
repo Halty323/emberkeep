@@ -1,10 +1,11 @@
 class_name FloorGenerator
 extends RefCounted
-## Generator v2: multi-cell rooms joined only through explicit portals. Two
+## Versioned multi-cell rooms joined only through explicit portals. Two
 ## rooms sharing a cell edge are not connected unless a portal says so.
 ## Order: mandatory graph with legal footprints, role assignment, validation.
 ## Retries are bounded; the last resort is a known-valid single-cell floor.
-const VERSION := 2
+const VERSION := 3
+const PREVIOUS_VERSION := 2
 const LEGACY_VERSION := 1
 const BOUNDS := 5
 const MAX_ATTEMPTS := 10
@@ -13,14 +14,44 @@ const SPECIAL_ROLES := ["boss", "treasure", "shop", "rest"]
 # The dark store takes the next deepest room it can; floors made before it
 # existed (and the fallback layout) have none.
 const OPTIONAL_ROLES := ["dark"]
+const EXPEDITION_REQUIRED := ["boss", "rest"]
+const EXPEDITION_OPTIONAL := ["treasure", "shop", "dark"]
 const START_ID := "0,0"
 
 static func generate(seed_value: int, floor_number: int) -> Dictionary:
+	# Original regression fixtures explicitly retain their old layout contract.
+	if OS.get_environment("EMBERKEEP_LEGACY_TEST") == "1": return generate_v2(seed_value,floor_number)
+	return generate_version(seed_value,floor_number,VERSION)
+
+static func generate_v2(seed_value: int, floor_number: int) -> Dictionary:
+	return generate_version(seed_value,floor_number,PREVIOUS_VERSION)
+
+static func generate_version(seed_value: int, floor_number: int, generation: int) -> Dictionary:
 	for attempt in MAX_ATTEMPTS:
-		var floor_data = attempt_floor(seed_value, floor_number, attempt)
-		if not floor_data.is_empty() and validate(floor_data).is_empty():
-			return floor_data
-	return fallback_floor(seed_value, floor_number)
+		var floor_data = attempt_floor(seed_value, floor_number, attempt, generation)
+		if not floor_data.is_empty() and validate(floor_data).is_empty(): return floor_data
+	return fallback_expedition(seed_value,floor_number) if generation >= VERSION else fallback_floor(seed_value,floor_number)
+
+## The current generator also has a compact guaranteed-valid fallback.
+## An unlucky retry cannot silently restore the old oversized tower.
+static func fallback_expedition(seed_value: int, floor_number: int) -> Dictionary:
+	var data := {"rooms":{},"portals":{},"owners":{},"generator":VERSION,"fallback":true}
+	var specs := [[Vector2i(0,0),"start"],[Vector2i(1,0),"combat"],[Vector2i(0,1),"combat"],
+		[Vector2i(-1,0),"combat"],[Vector2i(-2,0),"rest"],[Vector2i(0,2),"treasure"],
+		[Vector2i(1,1),"shop"],[Vector2i(3,0),"combat"],[Vector2i(4,0),"boss"]]
+	for spec in specs:
+		var template := "hall_2x1" if spec[0]==Vector2i(1,0) else "hearth_1x1"
+		var id := place_room(data,Content.record("rooms",template),0,spec[0],seed_value,floor_number)
+		data.rooms[id].type=spec[1]
+	for edge in [[Vector2i(0,0),Vector2i.RIGHT],[Vector2i(0,0),Vector2i.DOWN],[Vector2i(0,0),Vector2i.LEFT],
+		[Vector2i(-1,0),Vector2i.LEFT],[Vector2i(0,1),Vector2i.DOWN],[Vector2i(1,0),Vector2i.DOWN],
+		[Vector2i(2,0),Vector2i.RIGHT],[Vector2i(3,0),Vector2i.RIGHT]]:
+		add_portal(data,edge[0],edge[1])
+	var depth := distances(data)
+	for id in data.rooms: data.rooms[id].depth=depth[id]
+	add_secret_room(data,seed_value,floor_number)
+	dress_floor(data,seed_value,floor_number)
+	return data
 
 ## The last resort: the original single-cell layout, its boss walled down to
 ## the one doorway it was first reached by. Nothing lies beyond the deepest
@@ -51,13 +82,13 @@ static func key_of(cell: Vector2i) -> String:
 static func room_cells(room: Dictionary) -> Array:
 	return room.cells.map(func(value): return vec(value))
 
-static func attempt_floor(seed_value: int, floor_number: int, attempt: int) -> Dictionary:
+static func attempt_floor(seed_value: int, floor_number: int, attempt: int, generation := VERSION) -> Dictionary:
 	var gen = RandomNumberGenerator.new()
 	gen.seed = Content.stable_hash("topology:%d:%d:%d" % [seed_value, floor_number, attempt])
-	var floor_data = {"rooms": {}, "portals": {}, "owners": {}, "generator": VERSION}
+	var floor_data = {"rooms": {}, "portals": {}, "owners": {}, "generator": generation}
 	place_room(floor_data, Content.record("rooms", "hearth_1x1"), 0, Vector2i.ZERO, seed_value, floor_number)
-	var target = 11 + floor_number * 2
-	var cell_budget = target + 6 + floor_number
+	var target = 8 + floor_number / 2 if generation >= 3 else 11 + floor_number * 2
+	var cell_budget = target * 2 + 3 if generation >= 3 else target + 6 + floor_number
 	var cells_used = 1
 	var templates = Content.families.rooms.filter(func(t): return "combat" in t.roles)
 	var guard = 0
@@ -69,7 +100,7 @@ static func attempt_floor(seed_value: int, floor_number: int, attempt: int) -> D
 		if edges.is_empty():
 			continue
 		var edge: Dictionary = edges[gen.randi_range(0, edges.size() - 1)]
-		var template = pick_template(gen, templates, cell_budget - cells_used)
+		var template = pick_template(gen, templates, cell_budget - cells_used, generation)
 		var rotation: int = template.rotations[gen.randi_range(0, template.rotations.size() - 1)]
 		var shape = RoomGeometry.rotate_cells(template.cells, rotation)
 		var target_cell: Vector2i = edge.cell + edge.dir
@@ -92,7 +123,7 @@ static func attempt_floor(seed_value: int, floor_number: int, attempt: int) -> D
 				add_portal(floor_data, edge.cell, edge.dir)
 	if not floor_data.rooms.values().any(func(room): return room.cells.size() > 1):
 		return {}
-	if not assign_roles(floor_data):
+	if not assign_roles(floor_data, floor_number):
 		return {}
 	add_secret_room(floor_data, seed_value, floor_number)
 	dress_floor(floor_data, seed_value, floor_number)
@@ -218,8 +249,13 @@ static func dress_floor(floor_data: Dictionary, seed_value: int, floor_number: i
 		var geometry = RoomGeometry.new(cells)
 		var zones = reserved_zones(floor_data, room)
 		var props: Array = []
+		var modern := int(room.get("generation",2)) >= 3
+		if modern:
+			room["fps_terrain"] = FirstPersonTerrain.plan_generation(room,geometry,zones)
+			zones.append_array(FirstPersonTerrain.reserved_zones(room,geometry))
 		if room.type in ["combat", "boss"]:
 			for point in pillar_points(cells, int(room.seed), vec2(room.pedestal)):
+				if modern and in_zones(point,zones,1.0): continue
 				props.append({"id": "%s:p%d" % [id, props.size()], "kind": "pillar", "position": point_array(point), "rotation": 0, "size": [1.3, 1.3]})
 		# The way up: the boss room's stair, and the stairwell a floor opens with.
 		var stair_key = "stairs" if room.type == "boss" else ("stairwell" if room.type == "start" and floor_number > 1 else "")
@@ -248,16 +284,19 @@ static func dress_floor(floor_data: Dictionary, seed_value: int, floor_number: i
 					"locked": true, "opened": false, "table": "locked_chest", "size": [1.0, .66]})
 		for chest in room.chests:
 			zones.append({"kind": "chest", "rect": Rect2(vec2(chest.position) - Vector2(1.3, 1.6), Vector2(2.6, 3.2))})
+		if modern:
+			room["partitions"] = RoomPartitions.plan(room,geometry,zones,props)
+			for wall in room.partitions: zones.append({"kind":"partition","rect":RoomPartitions.rect(wall).grow(.85)})
 		props.append_array(Furnisher.furnish(room, geometry, zones, props, gen))
 		room["props"] = props
 
-static func pick_template(gen: RandomNumberGenerator, templates: Array, cells_left: int) -> Dictionary:
+static func pick_template(gen: RandomNumberGenerator, templates: Array, cells_left: int, generation := VERSION) -> Dictionary:
 	var choices = templates.filter(func(t): return t.cells.size() <= maxi(1, cells_left))
 	var total = 0.0
-	for template in choices: total += template.weight
+	for template in choices: total += template.weight * (2.4 if generation >= 3 and template.cells.size()>1 else 1.0)
 	var roll = gen.randf() * total
 	for template in choices:
-		roll -= template.weight
+		roll -= template.weight * (2.4 if generation >= 3 and template.cells.size()>1 else 1.0)
 		if roll <= 0: return template
 	return choices.back()
 
@@ -280,6 +319,7 @@ static func place_room(floor_data: Dictionary, template: Dictionary, rotation: i
 	var room = {"id": id, "template": template.id, "revision": template.revision, "rotation": rotation,
 		"anchor": [anchor.x, anchor.y], "cells": cells.map(func(cell): return [cell.x, cell.y]),
 		"type": "start" if id == START_ID else "combat", "depth": 0,
+		"generation": int(floor_data.get("generator",VERSION)),
 		"seed": seed_value + floor_number * 10007 + first.x * 719 + first.y * 1117,
 		"visited": id == START_ID, "cleared": id == START_ID, "claimed": id == START_ID, "portals": [],
 		# Resolved blueprint: later template edits cannot move saved anchors.
@@ -341,7 +381,7 @@ static func distances(floor_data: Dictionary, include_concealed := false) -> Dic
 
 ## The deepest rooms take the special roles; the boss only a dead end, so
 ## its room is never a way through to anywhere else.
-static func assign_roles(floor_data: Dictionary) -> bool:
+static func assign_roles(floor_data: Dictionary, floor_number := 1) -> bool:
 	var depth = distances(floor_data)
 	var order: Array = floor_data.rooms.keys()
 	var index := {}
@@ -349,7 +389,19 @@ static func assign_roles(floor_data: Dictionary) -> bool:
 	order.sort_custom(func(a, b): return depth[a] > depth[b] or (depth[a] == depth[b] and index[a] < index[b]))
 	for id in floor_data.rooms:
 		floor_data.rooms[id].depth = depth.get(id, 0)
-	for role in SPECIAL_ROLES:
+	var modern := int(floor_data.get("generator", PREVIOUS_VERSION)) >= VERSION
+	var required: Array = EXPEDITION_REQUIRED.duplicate() if modern else SPECIAL_ROLES.duplicate()
+	var optional: Array = [] if modern else OPTIONAL_ROLES.duplicate()
+	if modern:
+		# Special rooms compete with encounters in the smaller tower. Rest
+		# keeps its guaranteed painting; shops and free gear are no longer
+		# mandatory stops. This stream does not change topology or combat RNG.
+		var gen := RandomNumberGenerator.new()
+		gen.seed = Content.stable_hash("expedition-roles:%d" % int(floor_data.rooms[START_ID].seed))
+		if gen.randf() < .7: optional.append("treasure")
+		if gen.randf() < .7: optional.append("shop")
+		if floor_number > 1 and gen.randf() < .35: optional.append("dark")
+	for role in required:
 		var chosen = ""
 		for id in order:
 			var room = floor_data.rooms[id]
@@ -357,10 +409,9 @@ static func assign_roles(floor_data: Dictionary) -> bool:
 			if room.type == "combat" and role in Content.record("rooms", room.template).get("roles", []):
 				chosen = id
 				break
-		if chosen == "":
-			return false
+		if chosen == "": return false
 		floor_data.rooms[chosen].type = role
-	for role in OPTIONAL_ROLES:
+	for role in optional:
 		for id in order:
 			var room = floor_data.rooms[id]
 			if room.type == "combat" and role in Content.record("rooms", room.template).get("roles", []):
@@ -404,10 +455,14 @@ static func validate(floor_data: Dictionary) -> PackedStringArray:
 		var template = Content.record("rooms", room.template)
 		if not template.is_empty() and room.type not in template.roles:
 			problems.append("room %s template does not allow role %s" % [room.id, room.type])
-	for role in ["start"] + SPECIAL_ROLES:
+	var expedition := int(floor_data.get("generator",PREVIOUS_VERSION)) >= VERSION
+	var required: Array = EXPEDITION_REQUIRED if expedition else SPECIAL_ROLES
+	var optional: Array = EXPEDITION_OPTIONAL if expedition else OPTIONAL_ROLES
+	for role in ["start"] + required:
 		if counts.get(role, 0) != 1: problems.append("floor needs exactly one %s room" % role)
-	for role in OPTIONAL_ROLES:
+	for role in optional:
 		if counts.get(role, 0) > 1: problems.append("floor has more than one %s room" % role)
+	if expedition and counts.get("combat",0) < 3: problems.append("expedition needs at least three combat rooms")
 	# Floors from version 1 saves keep the layout they were made with.
 	var legacy_save = floor_data.get("generator", VERSION) == LEGACY_VERSION and not floor_data.get("fallback", false)
 	for room in floor_data.rooms.values():
@@ -422,7 +477,7 @@ static func validate(floor_data: Dictionary) -> PackedStringArray:
 			if not all_depth.has(id): problems.append("secret room %s is unreachable" % id)
 		elif not open_depth.has(id):
 			problems.append("room %s is unreachable without secrets" % id)
-	var modern = floor_data.get("generator", VERSION) == VERSION and not floor_data.get("fallback", false)
+	var modern = int(floor_data.get("generator", VERSION)) >= PREVIOUS_VERSION and not floor_data.get("fallback", false)
 	if modern and not floor_data.rooms.values().any(func(room): return room.cells.size() > 1):
 		problems.append("floor has no larger room")
 	return problems

@@ -14,6 +14,7 @@ uniform float flicker = 0.0;
 uniform float roughness_value = 0.6;
 // 0 wax, 1 ice, 2 fire, 3 moss, 4 glass, 5 water, 6 ink (ResidueField.KINDS).
 uniform int kind = 0;
+uniform bool first_person = false;
 uniform vec2 grid_origin;
 uniform vec2 grid_size;
 uniform float tile = 0.8;
@@ -33,6 +34,7 @@ void fragment() {
     vec3 color = tint.rgb;
     vec3 light = vec3(0.0);
     float rough = roughness_value;
+    float opacity = tint.a;
     float rim = 1.0 - smoothstep(0.5, 0.62, coverage);
     if (kind == 0) {
         // Wax: swirled cream, a raised lighter lip.
@@ -45,6 +47,27 @@ void fragment() {
         float flame = smoothstep(0.35, 0.95, a * 0.6 + b * 0.6);
         color = mix(vec3(0.55, 0.12, 0.03), mix(tint.rgb, vec3(1.0, 0.92, 0.6), flame), 0.4 + 0.6 * flame);
         light = color * glow * (0.5 + flame) * (1.0 - flicker * 0.25 + flicker * 0.25 * sin(TIME * 9.0 + n.g * 8.0));
+        if (first_person) {
+            // A scorched ember bed belongs on a stone dungeon floor. Dark
+            // crust dominates, with slow hot fissures and a cooled bank;
+            // the damage footprint still comes from the exact same mask.
+            vec2 warp = texture(detail,world_xz*.19).rb-vec2(.5);
+            vec4 crust = texture(detail,world_xz*.78+warp*.65);
+            vec4 grain = texture(detail,world_xz*3.7+warp);
+            // Ridged fracture noise is warped by broad stone variation.
+            // Avoid cellular-distance contours, which form perfect glowing
+            // rings and make a natural ember bed look like a neon pattern.
+            float fissure = smoothstep(.38,.68,crust.a)*smoothstep(.3,.68,grain.r);
+            float bank = smoothstep(.46,.69,coverage);
+            float pulse = .76+.08*sin(TIME*1.45+crust.r*13.0);
+            float heat = fissure*bank*pulse;
+            vec3 basalt = mix(vec3(.065,.046,.032),vec3(.16,.115,.073),crust.b*.65+grain.b*.35);
+            vec3 hot = mix(vec3(.56,.075,.012),vec3(.92,.28,.045),grain.g*.45);
+            color = mix(basalt,hot,heat*.28);
+            light = hot*heat*.66;
+            opacity = mix(.48,.8,heat);
+            rough = .93;
+        }
     } else if (kind == 3) {
         // Moss: soft and uneven, darker in its hollows.
         color *= 0.7 + 0.5 * texture(detail, world_xz * 2.4).r;
@@ -66,5 +89,5 @@ void fragment() {
     ALBEDO = color;
     EMISSION = light;
     ROUGHNESS = rough;
-    ALPHA = tint.a * shape;
+    ALPHA = opacity * shape;
 }

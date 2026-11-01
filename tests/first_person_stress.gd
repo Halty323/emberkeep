@@ -209,6 +209,10 @@ func test_saturated_build() -> void:
 
 func test_elevated_effects() -> void:
 	game.start_run("candle", 18523427, false)
+	# This regression fixture tests the original 1.2m gallery. The v3
+	# optional upper/cellar spaces have their own physical coverage.
+	run.generator_version = 2
+	run.generate_floor()
 	game.paused = true
 	var gallery = false
 	for id in run.rooms:

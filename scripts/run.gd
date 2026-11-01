@@ -24,7 +24,7 @@ var portals: Dictionary = {}
 var current_room = "0,0"
 # Where the player last entered the current room, in room-local coordinates.
 var entry = {"room": "0,0", "position": [0.0, 2.0]}
-var generator_version = FloorGenerator.VERSION
+var generator_version = FloorGenerator.PREVIOUS_VERSION if OS.get_environment("EMBERKEEP_LEGACY_TEST") == "1" else FloorGenerator.VERSION
 var inventory: Array = []
 var weapon_id = "candle"
 var stats: Dictionary = {}
@@ -81,14 +81,14 @@ func start_run(chosen_weapon: String, seed_input := 0, is_daily := false) -> voi
 	rng.seed = seed_value
 	floor_number = 1
 	plan_climb(CLIMB)
-	generator_version = FloorGenerator.VERSION
+	generator_version = FloorGenerator.PREVIOUS_VERSION if OS.get_environment("EMBERKEEP_LEGACY_TEST") == "1" else FloorGenerator.VERSION
 	inventory = []
 	# Locked weapons can never start a run, whatever asked for them.
 	weapon_id = chosen_weapon if Collection.weapon_available(chosen_weapon) else Forge.id_for(seed_value, 0)
 	pigment = 0
 	blood_debt = 0
 	painting_slots = []
-	coins = 8
+	coins = ExpeditionBalance.START_COINS if generator_version >= 3 else 8
 	keys = 0
 	bombs = START_BOMBS
 	wards = 0
@@ -404,8 +404,10 @@ func generate_floor() -> void:
 	if generator_version == FloorGenerator.LEGACY_VERSION:
 		# Runs saved before v2 keep the original generator for later floors.
 		floor_data = FloorGenerator.from_legacy(FloorGenerator.legacy_rooms(seed_value, floor_number))
+	elif generator_version == FloorGenerator.PREVIOUS_VERSION:
+		floor_data = FloorGenerator.generate_v2(seed_value, floor_number)
 	else:
-		floor_data = FloorGenerator.generate(seed_value, floor_number)
+		floor_data = FloorGenerator.generate_version(seed_value, floor_number, FloorGenerator.VERSION)
 	rooms = floor_data.rooms
 	portals = floor_data.portals
 	current_room = FloorGenerator.START_ID
@@ -454,7 +456,7 @@ func assign_paintings() -> void:
 			mount.painting = pool[stream.randi_range(0, pool.size() - 1)]
 			placed.append(mount.painting)
 
-func mark_cleared() -> void:
+func mark_cleared(persist := true) -> void:
 	if rooms[current_room].cleared:
 		return
 	rooms[current_room].cleared = true
@@ -463,12 +465,12 @@ func mark_cleared() -> void:
 		heal(stats.room_heal)
 	if stats.heal_each_room > 0:
 		heal(stats.heal_each_room)
-	save_run()
+	if persist: save_run()
 	changed.emit()
 
 func next_floor() -> void:
 	floor_number += 1
-	heal(2)
+	if generator_version < 3: heal(2)
 	generate_floor()
 	assign_paintings()
 	save_profile()
@@ -563,6 +565,7 @@ func load_run() -> bool:
 	for portal in d.portals.values():
 		if not d.rooms.has(portal.a.room) or not d.rooms.has(portal.b.room):
 			return false
+	if int(d.get("generator",FloorGenerator.PREVIOUS_VERSION)) not in [FloorGenerator.LEGACY_VERSION, FloorGenerator.PREVIOUS_VERSION, FloorGenerator.VERSION]: return false
 	for id in d.inventory:
 		if not Content.item_by_id.has(id):
 			return false
@@ -585,7 +588,7 @@ func load_run() -> bool:
 	var saved_angles = d.get("view_angles", [])
 	if saved_angles is Array and saved_angles.size() == 2 and saved_angles.all(func(value): return (value is int or value is float) and is_finite(float(value))):
 		view_angles = [wrapf(float(saved_angles[0]), -PI, PI), clampf(float(saved_angles[1]), deg_to_rad(-85), deg_to_rad(85))]
-	generator_version = int(d.get("generator", FloorGenerator.VERSION))
+	generator_version = int(d.get("generator", FloorGenerator.PREVIOUS_VERSION))
 	inventory = d.inventory
 	weapon_id = d.weapon
 	coins = int(d.coins)

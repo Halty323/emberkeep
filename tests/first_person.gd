@@ -73,6 +73,8 @@ func exercise() -> void:
 	var raised_rooms = 0
 	for seed_value in [64217, 81031, 52043]:
 		game.start_run("candle", seed_value, false)
+		run.generator_version = 2
+		run.generate_floor()
 		for id in run.rooms:
 			var data: Dictionary = run.rooms[id]
 			if data.type != "combat" or data.cells.size() < 2: continue

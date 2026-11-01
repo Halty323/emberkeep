@@ -6,6 +6,7 @@ const CAMERA_FOCUS_LIMIT = Vector2(3.6, 2.8)
 var first_person := OS.get_environment("EMBERKEEP_LEGACY_TEST") != "1" and not "--isometric" in OS.get_cmdline_user_args()
 var fps: FirstPersonController
 var title_scene: EmberkeepTitleScene
+var stair_cinematic := StairCinematic.new()
 var room: DungeonRoom
 var camera: Camera3D
 var camera_focus = Vector3.ZERO
@@ -422,13 +423,16 @@ func advance_transition(delta: float) -> void:
 ## fills the view; the floor changes under it, then the figure comes up the
 ## new floor's stairwell as the light recedes. Simulation clock, like doorways.
 func begin_climb() -> void:
-	if first_person:
-		transition = {"kind": "fps_floor", "time": 0.0}
-		return
 	var path: Array = [player.position] + stairs.climb_path()
-	var times: Array = [CLIMB_APPROACH * .6, CLIMB_APPROACH * .4]
-	for i in Staircase.STEPS: times.append(CLIMB_STEPS / Staircase.STEPS)
+	var approach: float = StairCinematic.APPROACH if first_person else CLIMB_APPROACH
+	var duration: float = StairCinematic.CLIMB if first_person else CLIMB_STEPS
+	var times: Array = [approach * .6, approach * .4]
+	for i in Staircase.STEPS: times.append(duration / Staircase.STEPS)
+	if first_person:
+		path.push_front(player.position)
+		times.push_front(StairCinematic.PULLBACK)
 	transition = {"kind": "stairs", "phase": "climb", "time": 0.0, "path": path, "times": times}
+	if first_person: stair_cinematic.begin(self)
 	player.velocity = Vector3.ZERO
 	request_dash = false
 	interaction_text = ""
@@ -439,8 +443,8 @@ func advance_climb() -> void:
 	var u = clampf(transition.time / total + .0001, 0.0, 1.0)
 	player.walk_to(path_point(transition.path, transition.times, transition.time))
 	if transition.phase == "climb":
-		player.set_fade(1.0 - clampf((u - .55) / .4, 0.0, 1.0))
-		light_veil.color.a = pow(clampf((u - .4) / .6, 0.0, 1.0), 1.6)
+		player.set_fade(1.0 - clampf((u - (.84 if first_person else .55)) / (.15 if first_person else .4), 0.0, 1.0))
+		light_veil.color.a = pow(clampf((u - (.76 if first_person else .4)) / (.24 if first_person else .6), 0.0, 1.0), 1.6)
 		if u >= 1.0: reach_next_floor()
 	else:
 		player.set_fade(clampf(transition.time / (ARRIVE_RISE * .8), 0.0, 1.0))
@@ -473,6 +477,7 @@ func reach_next_floor() -> void:
 	player.set_fade(0.0)
 	light_veil.color.a = 1.0
 	Run.entry = {"room": Run.current_room, "position": [snappedf(arrival.x, .001), snappedf(arrival.z, .001)]}
+	if first_person: stair_cinematic.begin(self,true)
 	Run.save_run()
 	ui.announce_floor()
 
@@ -610,6 +615,7 @@ func update_camera(delta: float, snap := false) -> void:
 		if fps: fps.update_view(delta)
 		title_scene.pose(camera)
 		return
+	if first_person and stair_cinematic.pose(self): return
 	if first_person and fps and not in_menu:
 		fps.update_view(delta)
 		return
@@ -651,6 +657,7 @@ func camera_target(at: Vector3) -> Vector3:
 		center.y + clampf((at.z - center.y) * gain.y, -limit.y, limit.y))
 
 func clean_room(keep_view := false) -> void:
+	stair_cinematic.cancel(self)
 	for shot in shots:
 		if is_instance_valid(shot): shot.queue_free()
 	for enemy in enemies:
@@ -839,6 +846,7 @@ func enter_room(spawn: Vector3, keep_view := false) -> void:
 					spawned[i].make_elite(plan[i].elite)
 	else:
 		room.set_open(true)
+		if ExpeditionBalance.active_new_run() and data.type in ["combat","boss"] and data.cleared and data.has("clear_reward") and not data.get("clear_reward_paid",false): resolve_expedition_clear(data)
 		if not data.cleared:
 			data.cleared = true
 		# Recover a checkpoint written just after the boss died but before its
@@ -862,8 +870,7 @@ func enter_room(spawn: Vector3, keep_view := false) -> void:
 	if data.type == "secret" and not data.get("found", false):
 		data["found"] = true
 		ui.notify("A forgotten gallery" if data.get("variant", "") == "gallery" else "A hidden cache", "Few little lights ever find this room.", Color("d7c3e8"))
-	for chest in data.get("chests", []):
-		chest_views[chest.id] = ItemViews.chest(scene_root, chest)
+	for chest in data.get("chests", []): make_chest_view(chest)
 	refresh_items()
 	for mount_id in room.paintings:
 		var mount = GameActions.find_record(data.get("mounts", []), mount_id)
@@ -1067,9 +1074,12 @@ func ease_from_stairs(delta: float) -> void:
 	player.position += Vector3(moved.x, 0, moved.y)
 
 func clear_room() -> void:
-	room.set_open(true)
-	Run.mark_cleared()
 	var data: Dictionary = Run.rooms[Run.current_room]
+	if data.cleared: return
+	room.set_open(true)
+	# New expeditions persist clear credit and its reward together, so a
+	# reload cannot lose or duplicate the chest/relic between two writes.
+	Run.mark_cleared(not ExpeditionBalance.active_new_run())
 	# Lanterns relit or put out in the fight stay that way.
 	if room.lanterns_changed: data["lit"] = room.burning_indices()
 	Audio.play_sound("door", 1.3)
@@ -1078,7 +1088,9 @@ func clear_room() -> void:
 		# The stair builds as a short scene: play waits and the camera watches.
 		raise_stairs(true)
 		transition = {"kind": "build", "time": 0.0}
-	if data.type == "boss" or Run.cleared % 2 == 0:
+	if ExpeditionBalance.active_new_run():
+		resolve_expedition_clear(data)
+	elif data.type == "boss" or Run.cleared % 2 == 0:
 		ensure_offers(data.type == "boss")
 		make_marker("treasure", room.pedestal)
 	else:
@@ -1087,9 +1099,44 @@ func clear_room() -> void:
 			spawn_pickup(room.pedestal, drop.def)
 	Run.save_run()
 
-func ensure_offers(premium := false) -> void:
+func resolve_expedition_clear(data: Dictionary) -> void:
+	if data.get("clear_reward_paid",false): return
+	if not data.has("clear_reward"):
+		if data.type == "boss": data["clear_reward"] = "boss_relic"
+		elif room.terrain and room.terrain.challenge(): data["clear_reward"] = "chest"
+		elif ExpeditionBalance.combat_relic_due(data,Run.rooms): data["clear_reward"] = "relic"
+		else: data["clear_reward"] = "supplies"
+	match data.clear_reward:
+		"boss_relic", "relic":
+			ensure_offers(data.type=="boss",false)
+			make_marker("treasure",room.pedestal)
+		"chest":
+			var at: Vector3 = room.terrain.reward_point()
+			# Do not materialize solid loot around the player's capsule.
+			for offset in [Vector2.ZERO,Vector2(-1.1,-.9),Vector2(1.1,-.9),Vector2(-1.1,.9),Vector2(1.1,.9)]:
+				var candidate := at + Vector3(offset.x,0,offset.y)
+				var flat := Vector2(candidate.x,candidate.z)
+				if not room.terrain.ledge.grow(-.55).has_point(flat) or room.blocked_at(flat): continue
+				if Vector2(player.position.x,player.position.z).distance_to(flat)<1.25: continue
+				at=candidate
+				break
+			var chest: Dictionary = actions.award_clear_chest(data,at)
+			if not chest.is_empty():
+				make_chest_view(chest)
+				room.add_obstacle(str(chest.id),Vector2(at.x,at.z),.55)
+				refresh_items()
+				ui.notify("A chest earned", "The chamber's supplies are yours.")
+			data.claimed=true
+		_:
+			data.claimed=true
+			for drop in Drops.roll("room_clear",Run.rng,Run.stats.luck): spawn_pickup(room.pedestal,drop.def)
+	data["clear_reward_paid"]=true
+
+func ensure_offers(premium := false, persist := true) -> void:
 	var data: Dictionary = Run.rooms[Run.current_room]
-	if data.has("offers"): return
+	if data.has("offers"):
+		data.offers = ExpeditionBalance.sanitize_offers(data.offers,int(data.seed))
+		return
 	var gen = RandomNumberGenerator.new()
 	gen.seed = int(data.seed) + 991
 	var items = Content.roll_items(gen, 3, Run.inventory, premium, Run.stats.luck)
@@ -1100,11 +1147,9 @@ func ensure_offers(premium := false) -> void:
 	if gen.randf() < .5 or data.type == "shop":
 		# Every weapon on offer is forged here, for this room alone.
 		offers[2] = {"kind": "weapon", "id": Forge.id_for(Content.stable_hash("shop:%d:%s" % [Run.seed_value, data.id]), gen.randi_range(0, 99)), "price": 14}
-	if gen.randf() < (.6 if data.type == "shop" else .3):
-		var pool = Content.families.actives.filter(func(active): return active.id != Run.active_item.get("def", ""))
-		offers[1] = {"kind": "active", "id": pool[gen.randi_range(0, pool.size() - 1)].id, "price": 15}
+
 	data.offers = offers
-	Run.save_run()
+	if persist: Run.save_run()
 
 func make_marker(kind: String, at := Vector3.ZERO) -> void:
 	if marker and is_instance_valid(marker): marker.queue_free()
@@ -1159,7 +1204,7 @@ func prompt_for(target: Dictionary) -> String:
 		"treasure": return "Choose a little treasure"
 		"shop": return "Browse the merchant’s wares"
 		"dark": return "Bargain with the dark · pay in life"
-		"rest": return "Warm your hands · heal 3"
+		"rest": return "Warm your hands · heal %d" % (1 if ExpeditionBalance.active_new_run() else 3)
 		"exit": return "Carry the light home" if Run.last_floor() else "Climb to the next floor"
 		"chest":
 			var chest = GameActions.find_record(Run.rooms[Run.current_room].get("chests", []), target.id.trim_prefix("chest:"))
@@ -1232,12 +1277,13 @@ func use_pedestal(target: Dictionary) -> Dictionary:
 			ui.show_screen("reward")
 		"rest":
 			# The hearth's marker is the gate: it is removed once used.
-			Run.heal(3)
+			var restored := 1.0 if ExpeditionBalance.active_new_run() else 3.0
+			Run.heal(restored)
 			data.claimed = true
 			remove_marker()
 			Run.save_run()
 			Audio.play_sound("item")
-			ui.notify("A moment of warmth", "Recovered 3 health.")
+			ui.notify("A moment of warmth", "Recovered %d health." % restored)
 		"exit":
 			if not is_instance_valid(stairs) or not stairs.built:
 				return GameActions.result(false, "the stair is still rising")
@@ -1269,6 +1315,8 @@ func on_weapon_unlocked(weapon_id: String) -> void:
 
 func choose_offer(index: int) -> void:
 	var data: Dictionary = Run.rooms[Run.current_room]
+	if not data.has("offers"): return
+	data.offers = ExpeditionBalance.sanitize_offers(data.offers,int(data.seed))
 	if data.claimed or index < 0 or index >= data.offers.size(): return
 	var offer: Dictionary = data.offers[index]
 	if chosen_reward_dark:
@@ -1317,7 +1365,9 @@ func game_shake_dark() -> void:
 ## health, 2 to 5 by how much each is worth.
 func ensure_dark_offers() -> void:
 	var data: Dictionary = Run.rooms[Run.current_room]
-	if data.has("offers"): return
+	if data.has("offers"):
+		data.offers = ExpeditionBalance.sanitize_offers(data.offers,int(data.seed))
+		return
 	var gen = RandomNumberGenerator.new()
 	gen.seed = int(data.seed) + 6661
 	var dark: Array = Content.items.filter(func(item): return item.rarity == "dark")
@@ -1328,13 +1378,9 @@ func ensure_dark_offers() -> void:
 	else:
 		var precious: Dictionary = Content.roll_items(gen, 1, Run.inventory, true, Run.stats.luck)[0]
 		offers.append({"kind": "item", "id": precious.id, "price": {"common": 2, "uncommon": 2, "rare": 3, "mythic": 4}[precious.rarity]})
-	if gen.randf() < .5:
-		var pool = Content.families.actives.filter(func(active): return active.id != Run.active_item.get("def", ""))
-		offers.append({"kind": "active", "id": pool[gen.randi_range(0, pool.size() - 1)].id, "price": 2})
-	else:
-		var others: Array = dark.filter(func(item): return item.id != relic.id)
-		var second: Dictionary = others[gen.randi_range(0, others.size() - 1)]
-		offers.append({"kind": "item", "id": second.id, "price": int(second.cost)})
+	var others: Array = dark.filter(func(item): return item.id != relic.id)
+	var second: Dictionary = others[gen.randi_range(0, others.size() - 1)]
+	offers.append({"kind": "item", "id": second.id, "price": int(second.cost)})
 	data.offers = offers
 	Run.save_run()
 
@@ -1345,7 +1391,7 @@ func close_reward() -> void:
 func add_item_record(definition_id: String, at: Vector3) -> void:
 	var data: Dictionary = Run.rooms[Run.current_room]
 	if not data.has("items"): data.items = []
-	data.items.append({"id": Run.next_instance("a"), "def": definition_id, "position": [snappedf(at.x, .001), snappedf(at.z, .001)]})
+	data.items.append({"id": Run.next_instance("a"), "def": definition_id, "position": [snappedf(at.x, .001), snappedf(at.z, .001)], "height": at.y if first_person else 0.0})
 	refresh_items()
 
 ## Rebuilds the views and interaction targets for dropped items and chests.
@@ -1364,12 +1410,20 @@ func refresh_items() -> void:
 	for chest in data.get("chests", []):
 		if chest.opened: continue
 		var at = Vector3(float(chest.position[0]), 0, float(chest.position[1]))
+		if first_person: at.y = float(chest.get("height",room.floor_height(at)))
 		interactions.register("chest:" + chest.id, "chest", at, 1.9, "", chest_views.get(chest.id))
+
+func make_chest_view(chest: Dictionary) -> Node3D:
+	if chest_views.has(chest.id) and is_instance_valid(chest_views[chest.id]): return chest_views[chest.id]
+	var view := ItemViews.chest(scene_root,chest)
+	if first_person: view.position.y = float(chest.get("height",room.floor_height(view.position)))
+	chest_views[chest.id] = view
+	return view
 
 func chest_opened(chest: Dictionary) -> void:
 	interactions.unregister("chest:" + chest.id)
 	if chest_views.has(chest.id): ItemViews.set_open(chest_views[chest.id])
-	var at = Vector3(float(chest.position[0]), .7, float(chest.position[1]))
+	var at = Vector3(float(chest.position[0]), .7 + float(chest.get("height",0)), float(chest.position[1]))
 	Effects.play("chest_open", at)
 	Audio.play_sound("item", .9)
 
@@ -1514,6 +1568,9 @@ func return_to_title() -> void:
 	ui.show_screen("menu")
 
 func end_run(won: bool) -> void:
+	stair_cinematic.cancel(self)
+	transition = {}
+	if light_veil: light_veil.color.a = 0.0
 	Run.finish(won)
 	paused = true
 	ui.show_screen("won" if won else "dead")

@@ -99,9 +99,11 @@ func setup(owner_game: Node3D, type: String, id: int) -> void:
 	max_hp = spec[0] * (1.0 + (Run.floor_number - 1) * (BOSS_DEPTH if boss else FLOOR_HEALTH))
 	# A swarming floor sends more foes, each a little frailer.
 	if Run.has_twist("swarming") and not boss: max_hp *= .8
+	if ExpeditionBalance.active_new_run(): max_hp *= ExpeditionBalance.foe_health(Run.floor_number,boss)
 	hp = max_hp
 	restless = Run.has_twist("restless")
 	speed = spec[1] * (1.0 + (Run.floor_number - 1) * .08) * (1.15 if restless else 1.0)
+	if ExpeditionBalance.active_new_run(): speed *= ExpeditionBalance.foe_speed(Run.floor_number)
 	radius = spec[2]
 	color = Color(spec[3])
 	collision_layer = 4
@@ -125,6 +127,9 @@ func setup(owner_game: Node3D, type: String, id: int) -> void:
 	halo = Geo.halo(self, Vector3(0, .022, 0), radius * 3.8, Color(color.r, color.g, color.b, light.foe_glow))
 	timer = 1.0 + float(entity_id % 5) * .23
 	prepare()
+	if ExpeditionBalance.active_new_run() and not inert:
+		# Faster later patterns still give an entering player time to react.
+		timer = maxf(timer,1.15*tempo())
 	if game.first_person:
 		var top = 0.0
 		for mesh in visual.find_children("*", "MeshInstance3D", true, false):
@@ -232,7 +237,7 @@ func footing_drag() -> float:
 ## How fast this foe's own clocks run: Lampwright's light hurries them, and
 ## so does a restless floor.
 func tempo() -> float:
-	return (1.35 if aura_haste > 0 else 1.0) * (1.15 if restless else 1.0)
+	return (1.35 if aura_haste > 0 else 1.0) * (1.15 if restless else 1.0) * (ExpeditionBalance.foe_tempo(Run.floor_number) if ExpeditionBalance.active_new_run() else 1.0)
 
 func update_sim(delta: float) -> void:
 	if not alive:
@@ -267,7 +272,8 @@ func update_sim(delta: float) -> void:
 	if elite == "gilded" and hp < max_hp * .5 and charge_time <= 0:
 		move_direction = -direction
 	if windup > 0:
-		windup -= delta * tempo()
+		# Difficulty accelerates cooldowns, not the visible warning itself.
+		windup -= delta * tempo() / (ExpeditionBalance.foe_tempo(Run.floor_number) if ExpeditionBalance.active_new_run() else 1.0)
 		move_direction = Vector3.ZERO
 		visual.scale = Vector3(1.0 + .12 * sin(age * 30), .88, 1.0)
 		if windup <= 0:
@@ -297,7 +303,9 @@ func update_sim(delta: float) -> void:
 	if slow_time > 0:
 		slow *= 1.0 - slow_factor
 	slow *= footing_drag()
-	var wanted_velocity = move_direction * speed * slow * tempo()
+	# Difficulty cadence accelerates attacks, not walking a second time.
+	var movement_tempo = tempo() / (ExpeditionBalance.foe_tempo(Run.floor_number) if ExpeditionBalance.active_new_run() else 1.0)
+	var wanted_velocity = move_direction * speed * slow * movement_tempo
 	# On ice a foe keeps its momentum and turns wide.
 	if game.residue and game.residue.kind_at(global_position) == "ice":
 		velocity = (velocity - knock_velocity).lerp(wanted_velocity, minf(1.0, delta * 2.2)) + knock_velocity
@@ -313,7 +321,10 @@ func update_sim(delta: float) -> void:
 		var walled = Vector2(kept.x, kept.y).distance_to(Vector2(position.x, position.z)) > .05
 		for i in get_slide_collision_count():
 			if get_slide_collision(i).get_collider() is StaticBody3D: walled = true
-		position = Vector3(kept.x, game.room.floor_height(Vector3(kept.x, 0, kept.y)) if game.first_person else 0.0, kept.y)
+		var floor_y: float = game.room.floor_height(Vector3(kept.x,0,kept.y)) if game.first_person else 0.0
+		if game.first_person and game.room.terrain:
+			floor_y = game.room.terrain.standing_height(kept,radius)
+		position = Vector3(kept.x,floor_y,kept.y)
 		if charge_time > 0 and walled: hit_wall()
 	if windup <= 0:
 		visual.scale = visual.scale.lerp(Vector3.ONE, delta * 12)
@@ -575,7 +586,7 @@ func pop_ward() -> void:
 
 ## A gilded foe sheds a coin with each hit, a few at most, once per run.
 func shed_coin() -> void:
-	if gilded_drops >= 4 or source == "": return
+	if gilded_drops >= (2 if ExpeditionBalance.active_new_run() else 4) or source == "": return
 	var data: Dictionary = Run.rooms[Run.current_room]
 	var key = "%s:gild%d" % [source, gilded_drops]
 	gilded_drops += 1
