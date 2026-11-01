@@ -85,3 +85,42 @@ static func aging() -> Texture2D:
 	image.generate_mipmaps()
 	aging_texture = ImageTexture.create_from_image(image)
 	return aging_texture
+
+# Historical original-sheet authoring path, unused by current gameplay.
+static var legacy_floors: Dictionary = {}
+static func legacy_floor(kind: int) -> Dictionary:
+	if legacy_floors.has(kind): return legacy_floors[kind]
+	var paint_path = "res://assets/materials/floor_%d_paint.png" % kind
+	var normal_path = "res://assets/materials/floor_%d_normal.png" % kind
+	if OS.get_environment("EMBERKEEP_BAKE_MATERIALS") != "1" and ResourceLoader.exists(paint_path) and ResourceLoader.exists(normal_path):
+		legacy_floors[kind] = {"paint": load(paint_path), "normal": load(normal_path)}
+		return legacy_floors[kind]
+	const SIZE := 256
+	var paint = Image.create(SIZE, SIZE, false, Image.FORMAT_RGBA8)
+	var height = Image.create(SIZE, SIZE, false, Image.FORMAT_RGB8)
+	var noise = FastNoiseLite.new()
+	noise.seed = 417 + kind
+	noise.frequency = .085
+	for y in SIZE:
+		for x in SIZE:
+			var row = y / 64
+			var shifted = posmod(x + (32 if row % 2 else 0), SIZE)
+			var edge = minf(minf(shifted % 64, 63 - shifted % 64), minf(y % 64, 63 - y % 64))
+			var grain = noise.get_noise_2d(x, y) * .5 + .5
+			var id = (shifted / 64) + row * 7
+			var tone = .82 + .18 * fposmod(sin(float(id) * 17.31) * 431.7, 1.0)
+			var bevel = smoothstep(.8 + grain * .7, 3.4, edge)
+			if kind == 1:
+				bevel = .66 + .34 * smoothstep(.2, .75, grain)
+			elif kind == 2:
+				bevel = .7 + .3 * grain
+			# Light brushwork at the lip and pooled dirt in the joint.
+			var value = tone * (.9 + grain * .16) * lerpf(.38, 1.0, bevel)
+			var lip = maxf(0, 1.0 - absf(edge - 5.5) / 2.0) * .08 if kind == 0 else 0.0
+			paint.set_pixel(x, y, Color(clampf(value + lip, 0, 1), 1.0 - bevel, fposmod(id * .317, 1.0) if kind == 0 else grain, .72 + .25 * (1.0 - bevel)))
+			height.set_pixel(x, y, Color(bevel * (.8 + grain * .2), bevel * (.8 + grain * .2), bevel * (.8 + grain * .2)))
+	paint.generate_mipmaps()
+	height.bump_map_to_normal_map(2.0)
+	height.generate_mipmaps()
+	legacy_floors[kind] = {"paint": ImageTexture.create_from_image(paint), "normal": ImageTexture.create_from_image(height)}
+	return legacy_floors[kind]

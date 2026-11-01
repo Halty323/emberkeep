@@ -1,0 +1,251 @@
+{
+  "version": 1,
+  "retrieved_utc": "2026-11-01T02:39:06.383493+00:00",
+  "license": {
+    "id": "CC0-1.0",
+    "url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "evidence_url": "https://docs.ambientcg.com/license/",
+    "evidence_quote": "All ambientCG assets are provided under the Creative Commons CC0 1.0 Universal License. This applies to the downloadable asset files and the material preview renders shown for each asset on the site."
+  },
+  "processing": {
+    "color": "Original 2K color re-encoded as JPEG quality94, 4:4:4",
+    "normal": "Original 2K OpenGL normal re-encoded as JPEG quality96, 4:4:4",
+    "mobile": "LANCZOS downsample to 1024 long edge; normals renormalized; JPEG quality94 4:4:4",
+    "orm": "1024-long-edge RGB = AO / roughness / metallic(0); missing source AO uses white",
+    "aspect_ratio": "Original aspect ratios preserved; no upscaling"
+  },
+  "materials": {
+    "masonry": {
+      "asset_id": "Bricks096",
+      "author": "ambientCG / Lennart Demes",
+      "source_url": "https://ambientcg.com/a/Bricks096",
+      "download_url": "https://ambientcg.com/get?file=Bricks096_2K-JPG.zip",
+      "archive_sha256": "538edf028b783035657d9ac3b97bfc4e93ba315dc351bc1d1c3b65c2531ecb08",
+      "license": "CC0-1.0",
+      "normal_convention": "OpenGL (+Y)",
+      "source_maps": {
+        "Color": {
+          "file": "Bricks096_2K-JPG_Color.jpg",
+          "sha256": "b8cdb79f02e176da7979251f9ec57309bf510edf75fb4c5d9fc46ccf789f65c9"
+        },
+        "NormalGL": {
+          "file": "Bricks096_2K-JPG_NormalGL.jpg",
+          "sha256": "4fe925890e6aea4026fa0b9edd16e97eaa199f975bd5a7695189e9572359a44e"
+        },
+        "Roughness": {
+          "file": "Bricks096_2K-JPG_Roughness.jpg",
+          "sha256": "e98358c514ccf7a61d0c930e0ac1c1a886e8b056dd858433e8ffd290c2251452"
+        },
+        "AmbientOcclusion": {
+          "file": "Bricks096_2K-JPG_AmbientOcclusion.jpg",
+          "sha256": "a1732c2fc83bbdc992e0bacf08d2b7d8d3f9574d8d0dd48d5d4790aecdc22434"
+        }
+      },
+      "outputs": {
+        "color.jpg": {
+          "sha256": "16bf80dbe559aca330bdd3639f89d2a364e31beacb73e488e7425481ec8d6bc8",
+          "width": 2048,
+          "height": 1024,
+          "bytes": 1007228
+        },
+        "color_mobile.jpg": {
+          "sha256": "012b8bedd4cf5485b4cbcd50069bfbc84f78db63490571c5610239473c2c6f92",
+          "width": 1024,
+          "height": 512,
+          "bytes": 265828
+        },
+        "normal.jpg": {
+          "sha256": "2d6aae01de02307d5403b89099a8cd5b482874fad453ad8d94488421d704df92",
+          "width": 2048,
+          "height": 1024,
+          "bytes": 1701685
+        },
+        "normal_mobile.jpg": {
+          "sha256": "e38027805b33ad58d642f9ba124029db1b3517b6697a2ce6cc52228976cb2741",
+          "width": 1024,
+          "height": 512,
+          "bytes": 341902
+        },
+        "orm.png": {
+          "sha256": "2c679b95d263b1dc9c8cccb6c6184d2d990a6faf431ce97db0f1e2656bb5c399",
+          "width": 1024,
+          "height": 512,
+          "bytes": 735011
+        }
+      }
+    },
+    "flagstone": {
+      "asset_id": "PavingStones149",
+      "author": "ambientCG / Lennart Demes",
+      "source_url": "https://ambientcg.com/a/PavingStones149",
+      "download_url": "https://ambientcg.com/get?file=PavingStones149_2K-JPG.zip",
+      "archive_sha256": "2722ef33d32cc2ffe498962cb9ea023754cbe03f203264f1e7ca27684fcb14b3",
+      "license": "CC0-1.0",
+      "normal_convention": "OpenGL (+Y)",
+      "source_maps": {
+        "Color": {
+          "file": "PavingStones149_2K-JPG_Color.jpg",
+          "sha256": "bb93773681dbbce458447578e31521c2174975b3b2593a64915953920f913fd4"
+        },
+        "NormalGL": {
+          "file": "PavingStones149_2K-JPG_NormalGL.jpg",
+          "sha256": "9769271b7f595e860ecc272d82b781a69de619b96aef6db5040ca76a196f8e7e"
+        },
+        "Roughness": {
+          "file": "PavingStones149_2K-JPG_Roughness.jpg",
+          "sha256": "e27dc81356273fab96186a6bfa957de59b1a903e9dccb02afc426f6f6cda53ac"
+        },
+        "AmbientOcclusion": {
+          "file": "PavingStones149_2K-JPG_AmbientOcclusion.jpg",
+          "sha256": "2fcafeaf46cfa99461cb9669097d8bf04eab6a1480973babf4e8eb7e788e4bbc"
+        }
+      },
+      "outputs": {
+        "color.jpg": {
+          "sha256": "63f0b0351f8f372b9aaafc60f1b67caaf67354e77be5c92c0cce3ff837439231",
+          "width": 2048,
+          "height": 1024,
+          "bytes": 1202593
+        },
+        "color_mobile.jpg": {
+          "sha256": "5c700eace90922c8b605478547be6c1fd19a877f66a693223f301d8ac2938936",
+          "width": 1024,
+          "height": 512,
+          "bytes": 337229
+        },
+        "normal.jpg": {
+          "sha256": "46c0fe7814f9692e9add2c09525c60e778aaf34ccb874d2db99191f18ea72f34",
+          "width": 2048,
+          "height": 1024,
+          "bytes": 2347562
+        },
+        "normal_mobile.jpg": {
+          "sha256": "22d5e2658430eb90388431b92097e9163e8d3acd8b3af8a144607d87c9b3c208",
+          "width": 1024,
+          "height": 512,
+          "bytes": 492023
+        },
+        "orm.png": {
+          "sha256": "b5371d720a8e8f6239318ea66967e08f45d894e4cb99e791196e00106cc9bfef",
+          "width": 1024,
+          "height": 512,
+          "bytes": 882162
+        }
+      }
+    },
+    "rock": {
+      "asset_id": "Rock020",
+      "author": "ambientCG / Lennart Demes",
+      "source_url": "https://ambientcg.com/a/Rock020",
+      "download_url": "https://ambientcg.com/get?file=Rock020_2K-JPG.zip",
+      "archive_sha256": "e769d6563a137b3d437c7c538fefeea8198f8de41d3b58913a5f4480c0ea27d2",
+      "license": "CC0-1.0",
+      "normal_convention": "OpenGL (+Y)",
+      "source_maps": {
+        "Color": {
+          "file": "Rock020_2K-JPG_Color.jpg",
+          "sha256": "ee15cc074f433b482657bbd2333d31da2f4a10650d67a72f8999c6edd3174bac"
+        },
+        "NormalGL": {
+          "file": "Rock020_2K-JPG_NormalGL.jpg",
+          "sha256": "957d89e181eaf07de8ac2b86cf142dd7d0af7be7325b65b13f203e9faabcba05"
+        },
+        "Roughness": {
+          "file": "Rock020_2K-JPG_Roughness.jpg",
+          "sha256": "b70970d40ae4913498a3aecb3361cff444f88d2325f8da4d06b96c2019b574d5"
+        },
+        "AmbientOcclusion": {
+          "file": "Rock020_2K-JPG_AmbientOcclusion.jpg",
+          "sha256": "44e505a8bed34646c4cadcc652a38be8e4923c32afe23c95ff2854f6e022168d"
+        }
+      },
+      "outputs": {
+        "color.jpg": {
+          "sha256": "cbf1f6323baf3d906d04c16522bd4c0d61f76f13985e083687c38d23aaea0928",
+          "width": 2048,
+          "height": 2048,
+          "bytes": 2291372
+        },
+        "color_mobile.jpg": {
+          "sha256": "d6fcee4887d6da7ebd9101696b968c9e556c29398691276b60e26256ac295ac1",
+          "width": 1024,
+          "height": 1024,
+          "bytes": 618357
+        },
+        "normal.jpg": {
+          "sha256": "62fc3922d9e069fe320a8dd6478e0e24a8f133185a732f7793cee57befa46431",
+          "width": 2048,
+          "height": 2048,
+          "bytes": 4388238
+        },
+        "normal_mobile.jpg": {
+          "sha256": "de66d4202257bfa2f8fc8086d028e6e43e09968288baf5ffbc1a4020a29fa7e0",
+          "width": 1024,
+          "height": 1024,
+          "bytes": 1082897
+        },
+        "orm.png": {
+          "sha256": "858d0b58b9a9a4b36957640289baabad4c01af0dbacec5de7c4cffd21a64d085",
+          "width": 1024,
+          "height": 1024,
+          "bytes": 1213522
+        }
+      }
+    },
+    "wood": {
+      "asset_id": "Wood051",
+      "author": "ambientCG / Lennart Demes",
+      "source_url": "https://ambientcg.com/a/Wood051",
+      "download_url": "https://ambientcg.com/get?file=Wood051_2K-JPG.zip",
+      "archive_sha256": "ef50cd051a1d998bf2a03e243e991474415d948af6d4b76d291c937654c97d4b",
+      "license": "CC0-1.0",
+      "normal_convention": "OpenGL (+Y)",
+      "source_maps": {
+        "Color": {
+          "file": "Wood051_2K-JPG_Color.jpg",
+          "sha256": "c6d61f6bfd2537f7dcb8e4c2264f77e3d8fdfbca14dcf5ff7bade7637d2125b5"
+        },
+        "NormalGL": {
+          "file": "Wood051_2K-JPG_NormalGL.jpg",
+          "sha256": "3b175af16c417245ff8fa950de0f7dee6fc77804845825d7d5b988b30946e5e8"
+        },
+        "Roughness": {
+          "file": "Wood051_2K-JPG_Roughness.jpg",
+          "sha256": "b4855f803bbbad6fbe8a78d514f453ba1c9989b2972775f46f835402de302b44"
+        }
+      },
+      "outputs": {
+        "color.jpg": {
+          "sha256": "7e4889767f591fab1ed5d18e6088e3b6d1c6b54d463b20c2ef83d27279f35784",
+          "width": 2048,
+          "height": 2048,
+          "bytes": 1011023
+        },
+        "color_mobile.jpg": {
+          "sha256": "6db388f7e5d7dbd6a2053527f30cdb4d7a1fbac3ab496ca04fa65fa8938030aa",
+          "width": 1024,
+          "height": 1024,
+          "bytes": 283890
+        },
+        "normal.jpg": {
+          "sha256": "718fbf52cd33a24b51c21bbece88d3f0614596b28cb2076541c590fd3680906a",
+          "width": 2048,
+          "height": 2048,
+          "bytes": 3226839
+        },
+        "normal_mobile.jpg": {
+          "sha256": "2c8a645ebb767059dd28b1d1bcd1c9e35048f4236ed96834ad3b6e5051675623",
+          "width": 1024,
+          "height": 1024,
+          "bytes": 543061
+        },
+        "orm.png": {
+          "sha256": "dcf4a9fdc40c77e80cccd4045a0c32cd3d3e39274fb7ca673ebb7b09a7086700",
+          "width": 1024,
+          "height": 1024,
+          "bytes": 891926
+        }
+      }
+    }
+  }
+}

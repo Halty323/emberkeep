@@ -88,4 +88,4 @@ func _process(delta: float) -> void:
 			hot.append(Vector4(at.x, at.y, source.reach * .045, source.power * shimmer))
 	while hot.size() < MAX_HEAT: hot.append(Vector4.ZERO)
 	material.set_shader_parameter("heat", PackedVector4Array(hot))
-	material.set_shader_parameter("grain", .02 if Look.quality() == 2 else .012)
+	material.set_shader_parameter("grain", (.003 if Look.quality() == 2 else .0015) if game.first_person else (.02 if Look.quality() == 2 else .012))

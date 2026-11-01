@@ -7,6 +7,7 @@ var armament_view: Node3D
 var hearth_light: OmniLight3D
 var sparks: MultiMeshInstance3D
 var clock := 0.0
+var bevel_meshes: Dictionary = {}
 
 static func create(parent: Node3D, game) -> EmberkeepTitleScene:
 	var scene = EmberkeepTitleScene.new()
@@ -15,12 +16,12 @@ static func create(parent: Node3D, game) -> EmberkeepTitleScene:
 	return scene
 
 func stone(at: Vector3, size: Vector3, tint := Color("716451")) -> MeshInstance3D:
-	var mesh = Geo.box(self, at, size, tint)
-	mesh.material_override = DungeonStyle.wall_material(tint)
+	var mesh = Geo.add_mesh(self, beveled_box(size, .045), at, tint)
+	mesh.material_override = DungeonStyle.wall_material(tint, false, "hearth")
 	return mesh
 
 func timber(at: Vector3, size: Vector3, tint := Color("64482f")) -> MeshInstance3D:
-	var mesh = Geo.box(self, at, size, tint)
+	var mesh = Geo.add_mesh(self, beveled_box(size, .025), at, tint)
 	mesh.material_override = DungeonStyle.wood_material(tint)
 	return mesh
 
@@ -30,6 +31,12 @@ func build(game) -> void:
 	floor.material_override = DungeonStyle.floor_material({"floor": ["69614e","5c5949","6c6556","615842","74674f"], "surface": {"pattern":"slabs","size":2.5,"roughness":.86}})
 	stone(Vector3(.4,2.9,-4), Vector3(14,5.8,.65),Color("5d594d"))
 	stone(Vector3(6.6,2.9,-2), Vector3(.65,5.8,4.2),Color("4e524e"))
+	# An actual chimney gives firelight a heavy central mass to shape. Its
+	# darker stone and recessed corners break the old uninterrupted wall grid.
+	stone(Vector3(2.55,3.88,-3.48),Vector3(3.38,3.8,.76),Color("454640"))
+	stone(Vector3(.8,2.92,-3.43),Vector3(.22,5.7,.8),Color("57564a"))
+	stone(Vector3(4.3,2.92,-3.43),Vector3(.22,5.7,.8),Color("57564a"))
+	stone(Vector3(2.55,5.18,-3.39),Vector3(3.78,.2,.91),Color("716755"))
 	# Heavy timber rhythm and a coffered ceiling frame the fire rather than
 	# exposing an overhead arena. A distant blue doorway gives the eye depth.
 	for x in [-5.8,-1.6,3.0,6.1]:
@@ -72,18 +79,31 @@ func build(game) -> void:
 	for i in 3:
 		var poker = Geo.box(self,Vector3(4.38+i*.13,.67,-3.1),Vector3(.025,1.25,.025),Color("67695e"))
 		poker.rotation.z = -.12-i*.07
-	hearth_light = Geo.light(self,Vector3(2.55,1.1,-2.35),Color("ffac59"),1.55,8.5,Settings.values.shadows)
-	Geo.light(self,Vector3(-3,2.7,-1.1),Color("7198ad"),.38,8.0)
-	Geo.light(self,Vector3(3.1,2.3,1.6),Color("f5c688"),.5,5.2)
+	# Three motivated sources: contained fire, cold stair opening, table lamp.
+	# A dark indirect baseline lets high-resolution normals catch grazing
+	# highlights instead of washing every surface with a flat directional key.
+	hearth_light = Geo.light(self,Vector3(2.55,1.03,-2.25),Color("ffd093"),2.65,7.6,Settings.values.shadows)
+	hearth_light.omni_attenuation = 1.35
+	hearth_light.light_specular = .8
+	hearth_light.shadow_bias = .035
+	hearth_light.shadow_normal_bias = .25
+	hearth_light.shadow_opacity = .78
+	hearth_light.shadow_blur = 1.5
+	hearth_light.light_size = .32
+	var moon = Geo.light(self,Vector3(-2.95,2.8,-2.1),Color("83abc2"),.68,6.8)
+	moon.omni_attenuation = 1.45
+	moon.light_specular = .65
+	var table_light = Geo.light(self,Vector3(2.25,1.37,.61),Color("ffe3af"),.85,3.7)
+	table_light.omni_attenuation = 1.4
 	# A blue portal between the timber bays, with the stair disappearing up.
 	Geo.box(self,Vector3(-2.9,1.45,-3.6),Vector3(1.65,2.9,.18),Color("121e25"))
 	for side in [-1,1]: stone(Vector3(-2.9+side*.95,1.55,-3.42),Vector3(.27,3.1,.42),Color("636b67"))
 	stone(Vector3(-2.9,3.08,-3.42),Vector3(2.18,.2,.42),Color("899080"))
 	for step in 5: stone(Vector3(-2.9,.09+step*.15,-3.58-step*.16),Vector3(1.6,.18+step*.3,.34),Color("59615c"))
 	# Banner and old keep seal above the fire.
-	Geo.box(self,Vector3(2.55,3.51,-3.56),Vector3(1.28,1.72,.04),Color("603c32"))
-	for side in [-1,1]: Geo.box(self,Vector3(2.55+side*.53,3.5,-3.52),Vector3(.055,1.65,.025),Color("c2a16a"))
-	var crest = Geo.box(self,Vector3(2.55,3.6,-3.48),Vector3(.35,.35,.08),Color("bf9b5c"))
+	Geo.box(self,Vector3(2.55,3.51,-3.06),Vector3(1.28,1.72,.04),Color("603c32"))
+	for side in [-1,1]: Geo.box(self,Vector3(2.55+side*.53,3.5,-3.025),Vector3(.055,1.65,.025),Color("c2a16a"))
+	var crest = Geo.box(self,Vector3(2.55,3.6,-2.99),Vector3(.35,.35,.08),Color("bf9b5c"))
 	crest.rotation.z = PI/4
 	# Rug, low preparation table, folded map, wax seal and the player's light.
 	Geo.box(self,Vector3(1.25,.014,.6),Vector3(3.8,.025,3.7),Color("593a31"))
@@ -141,18 +161,39 @@ func build(game) -> void:
 			finish.albedo_texture = DungeonTextures.aging()
 			aged[key] = finish
 		mesh.material_override = aged[key]
-	game.room_environment.environment.ambient_light_energy = .19
-	game.room_environment.environment.ambient_light_color = Color("8c9eac")
-	game.room_environment.environment.fog_density = .012
-	game.room_environment.environment.fog_light_color = Color("202b2b")
+	game.room_environment.environment.ambient_light_energy = .105
+	game.room_environment.environment.ambient_light_color = Color("6b8295")
+	game.room_environment.environment.background_color = Color("070b11")
+	game.room_environment.environment.fog_density = .009
+	game.room_environment.environment.fog_light_color = Color("111c25")
+	game.key_light.light_energy = .045
+	game.key_light.light_color = Color("92b2cb")
 
 func lantern(at: Vector3) -> void:
-	Geo.box(self,at+Vector3(0,.04,0),Vector3(.44,.08,.4),Color("514735"))
-	for x in [-.16,.16]:
-		for z in [-.14,.14]: Geo.box(self,at+Vector3(x,.3,z),Vector3(.025,.52,.025),Color("8b764e"))
-	Geo.box(self,at+Vector3(0,.29,0),Vector3(.28,.4,.25),Color("f2ba61"),.9)
-	Geo.box(self,at+Vector3(0,.56,0),Vector3(.46,.08,.4),Color("8c744c"))
-	var handle = Geo.ring(self,at+Vector3(0,.75,0),.15,Color("8c744c"),.02)
+	# Open brass cage and a real candle silhouette, rather than a solid yellow
+	# cube pretending to be glass. The warm source above supplies the light.
+	var metal = StandardMaterial3D.new()
+	metal.albedo_color = Color("98815b")
+	metal.metallic = .7
+	metal.roughness = .4
+	var base = Geo.cylinder(self,at+Vector3(0,.045,0),.23,.09,Color("514735"))
+	base.material_override = metal
+	for x in [-.145,.145]:
+		for z in [-.13,.13]:
+			var rail = Geo.box(self,at+Vector3(x,.3,z),Vector3(.024,.5,.024),Color("8b764e"))
+			rail.material_override = metal
+	Geo.cylinder(self,at+Vector3(0,.21,0),.062,.26,Color("e5d3a9"))
+	var flame = MeshInstance3D.new()
+	flame.mesh = DungeonStyle.candle_flame_mesh()
+	flame.material_override = DungeonStyle.candle_flame()
+	flame.position = at+Vector3(0,.42,0)
+	flame.layers = 2
+	flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(flame)
+	var lid = Geo.cylinder(self,at+Vector3(0,.59,0),.245,.13,Color("8c744c"),0,.09)
+	lid.material_override = metal
+	var handle = Geo.ring(self,at+Vector3(0,.77,0),.15,Color("8c744c"),.02)
+	handle.material_override = metal
 	handle.rotation.x = PI/2
 
 func preview_weapon(weapon: Dictionary) -> void:
@@ -163,7 +204,7 @@ func preview_weapon(weapon: Dictionary) -> void:
 func _process(delta: float) -> void:
 	clock += delta
 	if hearth_light:
-		hearth_light.light_energy = 1.55 + sin(clock*3.1)*.06+sin(clock*7.3)*.025
+		hearth_light.light_energy = 2.65 + sin(clock*2.1)*.055+sin(clock*5.3)*.025
 		if hearth_light.shadow_enabled != Settings.values.shadows: hearth_light.shadow_enabled = Settings.values.shadows
 	for i in 16:
 		var y = fposmod(i*.137+clock*.28,2.3)
@@ -179,3 +220,65 @@ func pose(camera: Camera3D) -> void:
 	camera.h_offset = 0
 	camera.position = Vector3(6.45+sin(clock*.07)*.045,2.8,9.5)
 	camera.look_at(Vector3(1.3,1.45,-1.25))
+
+## Small bevels catch real highlights on masonry and wood edges. Shared
+## meshes keep the number of draw surfaces unchanged; no subdivision pass.
+func beveled_box(size: Vector3, wanted: float) -> ArrayMesh:
+	var bevel = minf(wanted, minf(size.x,minf(size.y,size.z)) * .12)
+	var key = str(size)+":"+str(bevel)
+	if bevel_meshes.has(key): return bevel_meshes[key]
+	var half = size * .5
+	var core = half - Vector3.ONE * bevel
+	var tool = SurfaceTool.new()
+	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for axis in 3:
+		var a = (axis+1)%3
+		var b = (axis+2)%3
+		for sign_value in [-1,1]:
+			var normal = Vector3.ZERO
+			normal[axis] = sign_value
+			var points: Array[Vector3] = []
+			for corner in [Vector2(-1,-1),Vector2(1,-1),Vector2(1,1),Vector2(-1,1)]:
+				var p = Vector3.ZERO
+				p[axis] = sign_value * half[axis]
+				p[a] = corner.x * core[a]
+				p[b] = corner.y * core[b]
+				points.append(p)
+			bevel_face(tool,points,normal)
+	for axis in 3:
+		var a = (axis+1)%3
+		var b = (axis+2)%3
+		for sa in [-1,1]:
+			for sb in [-1,1]:
+				var points: Array[Vector3] = []
+				for corner in [Vector2(-1,0),Vector2(1,0),Vector2(1,1),Vector2(-1,1)]:
+					var p = core
+					p[axis] = corner.x * core[axis]
+					p[a] = sa * (half[a] if corner.y == 0 else core[a])
+					p[b] = sb * (core[b] if corner.y == 0 else half[b])
+					points.append(p)
+				var normal = Vector3.ZERO
+				normal[a] = sa
+				normal[b] = sb
+				bevel_face(tool,points,normal.normalized())
+	for sx in [-1,1]:
+		for sy in [-1,1]:
+			for sz in [-1,1]:
+				var corner = Vector3(sx,sy,sz)
+				var points: Array[Vector3] = []
+				for axis in 3:
+					var p = core * corner
+					p[axis] = half[axis] * corner[axis]
+					points.append(p)
+				bevel_face(tool,points,corner.normalized())
+	var mesh = tool.commit()
+	bevel_meshes[key] = mesh
+	return mesh
+
+func bevel_face(tool: SurfaceTool, points: Array[Vector3], normal: Vector3) -> void:
+	if (points[1]-points[0]).cross(points[2]-points[0]).dot(normal) > 0: points.reverse()
+	var indices = [0,1,2,0,2,3] if points.size()==4 else [0,1,2]
+	for i in indices:
+		tool.set_normal(normal)
+		tool.set_uv(Vector2(points[i].x+points[i].z,points[i].y))
+		tool.add_vertex(points[i])

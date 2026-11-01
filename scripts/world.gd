@@ -57,6 +57,10 @@ var cloths: Array = []
 var paintings: Dictionary = {}
 var candle_points: Array[Vector3] = []
 var interiors_report: Dictionary = {}
+# All eye-level lanterns share three static finish surfaces and one flame
+# material. Many fixtures do not allocate a material or mesh per metal bar.
+static var first_person_lantern_model: ArrayMesh
+static var first_person_lantern_flame: QuadMesh
 
 func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 	game = owner_game
@@ -64,6 +68,7 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 	data = room
 	decor_rng.seed = int(room.get("seed", 53))
 	light = FloorLight.profile(0) if preview else FloorLight.current()
+	if first_person_room: light = FloorLight.first_person(light)
 	# Each floor theme has its own stone, walls and drifting motes.
 	look = {} if preview else Run.theme().get("look", {})
 	effects = EffectsPool.new()
@@ -151,10 +156,12 @@ func build_floor() -> void:
 		sheet.layers = GROUND_LAYER
 		if first_person_room:
 			Geo.collider(self, Vector3(center.x, -.12, center.y), Vector3(18, .24, 14))
-			Geo.box(self, Vector3(center.x, 5.6, center.y), Vector3(18, .3, 14), Color("292c2d"))
+			var ceiling = Geo.box(self, Vector3(center.x, 5.6, center.y), Vector3(18, .3, 14), Color("454847"))
+			ceiling.material_override = DungeonStyle.wall_material(Color("454847"), false, "masonry")
 			Geo.collider(self, Vector3(center.x, 5.6, center.y), Vector3(18, .3, 14))
 			for beam in [-1, 1]:
-				Geo.box(self, Vector3(center.x + beam * 5.4, 5.15, center.y), Vector3(.24, .5, 14), Color("514839"))
+				var joist = Geo.box(self, Vector3(center.x + beam * 5.4, 5.15, center.y), Vector3(.24, .5, 14), Color("514839"))
+				joist.material_override = DungeonStyle.wood_material(Color("514839"))
 		add_child(sheet)
 		Geo.box(self, Vector3(center.x, -.55, center.y), Vector3(18.6, .7, 14.6), Color(look.get("base", "242d31"))).layers = GROUND_LAYER
 		Geo.box(self, Vector3(center.x, -.96, center.y), Vector3(17.9, .25, 13.9), Color(look.get("under", "19232b"))).layers = GROUND_LAYER
@@ -235,18 +242,24 @@ func make_gate(socket: Dictionary) -> void:
 	gate.position = Vector3(at.x, 0, at.y)
 	var rotated = direction.x != 0
 	var post_height = 2.8 if first_person_room else (WALL_BACK_HEIGHT - .25 if direction.x + direction.y < 0 else 1.5)
-	Geo.box(gate, Vector3(0, -.015, 0), Vector3(.8, .08, 2.25) if rotated else Vector3(2.25, .08, .8), Color("b69c6a"))
+	var sill = Geo.box(gate, Vector3(0, -.015, 0), Vector3(.8, .08, 2.25) if rotated else Vector3(2.25, .08, .8), Color("b69c6a"))
+	if first_person_room: sill.material_override = DungeonStyle.wall_material(Color("827359"), true)
 	for s in [-1, 1]:
-		Geo.box(gate, Vector3(0, post_height / 2, s * 1.1) if rotated else Vector3(s * 1.1, post_height / 2, 0), Vector3(.25, post_height, .25), Color("797263"))
+		var post = Geo.box(gate, Vector3(0, post_height / 2, s * 1.1) if rotated else Vector3(s * 1.1, post_height / 2, 0), Vector3(.25, post_height, .25), Color("797263"))
+		if first_person_room: post.material_override = DungeonStyle.wall_material(Color("797263"), true)
 	if post_height > 1.5:
-		Geo.box(gate, Vector3(0, post_height, 0), Vector3(.3, .18, 2.5) if rotated else Vector3(2.5, .18, .3), Color("797263"))
+		var lintel = Geo.box(gate, Vector3(0, post_height, 0), Vector3(.3, .18, 2.5) if rotated else Vector3(2.5, .18, .3), Color("797263"))
+		if first_person_room: lintel.material_override = DungeonStyle.wall_material(Color("797263"), true)
 	var gate_height = 2.7 if first_person_room else 1.45
 	var barrier = Geo.box(gate, Vector3(0, gate_height / 2, 0), Vector3(.16, gate_height, 2.0) if rotated else Vector3(2.0, gate_height, .16), Color("66504a") if first_person_room else Color("b85e4c"), .08 if first_person_room else .7)
 	if first_person_room:
-		Geo.box(gate, Vector3(0, 4.2, 0), Vector3(.45, 2.5, 2.5) if rotated else Vector3(2.5, 2.5, .45), Color("393a36"))
+		barrier.material_override = DungeonStyle.wood_material(Color("66504a"))
+		var upper_wall = Geo.box(gate, Vector3(0, 4.2, 0), Vector3(.45, 2.5, 2.5) if rotated else Vector3(2.5, 2.5, .45), Color("393a36"))
+		upper_wall.material_override = DungeonStyle.wall_material(Color(look.get("wall","393a36")),false,Run.theme_id())
 		Geo.collider(gate, Vector3(0, 4.2, 0), Vector3(.45, 2.5, 2.5) if rotated else Vector3(2.5, 2.5, .45))
 	barrier.name = "Barrier"
-	Geo.halo(gate, Vector3(0, .035, 0), 3.5, Color(.92, .62, .25, .28))
+	if not first_person_room:
+		Geo.halo(gate, Vector3(0, .035, 0), 3.5, Color(.92, .62, .25, .28))
 	# An open doorway's outline glows (posts, sill and any lintel), brightest
 	# where the floor is darkest, so every way out shows.
 	var outline = Node3D.new()
@@ -354,6 +367,14 @@ func build_props(records: Array) -> void:
 		props[record.id] = {"record": record, "definition": definition, "node": built.node, "base": built.base,
 			"health": float(definition.get("breakable", {}).get("health", 0))}
 		if definition.recipe == "pillar":
+			if first_person_room:
+				# The two existing stone plinth meshes get the shared scanned
+				# finish before wax/flame pieces are added above them.
+				for part in built.node.get_children():
+					if not part is MeshInstance3D: continue
+					var original = part.material_override
+					if original is StandardMaterial3D:
+						part.material_override = DungeonStyle.wall_material(original.albedo_color, part.position.y > 1.0)
 			make_candle(Vector3(at.x, 1.32, at.y), .6)
 		var cloth = built.node.get_node_or_null("Cloth")
 		if cloth: cloths.append(cloth)
@@ -396,6 +417,9 @@ func break_prop(id: String) -> void:
 ## A dead lantern keeps its post and cold glass but gives no light or glow,
 ## and never joins the fill-light pool.
 func make_lantern(p: Vector3, burning := true) -> void:
+	if first_person_room:
+		make_first_person_lantern(p, burning)
+		return
 	Geo.box(self, p + Vector3(0, .28, 0), Vector3(.85, .55, .85), Color("424d4c"))
 	Geo.box(self, p + Vector3(0, .61, 0), Vector3(1.0, .12, 1.0), Color("716f5d"))
 	Geo.cylinder(self, p + Vector3(0, 1.03, 0), .14, .8, Color("ac9061"))
@@ -412,7 +436,88 @@ func make_lantern(p: Vector3, burning := true) -> void:
 	show_lantern(lanterns.back())
 	if burning: lantern_points.append(p)
 
+## An open metal cage with a real flame replaces the opaque luminous cube.
+## The only emission belongs to the tiny flame: pools on walls and floors
+## come from the real lights, without tilted additive halo cards.
+func make_first_person_lantern(p: Vector3, burning: bool) -> void:
+	var casing = MeshInstance3D.new()
+	casing.name = "LanternCage"
+	casing.mesh = lantern_model()
+	casing.set_surface_override_material(0,DungeonStyle.wall_material(Color("55534c"), true))
+	casing.position = p
+	casing.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(casing)
+	if not first_person_lantern_flame:
+		first_person_lantern_flame = QuadMesh.new()
+		first_person_lantern_flame.size = Vector2(.25, .48)
+	var flame = MeshInstance3D.new()
+	flame.name = "LanternFlame"
+	flame.mesh = first_person_lantern_flame
+	flame.material_override = DungeonStyle.candle_flame()
+	flame.position = p + Vector3(0, 1.58, 0)
+	flame.layers = 2
+	flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(flame)
+	# Retain the lantern view contract for gameplay without rendering fake
+	# floor light or a glowing plane through the camera.
+	var pool = Node3D.new()
+	pool.name = "NoFloorLightCard"
+	add_child(pool)
+	var glow = Node3D.new()
+	glow.name = "NoAirLightCard"
+	add_child(glow)
+	lanterns.append({"at": p, "burning": burning, "glass": flame, "pool": pool, "glow": glow})
+	show_lantern(lanterns.back())
+	if burning: lantern_points.append(p)
+
+static func lantern_model() -> ArrayMesh:
+	if first_person_lantern_model: return first_person_lantern_model
+	first_person_lantern_model = ArrayMesh.new()
+	var tube = CylinderMesh.new()
+	tube.top_radius = 1
+	tube.bottom_radius = 1
+	tube.height = 1
+	tube.radial_segments = 16
+	var cube = Geo.shared_box(Vector3.ONE)
+	var handle = TorusMesh.new()
+	handle.inner_radius = .105
+	handle.outer_radius = .125
+	handle.rings = 16
+	handle.ring_segments = 6
+	for finish in 3:
+		var tool = SurfaceTool.new()
+		tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var material = StandardMaterial3D.new()
+		material.albedo_color = [Color("55534c"), Color("343a3d"), Color("a18a5b")][finish]
+		material.roughness = [.82, .4, .32][finish]
+		material.metallic = [0.0, .8, .72][finish]
+		tool.set_material(material)
+		if finish == 0:
+			tool.append_from(cube, 0, Transform3D(Basis.IDENTITY.scaled(Vector3(.75,.12,.75)),Vector3(0,.06,0)))
+			tool.append_from(cube, 0, Transform3D(Basis.IDENTITY.scaled(Vector3(.55,.35,.55)),Vector3(0,.29,0)))
+			tool.append_from(cube, 0, Transform3D(Basis.IDENTITY.scaled(Vector3(.64,.09,.64)),Vector3(0,.51,0)))
+		elif finish == 1:
+			tool.append_from(tube,0,Transform3D(Basis.IDENTITY.scaled(Vector3(.058,.7,.058)),Vector3(0,.91,0)))
+			for y in [1.25,1.89]:
+				tool.append_from(tube,0,Transform3D(Basis.IDENTITY.scaled(Vector3(.28,.06,.28)),Vector3(0,y,0)))
+			for x in [-.2,.2]:
+				for z in [-.2,.2]:
+					tool.append_from(cube,0,Transform3D(Basis.IDENTITY.scaled(Vector3(.025,.61,.025)),Vector3(x,1.57,z)))
+			tool.append_from(handle,0,Transform3D(Basis(Vector3.RIGHT,PI/2),Vector3(0,2.045,0)))
+		else:
+			for y in [.57,1.18]:
+				tool.append_from(tube,0,Transform3D(Basis.IDENTITY.scaled(Vector3(.11,.09,.11)),Vector3(0,y,0)))
+			tool.append_from(tube,0,Transform3D(Basis.IDENTITY.scaled(Vector3(.19,.045,.19)),Vector3(0,1.32,0)))
+			tool.append_from(tube,0,Transform3D(Basis.IDENTITY.scaled(Vector3(.055,.09,.055)),Vector3(0,1.38,0)))
+		tool.commit(first_person_lantern_model)
+	return first_person_lantern_model
+
 func show_lantern(lantern: Dictionary) -> void:
+	if first_person_room:
+		lantern.glass.visible = lantern.burning
+		lantern.pool.visible = false
+		lantern.glow.visible = false
+		return
 	lantern.glass.material_override = (DungeonStyle.lantern_glass() if first_person_room else Geo.material(Color("f7bb6d"), 1.05)) if lantern.burning else Geo.material(Color("3d3a35"))
 	lantern.pool.visible = lantern.burning
 	lantern.glow.visible = lantern.burning
@@ -459,7 +564,7 @@ func make_fill_lights() -> void:
 	# Unshadowed fills preserve warm lantern pools in both quality modes. A
 	# small pool serves big rooms; it moves only when the selection changes.
 	for i in mini(MAX_ACTIVE_FILLS, lantern_points.size()):
-		lamps.append(Geo.light(self, lantern_points[i] + Vector3(0, 2.2, 0), light.lamp_color, light.lamp, 7.0))
+		lamps.append(make_fill_light(lantern_points[i]))
 		lamp_assignment.append(i)
 	# Keep one warm key shadow; the other lanterns are inexpensive fills. Four
 	# overlapping shadow lights still cost too much on mobile GLES3 renderers.
@@ -473,16 +578,27 @@ func refresh_fill_lights() -> void:
 	while lamps.size() > wanted:
 		lamps.pop_back().queue_free()
 	while lamps.size() < wanted:
-		lamps.append(Geo.light(self, Vector3.ZERO, light.lamp_color, light.lamp, 7.0))
+		lamps.append(make_fill_light(Vector3.ZERO))
 	lamp_assignment.clear()
 	for slot in wanted:
 		lamp_assignment.append(slot)
-		lamps[slot].position = lantern_points[slot] + Vector3(0, 2.2, 0)
+		lamps[slot].position = lantern_points[slot] + fill_offset()
 	if not lantern_points.is_empty():
 		if shadow_lamps.is_empty(): make_shadow_light(lantern_points[0])
 		else: place_shadow_light(shadow_lamps[0], lantern_points[0])
 	_quality_enabled = null
 	apply_lighting_quality()
+
+func fill_offset() -> Vector3:
+	return Vector3(0, 1.65 if first_person_room else 2.2, 0)
+
+func make_fill_light(at: Vector3) -> OmniLight3D:
+	var lamp = Geo.light(self, at + fill_offset(), light.lamp_color, light.lamp, 8.4 if first_person_room else 7.0)
+	if first_person_room:
+		lamp.omni_attenuation = 1.55
+		lamp.light_size = .18
+		lamp.light_specular = .7
+	return lamp
 
 func lantern_distance(index: int, flat: Vector2) -> float:
 	return Vector2(lantern_points[index].x, lantern_points[index].z).distance_to(flat)
@@ -501,7 +617,7 @@ func update_light_selection(focus: Vector3) -> bool:
 			if lantern_distance(lamp_assignment[slot], flat) > lantern_distance(lamp_assignment[worst], flat): worst = slot
 		if lantern_distance(candidate, flat) + FILL_HYSTERESIS < lantern_distance(lamp_assignment[worst], flat):
 			lamp_assignment[worst] = candidate
-			lamps[worst].position = lantern_points[candidate] + Vector3(0, 2.2, 0)
+			lamps[worst].position = lantern_points[candidate] + fill_offset()
 			changed = true
 	if changed and not shadow_lamps.is_empty():
 		var nearest = lamp_assignment[0]
@@ -522,6 +638,16 @@ func make_shadow_light(p: Vector3) -> void:
 	shadow_light.shadow_bias = .06
 	shadow_light.shadow_normal_bias = .7
 	shadow_light.shadow_opacity = 1.0
+	if first_person_room:
+		shadow_light.spot_range = 11.0
+		shadow_light.spot_angle = 76.0
+		shadow_light.spot_angle_attenuation = 1.1
+		shadow_light.shadow_bias = .025
+		shadow_light.shadow_normal_bias = .3
+		shadow_light.shadow_opacity = .78
+		shadow_light.shadow_blur = 1.3
+		shadow_light.light_size = .22
+		shadow_light.light_specular = .55
 	shadow_light.visible = false
 	add_child(shadow_light)
 	place_shadow_light(shadow_light, p)
@@ -530,7 +656,7 @@ func make_shadow_light(p: Vector3) -> void:
 func place_shadow_light(shadow_light: SpotLight3D, p: Vector3) -> void:
 	# Aim inward toward the lantern's own cell, as the 1x1 room always did.
 	var center = RoomGeometry.cell_center(geometry.cell_at(Vector2(p.x, p.z)))
-	shadow_light.position = p + Vector3(0, 2.2, 0)
+	shadow_light.position = p + Vector3(0, 1.72 if first_person_room else 2.2, 0)
 	shadow_light.look_at(Vector3(center.x + (p.x - center.x) * .3, 0, center.y + (p.z - center.y) * .3))
 
 func make_candle(p: Vector3, height: float) -> void:
@@ -551,7 +677,8 @@ func make_candle(p: Vector3, height: float) -> void:
 	else:
 		var flame = Geo.sphere(self, p + Vector3(0, height + .1, 0), .11, Color("ffe0a1"), 2.0)
 		flame.scale = Vector3(.7, 1.5, .7)
-	Geo.halo(self, p + Vector3(0, .025, 0), 2.3, Color(1, .5, .13, .14))
+	if not first_person_room:
+		Geo.halo(self, p + Vector3(0, .025, 0), 2.3, Color(1, .5, .13, .14))
 
 func make_candles() -> void:
 	# Candles line the exposed rear and front walls, alternating between them.
@@ -673,7 +800,10 @@ func _process(delta: float) -> void:
 	time += delta
 	apply_lighting_quality()
 	for i in lamps.size():
-		lamps[i].light_energy = light.lamp * (1.0 + sin(time * 3.1 + i * 2.4) * .042 + sin(time * 7.2 + i) * .02)
+		var flicker = sin(time * 1.7 + i * 2.4) * .018 + sin(time * 4.1 + i) * .009 if first_person_room else sin(time * 3.1 + i * 2.4) * .042 + sin(time * 7.2 + i) * .02
+		lamps[i].light_energy = light.lamp * (1.0 + flicker)
+	if first_person_room:
+		for lamp in shadow_lamps: lamp.light_energy = light.shadow * (1.0 + sin(time * 2.2) * .018)
 	for i in cloths.size():
 		cloths[i].rotation.x = sin(time * 1.3 + i * 1.7) * .09
 	if ember_mesh:

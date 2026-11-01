@@ -1,6 +1,6 @@
 # Emberkeep
 
-A cozy, first-person 3D dungeon roguelike built in Godot for Android, iOS, Linux and Windows. Faceted geometry, small painted material sheets, warm lanterns and deep shadows give the tower a PS2-era fantasy direction. An animated hearth room welcomes you before each climb.
+A cozy, first-person 3D dungeon roguelike built in Godot for Android, iOS, Linux and Windows. High-resolution stone and wood, warm fixture lighting, cool shadows and restrained atmosphere give the tower its look. An animated hearth room welcomes you before each climb.
 
 You wake as a captive at the bottom of a tower, remembering nothing, with only a little light of your own. Each run climbs five floors toward the hearth at the top, and no two seeds climb the same tower or carry the same weapons. The tower's story is in [docs/LORE.md](docs/LORE.md).
 
@@ -96,6 +96,8 @@ Safe rooms save automatically, as do bombs and item uses. If the app closes mid-
 
 ## First-person update
 
+The [0.4.0 lighting and material update](docs/LIGHTING_UPDATE.md) replaces the PS2 material direction with genuine high-resolution CC0 surfaces, mapped roughness/occlusion, warmer real fixture light, softer shadows, flame lanterns and a more detailed dark-iron weapon. Mobile selects smaller mipmapped maps while keeping the same surface response.
+
 The [0.3.0 presentation overhaul](docs/PRESENTATION_OVERHAUL.md) adds an authored hearth title screen, separate armament preparation, 27 packed material sheets and distinct interior details for all eight floor themes. Decorations use at most four mesh batches per room and preserve interaction and movement space.
 
 The [0.2.1 traversal and visual update](docs/PS2_UPDATE.md) fixes the reported ramp trap and dash overrun, adds a PS2-inspired painted stone/timber look and expands physical movement and stress coverage.
@@ -123,6 +125,9 @@ godot --headless --editor --path . --import --quit
 ./tools/render_visibility.sh    # lit enemy bodies and non-stacking mist
 ./tools/render_mobile_startup.sh # PowerVR fallback startup and wet-room regression
 
+# Verify the bundled high-resolution material derivatives offline.
+python3 tools/import_dungeon_materials.py --check
+
 # Authoring only: fetch approved painting reproductions and record provenance.
 python3 tools/import_paintings.py
 python3 tools/import_paintings.py --check
@@ -131,7 +136,7 @@ python3 tools/import_paintings.py --check
 python3 tools/make_content.py
 ```
 
-Twenty-two headless suites cover settings, the content catalog, multi-cell geometry and generation, items, furniture and secrets, pooled effects, the painting collection, gameplay, lighting, combat, the tower (climbs, themes, twists, hazards, the new foes and bosses, forged weapons and the dark store), secret codes, camera presentation, UI, title navigation, themed interiors and first-person movement/combat/touch/migration. See [docs/TESTING.md](docs/TESTING.md) for what is verified and what still needs real devices.
+Twenty-three headless suites cover settings, the content catalog, multi-cell geometry and generation, items, furniture and secrets, pooled effects, the painting collection, gameplay, lighting, combat, the tower (climbs, themes, twists, hazards, the new foes and bosses, forged weapons and the dark store), secret codes, camera presentation, UI, title navigation, themed interiors, first-person lighting and first-person movement/combat/touch/migration. See [docs/TESTING.md](docs/TESTING.md) for what is verified and what still needs real devices.
 
 | Location | Purpose |
 | --- | --- |
@@ -142,7 +147,7 @@ Twenty-two headless suites cover settings, the content catalog, multi-cell geome
 | `scripts/content.gd`, `content/*.json` | Typed, validated content families |
 | `scripts/dungeon/` | Room geometry, floor generation, navigation, furnishing and batched themed interiors |
 | `scripts/presentation/` | Authored hearth title room and armament preview |
-| `assets/materials/` | Small painted material sheets and normals; original artwork |
+| `assets/materials/pbr/` | Real 2K stone/wood, 1K mobile variants, physical surface maps and CC0 provenance |
 | `scripts/items/`, `scripts/interactions/` | Pickups, drops, active items, bombs and the validated action handlers |
 | `scripts/effects/effects_pool.gd`, `scripts/fx.gd` | Pooled, budgeted effects behind the `Effects` facade |
 | `scripts/progression/` | Painting collection, library and wall views |

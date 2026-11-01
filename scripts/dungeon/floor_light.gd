@@ -62,6 +62,29 @@ static func for_floor(height: float, theme: Dictionary, twist := "") -> Dictiona
 		result.foe_glow = maxf(result.foe_glow, .12)
 	return result
 
+## Eye-level lighting is led by the actual fixtures. Keep a cool visibility
+## floor, but greatly reduce the global key that otherwise paints every
+## masonry face equally. This is a copy: legacy profiles and encounter light
+## membership are unaffected by the presentation mode.
+static func first_person(source: Dictionary) -> Dictionary:
+	var result = source.duplicate(true)
+	var height = clampf((float(source.key) - .08) / .32, 0.0, 1.0)
+	result.ambient = lerpf(.095, .16, height)
+	if float(source.lit) < .5: result.ambient *= .88
+	result.ambient_color = source.ambient_color.lerp(Color("748fae"), .45)
+	result.key = lerpf(.035, .09, height)
+	result.key_color = source.key_color.lerp(Color("a1bbd2"), .45)
+	result.lamp = float(source.lamp) * 1.4 + .46
+	result.lamp_color = source.lamp_color.lerp(Color("ffbf7d"), .52)
+	result.shadow = lerpf(1.15, 1.5, height)
+	result.fog_density = lerpf(.0075, .0045, height)
+	result.fog_color = source.fog_color.lerp(Color("112330"), .25)
+	result.vignette = float(source.vignette) * .65
+	# At eye level a full additive doorway reads as a white neon rectangle.
+	# Keep the navigation cue as a restrained warm inlay in the stone frame.
+	result.doorway = float(source.doorway) * .28
+	return result
+
 ## Floor-wide light: the environment, the directional key and the vignette.
 static func apply(light: Dictionary, environment: Environment, key_light: DirectionalLight3D, vignette: ShaderMaterial) -> void:
 	environment.background_color = light.background

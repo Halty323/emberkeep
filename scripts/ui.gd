@@ -1017,6 +1017,11 @@ func draw_armory() -> void:
 		diamond(Vector2(47,237+slot*64),4,GOLD if selected else Color(.42,.42,.34),selected)
 	var weapon: Dictionary = starter_weapon()
 	anchor(widen())
+	# Keep the description readable over a moving fire highlight.
+	for strip in 24:
+		var y := 478.0 + strip * 8.0
+		var opacity := .76 * smoothstep(478.0,510.0,y) * (1.0-smoothstep(638.0,670.0,y))
+		draw_rect(Rect2(774,y,478,8),Color(.013,.019,.019,opacity))
 	text("IN YOUR HAND",Vector2(794,514),12,GOLD,bold)
 	var weapon_size = 29
 	while weapon_size > 18 and heading.get_string_size(weapon.name,HORIZONTAL_ALIGNMENT_LEFT,-1,weapon_size).x > 430: weapon_size -= 1

@@ -6,10 +6,9 @@ func _initialize() -> void:
 func bake() -> void:
 	var output = "res://assets/materials"
 	DirAccess.make_dir_recursive_absolute(output)
-	var style = load("res://scripts/graphics/dungeon_style.gd")
 	var textures = load("res://scripts/graphics/dungeon_textures.gd")
 	for kind in 3:
-		var maps = style.surface_maps(kind)
+		var maps = textures.legacy_floor(kind)
 		maps.paint.get_image().save_png(output.path_join("floor_%d_paint.png" % kind))
 		maps.normal.get_image().save_png(output.path_join("floor_%d_normal.png" % kind))
 	for family in ["cellar","cistern","halls","crypt","archive","kiln","belfry","hearth","masonry","dressed"]:
@@ -17,5 +16,5 @@ func bake() -> void:
 		maps.paint.get_image().save_png(output.path_join("wall_%s_paint.png" % family))
 		maps.normal.get_image().save_png(output.path_join("wall_%s_normal.png" % family))
 	textures.aging().get_image().save_png(output.path_join("aging.png"))
-	print("BAKED DUNGEON MATERIALS: 27 original material sheets")
+	print("BAKED LEGACY DUNGEON MATERIALS: 27 original material sheets")
 	quit()

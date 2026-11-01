@@ -169,8 +169,8 @@ func _ready() -> void:
 		fps = FirstPersonController.new()
 		add_child(fps)
 		fps.setup(self)
-		# Prewarm the three tiny painted material families before a run, so a
-		# newly encountered floor theme does not bake textures during combat.
+		# Prewarm the shared ground maps for the current device budget. The
+		# remaining masonry/wood maps load with the authored title room.
 		for kind in 3: DungeonStyle.surface_maps(kind)
 	Run.item_gained.connect(on_item_gained)
 	actions = GameActions.new(self)
@@ -880,11 +880,9 @@ func enter_room(spawn: Vector3, keep_view := false) -> void:
 
 ## The tower brightens floor by floor; the title keeps its own warm light.
 func apply_floor_light() -> void:
-	FloorLight.apply(FloorLight.profile(0) if in_menu else FloorLight.current(), room_environment.environment, key_light, vignette)
-	if first_person and not in_menu:
-		room_environment.environment.ambient_light_energy = maxf(.115, room_environment.environment.ambient_light_energy)
-		room_environment.environment.fog_density = maxf(.009, room_environment.environment.fog_density)
-		room_environment.environment.fog_light_color = room_environment.environment.fog_light_color.lightened(.065)
+	var light := FloorLight.profile(0) if in_menu else FloorLight.current()
+	if first_person and not in_menu: light = FloorLight.first_person(light)
+	FloorLight.apply(light, room_environment.environment, key_light, vignette)
 	screen_fx.set_grade({} if in_menu else Run.theme())
 
 ## Where the air shimmers: burning floor, a hot clinker, the Kilnmother.
@@ -1120,25 +1118,34 @@ func make_marker(kind: String, at := Vector3.ZERO) -> void:
 		Geo.halo(marker, Vector3(0, .02, 0), 5.0, Color(.35, .8, .6, .32))
 		Geo.light(marker, Vector3(0, .6, 0), Color("a7d8bd"), .65, 3.5)
 	elif kind == "dark":
-		Geo.box(marker, Vector3(0, .35, 0), Vector3(1.1, .7, .8), Color("1e1a22"))
-		Geo.box(marker, Vector3(0, .74, 0), Vector3(1.3, .08, 1.0), Color("3a2a3e"))
+		var altar_body = Geo.box(marker, Vector3(0, .35, 0), Vector3(1.1, .7, .8), Color("1e1a22"))
+		var altar_cap = Geo.box(marker, Vector3(0, .74, 0), Vector3(1.3, .08, 1.0), Color("3a2a3e"))
+		if first_person:
+			altar_body.material_override = DungeonStyle.wall_material(Color("37303e"))
+			altar_cap.material_override = DungeonStyle.wall_material(Color("4f4053"),true)
 		var flame = Geo.sphere(marker, Vector3(0, 1.05, 0), .2, Color("b98ae0"), 2.4)
 		flame.scale = Vector3(.8, 1.5, .8)
 		marker_visual = flame
 		Geo.halo(marker, Vector3(0, .03, 0), 4.5, Color(.55, .3, .8, .3))
 		Geo.light(marker, Vector3(0, 1.4, 0), Color("b98ae0"), .9, 5.0)
 	elif kind == "rest":
-		Geo.cylinder(marker, Vector3(0, .2, 0), .65, .4, Color("86775f"))
+		var rest_base = Geo.cylinder(marker, Vector3(0, .2, 0), .65, .4, Color("86775f"))
+		if first_person: rest_base.material_override = DungeonStyle.wall_material(Color("86775f"))
 		Geo.sphere(marker, Vector3(0, .75, 0), .25, Color("ffd28d"), 1.8)
 		Geo.halo(marker, Vector3(0, .03, 0), 4, Color(1, .6, .2, .3))
 	else:
-		Geo.cylinder(marker, Vector3(0, .22, 0), .5, .44, Color("656454"))
+		var reward_base = Geo.cylinder(marker, Vector3(0, .22, 0), .5, .44, Color("656454"))
+		if first_person: reward_base.material_override = DungeonStyle.wall_material(Color("656454"))
 		var relic = Geo.box(marker, Vector3(0, 1.0, 0), Vector3(.43, .43, .43), Color("d4b580") if kind == "treasure" else Color("a9c4ad"), .7)
 		marker_visual = relic
 		relic.rotation_degrees = Vector3(45, 35, 30)
 		Geo.ring(marker, Vector3(0, .035, 0), .95, Color("d9b97a"), .035)
 		Geo.halo(marker, Vector3(0, .03, 0), 4, Color(1, .65, .22, .22))
 		Geo.light(marker, Vector3(0, 1.5, 0), Color("f0c68c"), .55, 3.5)
+	if first_person:
+		for child in marker.get_children():
+			if child is MeshInstance3D and child.material_override is ShaderMaterial and child.material_override.shader == preload("res://shaders/halo.gdshader"):
+				child.visible = false
 	interactions.register(PEDESTAL_ID, kind, at, 2.1, "", marker)
 
 func remove_marker() -> void:

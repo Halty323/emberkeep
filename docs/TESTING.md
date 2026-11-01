@@ -2,6 +2,14 @@
 
 Current first-person work uses **Godot 4.7.2 Standard** on Linux. The headless regression runner keeps original gameplay/presentation suites in explicit legacy mode (`EMBERKEEP_LEGACY_TEST=1`) and switches the dedicated `first_person` suite back to the default gameplay mode. Historical rendering/build measurements below retain their original engine context. Phone performance is not inferred from desktop software rendering.
 
+## Lighting and high-resolution materials (0.4.0)
+
+The [lighting update](LIGHTING_UPDATE.md) passes the complete **23-suite** regression runner: **136,774 checks, zero failures**, plus both offline asset/importer checks. `dungeon_style` now has **147 checks**, including genuine 2K material loading, 1K PowerVR variants, shared physical maps, bounded caches and all packaged texture resources. The new `lighting_centered` suite has **55 checks** for independent floor profiles, readable cool shadows, real flame origins, no fake fixture halos, shadow/fill budgets, snuffing/relighting and light identity across settings changes. Existing navigation, combat, save, item, lighting and title suites also pass.
+
+Native Godot 4.7.2 Compatibility captures cover all eight themed interiors and four collision-clear generated room compositions under both desktop and simulated PowerVR policies. No shader or framebuffer errors were emitted. The 1K PowerVR captures measured approximately **18.32 MB textures / 25.2–25.5 MB video memory**; equivalent 2K desktop compositions measured approximately **63.27 MB / 70.3 MB**, including the desktop post-processing path. These are Mesa llvmpipe resource measurements, not phone performance claims. The actual Linux resource pack is checked for all retained and PBR material resources and runs 600 quickstart frames.
+
+The interior capture fixture removes frozen foes before placing the camera: its previous Kiln/Hearth tan plane came from a brute occupying the capture viewpoint. `tests/render_light_materials.gd` additionally requires a free standing capsule and a clear sightline, writes resource measurements and selects the PowerVR policy by default (`EMBERKEEP_LIGHT_CAPTURE_POLICY=desktop` opts into desktop). `EMBERKEEP_LIGHT_CAPTURE` names the capture directory.
+
 ## Presentation overhaul verification (0.3.0)
 
 The [presentation report](PRESENTATION_OVERHAUL.md) records the new title room, packed materials and eight themed interiors. The complete **22-suite** local run passed **136,695 checks** plus the painting importer's offline checks. Final CI repeated all 22 suites with the packed-asset assertion included and passed **136,696 checks** on every native export job. After moving authoring-generated materials into packed PNG resources, the affected suites passed again: `dungeon_style` **124**, `title_presentation` **58**, and `themed_interiors` **2,917**. Title/UI counts depend on whether the disposable profile contains a resumable run; the full run exercised the Continue branch with 61 title checks.
@@ -36,7 +44,8 @@ The 2026-10-31 PowerVR safeguard run passed **133,052 checks** across all suites
 | `render_policy` | 63 | PowerVR fallback, MSAA and framebuffer policy, render-resolution budget and shader selection. |
 | `first_person_navigation` | 330 | Physical ramp traversal, landing, dash release, doorway clearance, recovery and saved terrain validation. |
 | `first_person_stress` | 52 | Bounded projectile resources, room rebuilds, routing work and elevated combat effects. |
-| `dungeon_style` | 124 | Shared painted materials, theme variation, map/cache bounds, all 27 packed assets, shader and render-policy compatibility, isolated cosmetic randomness. |
+| `dungeon_style` | 147 | Shared high-resolution physical materials, theme variation, device map/cache bounds, all packed assets, shader compatibility and isolated cosmetic randomness. |
+| `lighting_centered` | 55 | First-person profile isolation, real flames, fixture/door cues, bounded lights, snuffing/relighting and settings transitions. |
 | `title_presentation` | 58–61 | Home/preparation/Continue/Daily/journal/settings navigation, controller/back input, touch sizing, armament preview, seed selection and clean scene lifecycle. |
 | `themed_interiors` | 2,917 | 48 furnished rooms across all eight themes; deterministic plans, clear portals/ramps/paintings, no breakable-supported vignettes, whole-scene vertex budgets, at most four batches, no new collision/lights/shadow casters or run RNG changes. |
 | `first_person` | 75 | First-person movement, physical terrain, 3D weapon sweeps, all boss simulations, independent touch ownership and save migration; described above. |

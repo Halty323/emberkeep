@@ -1,6 +1,6 @@
 shader_type spatial;
 render_mode unshaded, blend_mix, depth_draw_never, cull_disabled;
-// Period-style fire card with flowing silhouettes, viewed behind real logs
+// Soft turbulent fire card, viewed behind real logs
 // and an iron grate. No screen/depth reads or particle/light allocations.
 uniform bool billboard = false;
 void vertex() {
@@ -11,22 +11,24 @@ void vertex() {
         MODELVIEW_MATRIX = VIEW_MATRIX * facing;
     }
 }
-float tongue(vec2 p, float centre, float height, float width, float phase) {
-    float y = p.y / height;
-    float curl = sin(y * 8.0 - TIME * 3.5 + phase) * .055 * y;
-    curl += sin(y * 15.0 - TIME * 5.1 + phase) * .018 * y;
-    return 1.0 - abs(p.x - centre + curl) / max(.02, width * (1.0 - y * .85)) - y;
+float hash21(vec2 p) { return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+float noise2(vec2 p) {
+    vec2 i=floor(p); vec2 f=fract(p); f=f*f*(3.0-2.0*f);
+    return mix(mix(hash21(i),hash21(i+vec2(1,0)),f.x),mix(hash21(i+vec2(0,1)),hash21(i+vec2(1,1)),f.x),f.y);
 }
 void fragment() {
-    vec2 p = vec2(UV.x * 2.0 - 1.0, 1.0 - UV.y);
-    float a = tongue(p,-.43,.82+sin(TIME*2.0)*.06,.35,.7);
-    float b = tongue(p,.0,.98+sin(TIME*2.3+.8)*.045,.39,2.1);
-    float c = tongue(p,.43,.76+sin(TIME*2.6+1.9)*.055,.34,4.0);
-    float density = max(a,max(b,c));
-    float alpha = smoothstep(.0,.14,density) * smoothstep(.0,.06,p.y);
-    vec3 rim = vec3(.95,.19,.018);
-    vec3 heart = vec3(1.0,.73,.24);
-    ALBEDO = mix(rim,heart,smoothstep(.03,.75,density));
-    EMISSION = ALBEDO * 1.6;
-    ALPHA = alpha;
+    vec2 p=vec2(UV.x*2.0-1.0,1.0-UV.y);
+    vec2 flow=vec2(p.x*3.4,p.y*4.3-TIME*1.8);
+    float turbulence=noise2(flow)*.65+noise2(flow*2.1+TIME*.3)*.35;
+    float bend=sin(p.y*5.0-TIME*2.1)*p.y*.1;
+    float width=mix(.8,.06,pow(p.y,.72));
+    float body=1.0-abs(p.x+bend)/max(.05,width);
+    float density=body-p.y*.25+(turbulence-.5)*p.y*.85;
+    float alpha=smoothstep(.0,.24,density)*smoothstep(.0,.06,p.y)*(1.0-smoothstep(.72,1.0,p.y));
+    float core=smoothstep(.12,.95,density)*(1.0-p.y*.6);
+    vec3 fire=mix(vec3(.82,.12,.012),vec3(1.0,.69,.19),core);
+    fire=mix(fire,vec3(1.0,.92,.64),core*core*.45);
+    ALBEDO=fire;
+    EMISSION=fire*1.7;
+    ALPHA=alpha;
 }

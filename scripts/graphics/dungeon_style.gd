@@ -1,7 +1,7 @@
 class_name DungeonStyle
 extends RefCounted
-## PS2-era material economy: small reusable painted maps, low-poly silhouettes
-## and real local lights. Detail is baked once, never searched per fragment.
+## Lighting-led surfaces: real high-resolution stone and wood with normal,
+## roughness and occlusion maps. Shared by rooms, architecture and the title.
 static var maps: Dictionary = {}
 static var materials: Dictionary = {}
 static var floor_sheet: PlaneMesh
@@ -13,44 +13,13 @@ static func floor_mesh() -> PlaneMesh:
 	return floor_sheet
 
 static func surface_maps(kind: int) -> Dictionary:
-	if maps.has(kind): return maps[kind]
-	var paint_path = "res://assets/materials/floor_%d_paint.png" % kind
-	var normal_path = "res://assets/materials/floor_%d_normal.png" % kind
-	if OS.get_environment("EMBERKEEP_BAKE_MATERIALS") != "1" and ResourceLoader.exists(paint_path) and ResourceLoader.exists(normal_path):
-		maps[kind] = {"paint": load(paint_path), "normal": load(normal_path)}
-		return maps[kind]
-	const SIZE := 256
-	var paint = Image.create(SIZE, SIZE, false, Image.FORMAT_RGBA8)
-	var height = Image.create(SIZE, SIZE, false, Image.FORMAT_RGB8)
-	var noise = FastNoiseLite.new()
-	noise.seed = 417 + kind
-	noise.frequency = .085
-	for y in SIZE:
-		for x in SIZE:
-			var row = y / 64
-			var shifted = posmod(x + (32 if row % 2 else 0), SIZE)
-			var edge = minf(minf(shifted % 64, 63 - shifted % 64), minf(y % 64, 63 - y % 64))
-			var grain = noise.get_noise_2d(x, y) * .5 + .5
-			var id = (shifted / 64) + row * 7
-			var tone = .82 + .18 * fposmod(sin(float(id) * 17.31) * 431.7, 1.0)
-			var bevel = smoothstep(.8 + grain * .7, 3.4, edge)
-			if kind == 1:
-				bevel = .66 + .34 * smoothstep(.2, .75, grain)
-			elif kind == 2:
-				bevel = .7 + .3 * grain
-			# Light brushwork at the lip and pooled dirt in the joint.
-			var value = tone * (.9 + grain * .16) * lerpf(.38, 1.0, bevel)
-			var lip = maxf(0, 1.0 - absf(edge - 5.5) / 2.0) * .08 if kind == 0 else 0.0
-			paint.set_pixel(x, y, Color(clampf(value + lip, 0, 1), 1.0 - bevel, fposmod(id * .317, 1.0) if kind == 0 else grain, .72 + .25 * (1.0 - bevel)))
-			height.set_pixel(x, y, Color(bevel * (.8 + grain * .2), bevel * (.8 + grain * .2), bevel * (.8 + grain * .2)))
-	paint.generate_mipmaps()
-	height.bump_map_to_normal_map(2.0)
-	height.generate_mipmaps()
-	maps[kind] = {"paint": ImageTexture.create_from_image(paint), "normal": ImageTexture.create_from_image(height)}
-	return maps[kind]
+	var key := str(clampi(kind,0,2)) + "|" + str(DungeonPBR.resolution())
+	if maps.has(key): return maps[key]
+	maps[key] = DungeonPBR.maps("flagstone" if kind == 0 else "rock")
+	return maps[key]
 
 static func floor_material(look: Dictionary) -> ShaderMaterial:
-	var key = "floor" + JSON.stringify(look)
+	var key = "floor" + JSON.stringify(look) + str(DungeonPBR.resolution())
 	if materials.has(key): return materials[key]
 	var surface: Dictionary = look.get("surface", {})
 	var kind = maxi(0, Look.PATTERNS.find(surface.get("pattern", "slabs")))
@@ -61,8 +30,12 @@ static func floor_material(look: Dictionary) -> ShaderMaterial:
 	for i in 5: mat.set_shader_parameter("palette_" + "abcde"[i], Color(colors[i]))
 	mat.set_shader_parameter("paint", textures.paint)
 	mat.set_shader_parameter("relief_map", textures.normal)
+	mat.set_shader_parameter("orm", textures.orm)
+	mat.set_shader_parameter("uv_aspect", textures.uv_aspect)
 	mat.set_shader_parameter("detail", Look.detail())
-	mat.set_shader_parameter("tile_scale", .25 * 2.4 / maxf(.8, float(surface.get("size", 2.4))))
+	mat.set_shader_parameter("tile_scale", .34 * 2.4 / maxf(.8, float(surface.get("size", 2.4))))
+	mat.set_shader_parameter("earth", 1.0 if kind == 2 else 0.0)
+	mat.set_shader_parameter("relief_strength", .65 if kind == 0 else .48)
 	for parameter in ["wetness", "moss", "frost", "embers", "brass"]:
 		mat.set_shader_parameter(parameter, float(surface.get(parameter, 0)))
 	mat.set_shader_parameter("moss_color", Color(surface.get("moss_color", "40532b")))
@@ -71,27 +44,34 @@ static func floor_material(look: Dictionary) -> ShaderMaterial:
 	return mat
 
 static func wall_material(color: Color, cap := false, family := "masonry") -> ShaderMaterial:
-	var key = "wall" + color.to_html() + str(cap) + family
+	var key = "wall" + color.to_html() + str(cap) + family + str(DungeonPBR.resolution())
 	if materials.has(key): return materials[key]
-	var textures = DungeonTextures.wall("dressed" if cap else family)
+	var textures = DungeonPBR.maps("rock" if family in ["cistern", "halls"] and not cap else "masonry")
 	var mat = ShaderMaterial.new()
 	mat.shader = preload("res://shaders/dungeon_wall.gdshader")
-	mat.set_shader_parameter("tint", color.lightened(.17))
+	mat.set_shader_parameter("tint", color.lightened(.45))
 	mat.set_shader_parameter("paint", textures.paint)
 	mat.set_shader_parameter("relief_map", textures.normal)
-	mat.set_shader_parameter("tile_scale", .22 if cap else .27)
-	mat.set_shader_parameter("relief_strength", .12 if cap else .2)
+	mat.set_shader_parameter("orm", textures.orm)
+	mat.set_shader_parameter("uv_aspect", textures.uv_aspect)
+	mat.set_shader_parameter("tile_scale", .42 if cap else .4)
+	mat.set_shader_parameter("relief_strength", .36 if cap else .72)
+	mat.set_shader_parameter("dampness", .55 if family == "cistern" else (.16 if family == "halls" else 0.0))
 	materials[key] = mat
 	return mat
 
 static func wood_material(color: Color, local_space := false) -> ShaderMaterial:
-	var key = "wood" + color.to_html() + str(local_space)
+	var key = "wood" + color.to_html() + str(local_space) + str(DungeonPBR.resolution())
 	if materials.has(key): return materials[key]
 	var mat = ShaderMaterial.new()
 	mat.shader = preload("res://shaders/dungeon_wood.gdshader")
 	mat.set_shader_parameter("local_space", local_space)
-	mat.set_shader_parameter("tint", color)
-	mat.set_shader_parameter("detail", Look.detail())
+	mat.set_shader_parameter("tint", color.lightened(.3))
+	var textures = DungeonPBR.maps("wood")
+	mat.set_shader_parameter("paint", textures.paint)
+	mat.set_shader_parameter("relief_map", textures.normal)
+	mat.set_shader_parameter("orm", textures.orm)
+	mat.set_shader_parameter("uv_aspect", textures.uv_aspect)
 	materials[key] = mat
 	return mat
 
@@ -127,7 +107,7 @@ static func candle_flame_mesh() -> QuadMesh:
 	return candle_mesh
 
 static func verify_material_assets() -> Array[String]:
-	var errors: Array[String] = []
+	var errors: Array[String] = DungeonPBR.verify_assets()
 	var paths: Array[String] = ["res://assets/materials/aging.png"]
 	for kind in 3:
 		for channel in ["paint","normal"]: paths.append("res://assets/materials/floor_%d_%s.png" % [kind,channel])

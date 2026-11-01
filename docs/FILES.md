@@ -1,6 +1,6 @@
 # Completed project files
 
-Godot import caches, Python bytecode and Git internals are generated locally and excluded from the source archive. Original material sheets are under `assets/materials/`; painting reproductions appear under `assets/paintings/` once `tools/import_paintings.py` has been run.
+Godot import caches, Python bytecode and Git internals are generated locally and excluded from the source archive. Current high-resolution materials and provenance are under `assets/materials/pbr/`; painting reproductions appear under `assets/paintings/` once `tools/import_paintings.py` has been run.
 
 ```text
 .github/workflows/android.yml
@@ -37,6 +37,48 @@ assets/materials/floor_2_normal.png
 assets/materials/floor_2_normal.png.import
 assets/materials/floor_2_paint.png
 assets/materials/floor_2_paint.png.import
+assets/materials/pbr/README.md
+assets/materials/pbr/flagstone/color.jpg
+assets/materials/pbr/flagstone/color.jpg.import
+assets/materials/pbr/flagstone/color_mobile.jpg
+assets/materials/pbr/flagstone/color_mobile.jpg.import
+assets/materials/pbr/flagstone/normal.jpg
+assets/materials/pbr/flagstone/normal.jpg.import
+assets/materials/pbr/flagstone/normal_mobile.jpg
+assets/materials/pbr/flagstone/normal_mobile.jpg.import
+assets/materials/pbr/flagstone/orm.png
+assets/materials/pbr/flagstone/orm.png.import
+assets/materials/pbr/manifest.json
+assets/materials/pbr/masonry/color.jpg
+assets/materials/pbr/masonry/color.jpg.import
+assets/materials/pbr/masonry/color_mobile.jpg
+assets/materials/pbr/masonry/color_mobile.jpg.import
+assets/materials/pbr/masonry/normal.jpg
+assets/materials/pbr/masonry/normal.jpg.import
+assets/materials/pbr/masonry/normal_mobile.jpg
+assets/materials/pbr/masonry/normal_mobile.jpg.import
+assets/materials/pbr/masonry/orm.png
+assets/materials/pbr/masonry/orm.png.import
+assets/materials/pbr/rock/color.jpg
+assets/materials/pbr/rock/color.jpg.import
+assets/materials/pbr/rock/color_mobile.jpg
+assets/materials/pbr/rock/color_mobile.jpg.import
+assets/materials/pbr/rock/normal.jpg
+assets/materials/pbr/rock/normal.jpg.import
+assets/materials/pbr/rock/normal_mobile.jpg
+assets/materials/pbr/rock/normal_mobile.jpg.import
+assets/materials/pbr/rock/orm.png
+assets/materials/pbr/rock/orm.png.import
+assets/materials/pbr/wood/color.jpg
+assets/materials/pbr/wood/color.jpg.import
+assets/materials/pbr/wood/color_mobile.jpg
+assets/materials/pbr/wood/color_mobile.jpg.import
+assets/materials/pbr/wood/normal.jpg
+assets/materials/pbr/wood/normal.jpg.import
+assets/materials/pbr/wood/normal_mobile.jpg
+assets/materials/pbr/wood/normal_mobile.jpg.import
+assets/materials/pbr/wood/orm.png
+assets/materials/pbr/wood/orm.png.import
 assets/materials/wall_archive_normal.png
 assets/materials/wall_archive_normal.png.import
 assets/materials/wall_archive_paint.png
@@ -92,6 +134,7 @@ docs/EXPANSION_PLAN.md
 docs/FILES.md
 docs/FIRST_PERSON_UPDATE_PLAN.md
 docs/IOS.md
+docs/LIGHTING_UPDATE.md
 docs/LINUX.md
 docs/LORE.md
 docs/ONLINE.md
@@ -215,6 +258,8 @@ scripts/graphics/dungeon_textures.gd
 scripts/graphics/dungeon_textures.gd.uid
 scripts/graphics/look.gd
 scripts/graphics/look.gd.uid
+scripts/graphics/pbr_materials.gd
+scripts/graphics/pbr_materials.gd.uid
 scripts/graphics/render_policy.gd
 scripts/graphics/render_policy.gd.uid
 scripts/graphics/screen_fx.gd
@@ -339,10 +384,14 @@ tests/items.gd
 tests/items.gd.uid
 tests/lighting.gd
 tests/lighting.gd.uid
+tests/lighting_centered.gd
+tests/lighting_centered.gd.uid
 tests/presentation.gd
 tests/presentation.gd.uid
 tests/render_first_person.gd
 tests/render_first_person.gd.uid
+tests/render_light_materials.gd
+tests/render_light_materials.gd.uid
 tests/render_lighting.gd
 tests/render_lighting.gd.uid
 tests/render_mobile_startup.gd
@@ -383,6 +432,7 @@ tools/build_windows.sh
 tools/configure_android.gd
 tools/configure_android.gd.uid
 tools/export_android.sh
+tools/import_dungeon_materials.py
 tools/import_paintings.py
 tools/make_content.py
 tools/render_lighting.sh
