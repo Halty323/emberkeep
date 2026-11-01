@@ -155,7 +155,7 @@ func resize() -> void:
 			layer.size = Vector2(view_width, 720)
 	place_layers()
 	# Edge-anchored controls are placed when a screen is built.
-	if widened and game and content and mode in ["play", "menu"]: show_screen(mode)
+	if widened and game and content and mode in ["play", "menu", "armory"]: show_screen(mode)
 	queue_redraw()
 
 func local_point(at: Vector2) -> Vector2:
@@ -179,7 +179,7 @@ func moved(rect: Rect2, by: float) -> Rect2:
 ## Play and the title place their own edge-anchored groups; every other
 ## screen is centred whole.
 func layer_shift() -> float:
-	return 0.0 if mode in ["play", "menu"] else widen() / 2.0
+	return 0.0 if mode in ["play", "menu", "armory"] else widen() / 2.0
 
 func place_layers() -> void:
 	var at = offset + Vector2(layer_shift() * scale_value, 0)
@@ -206,20 +206,23 @@ func show_screen(screen: String) -> void:
 	fire_touch = -1
 	for child in content.get_children():
 		if child is CanvasItem: child.hide()
+		if game.first_person: content.remove_child(child)
 		child.queue_free()
 	for child in surface_layer.get_children():
 		child.hide()
+		if game.first_person: surface_layer.remove_child(child)
 		child.queue_free()
 	surfaces.clear()
 	toast_surface = null
 	interaction_surface = null
 	boss_surface = null
-	backdrop.color = Color(.025, .035, .035, .74) if mode not in ["play", "menu"] else Color(0, 0, 0, 0)
+	backdrop.color = Color(.025, .035, .035, .74) if mode not in ["play", "menu", "armory"] else Color(0, 0, 0, 0)
 	place_layers()
 	build_surfaces()
 	seed_field = null
 	match mode:
 		"menu": build_menu()
+		"armory": build_armory()
 		"play":
 			# The journal stays a key (Tab) or a pause-menu entry away.
 			button("II", moved(PAUSE_RECT, widen()), func(): game.pause_game(), false)
@@ -292,8 +295,9 @@ func change_journal_page(step: int) -> void:
 func build_surfaces() -> void:
 	match mode:
 		"menu":
-			make_surface(Rect2(36, 28, 474, 660))
-			make_surface(moved(Rect2(762, 530, 472, 156), widen()))
+			if not game.first_person:
+				make_surface(Rect2(36, 28, 474, 660))
+				make_surface(moved(Rect2(762, 530, 472, 156), widen()))
 		"play":
 			make_surface(HUD_RECT)
 			make_surface(moved(MINIMAP_RECT, widen()), Color("363c37"))
@@ -407,6 +411,107 @@ func submit_secret_code(code: String) -> void:
 	game.resume_game()
 
 func build_menu() -> void:
+	if not game.first_person:
+		build_legacy_menu()
+		return
+	if menu_seed == 0: reforge()
+	var y = 300.0
+	if Run.has_save():
+		title_button("Continue journey", Rect2(56,y,420,58), func(): game.continue_run(), true)
+		y += 68
+	title_button("New journey", Rect2(56,y,420,58), func(): show_screen("armory"), not Run.has_save())
+	y += 68
+	title_button("Daily journey", Rect2(56,y,420,58), func(): game.start_run(starter_weapon(Run.daily_seed()).id,Run.daily_seed(),true))
+	y += 62
+	title_button("Journal", Rect2(56,y,420,56), func(): open_journal("menu"))
+	y += 56
+	title_button("Options", Rect2(56,y,420,56), func(): open_settings("menu"))
+	y += 56
+	if not is_touch_platform(): title_button("Leave the hearth", Rect2(56,y,420,56), func(): game.get_tree().quit())
+
+func title_button(label: String, rect: Rect2, callback: Callable, primary := false) -> Button:
+	var control = Button.new()
+	control.text = label
+	control.position = rect.position
+	control.size = rect.size
+	control.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	control.clip_text = true
+	control.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	control.add_theme_font_override("font",heading)
+	control.add_theme_font_size_override("font_size", 29 if mode == "menu" else 21)
+	control.add_theme_color_override("font_color",GOLD if primary else INK)
+	control.add_theme_color_override("font_hover_color",Color("ffe3aa"))
+	control.add_theme_color_override("font_focus_color",Color("ffe3aa"))
+	control.add_theme_constant_override("outline_size",2)
+	control.add_theme_color_override("font_outline_color",Color(0,0,0,.6))
+	for state in ["normal","disabled"]:
+		control.add_theme_stylebox_override(state,StyleBoxEmpty.new())
+	for state in ["hover","focus","pressed"]:
+		var fill = StyleBoxFlat.new()
+		fill.bg_color = Color(.52,.36,.15,.15 if state != "pressed" else .25)
+		fill.border_color = Color(.85,.67,.37,.8)
+		fill.border_width_left = 2
+		fill.content_margin_left = 14
+		control.add_theme_stylebox_override(state,fill)
+	control.pressed.connect(func(): Audio.play_sound("coin",.55); callback.call())
+	content.add_child(control)
+	if not content.get_children().any(func(child): return child != control and child is Button and not child.is_queued_for_deletion()): focus_title_control.call_deferred(control)
+	return control
+
+func focus_title_control(control: Control) -> void:
+	if is_instance_valid(control) and control.is_inside_tree() and not control.is_queued_for_deletion() and control.is_visible_in_tree(): control.grab_focus()
+
+func build_armory() -> void:
+	if menu_seed == 0: reforge()
+	var choices = Collection.starters(chosen_seed())
+	for slot in choices.size():
+		var weapon: Dictionary = choices[slot]
+		var control = title_button(weapon.name,Rect2(58,208+slot*64,440,57),select_armament.bind(slot), slot == posmod(starter_index,choices.size()))
+		control.name = "Armament%d" % slot
+		control.set_meta("starter_slot",slot)
+	seed_field = LineEdit.new()
+	seed_field.name = "JourneySeed"
+	seed_field.position = Vector2(60,550)
+	seed_field.size = Vector2(250,50)
+	seed_field.placeholder_text = "Seed %d" % menu_seed
+	seed_field.text = selected_seed
+	seed_field.max_length = 10
+	seed_field.add_theme_font_override("font",body)
+	seed_field.add_theme_font_size_override("font_size",17)
+	seed_field.add_theme_color_override("font_color",MUTED)
+	seed_field.add_theme_stylebox_override("normal",style(Color(.04,.045,.04,.6),Color(.55,.45,.29,.5),1))
+	seed_field.add_theme_stylebox_override("focus",style(Color(.08,.075,.05,.8),GOLD,1))
+	seed_field.text_changed.connect(func(value): selected_seed = value; refresh_armory_choices())
+	content.add_child(seed_field)
+	title_button("Reforge",Rect2(332,550,150,54),func(): reforge(); seed_field.text = ""; seed_field.placeholder_text = "Seed %d" % menu_seed; refresh_armory_choices())
+	title_button("Enter the tower  →",Rect2(58,622,440,62),func(): game.start_run(starter_weapon().id,chosen_seed(),false),true)
+	var back = title_button("← Hearth",Rect2(60,64,200,54),func(): show_screen("menu"))
+	back.add_theme_font_size_override("font_size",18)
+	if is_instance_valid(game.title_scene): game.title_scene.preview_weapon(starter_weapon())
+
+func select_armament(slot: int) -> void:
+	starter_index = slot
+	refresh_armory_choices()
+
+func refresh_armory_choices() -> void:
+	var choices = Collection.starters(chosen_seed())
+	starter_index = posmod(starter_index,choices.size())
+	for child in content.get_children():
+		if child is Button and child.has_meta("starter_slot"):
+			var slot = int(child.get_meta("starter_slot"))
+			child.text = choices[slot].name
+			child.add_theme_color_override("font_color",GOLD if slot == starter_index else INK)
+	if is_instance_valid(game.title_scene): game.title_scene.preview_weapon(starter_weapon())
+	queue_redraw()
+
+func handle_title_back() -> bool:
+	if not game.first_person or not game.in_menu or mode == "menu": return false
+	if mode == "painting": close_painting()
+	elif mode in ["journal","settings"]: close_subscreen()
+	else: show_screen("menu")
+	return true
+
+func build_legacy_menu() -> void:
 	seed_field = LineEdit.new()
 	seed_field.position = Vector2(64, 390)
 	seed_field.size = Vector2(190, 52)
@@ -707,6 +812,9 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 func _input(event: InputEvent) -> void:
+	if game.first_person and game.in_menu and event.is_action_pressed("ui_cancel") and handle_title_back():
+		get_viewport().set_input_as_handled()
+		return
 	if mode == "secret" and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		close_secret_code()
 		get_viewport().set_input_as_handled()
@@ -824,6 +932,7 @@ func _draw() -> void:
 	anchor(layer_shift())
 	match mode:
 		"menu": draw_menu()
+		"armory": draw_armory()
 		"play": draw_hud()
 		"pause":
 			hearth_emblem(Vector2(640, 144), 12)
@@ -874,7 +983,47 @@ func divider(from: Vector2, to: Vector2) -> void:
 	draw_line(from + Vector2(0, 1), to + Vector2(0, 1), Color(.03, .04, .03, .8), 1)
 	draw_line(from, to, Color(EDGE, .55), 1)
 
+func draw_title_shade() -> void:
+	# A continuous ink wash replaces the old stack of stone panel widgets.
+	# No screen texture: native text stays sharp at every render scale.
+	for strip in 40:
+		var x = strip * 20.0
+		var opacity = .92 * (1.0-smoothstep(260.0,790.0,x))
+		draw_rect(Rect2(x,0,20,720),Color(.013,.019,.019,opacity))
+	draw_rect(Rect2(0,0,view_width,2),Color(.55,.42,.24,.5))
+	draw_rect(Rect2(0,718,view_width,2),Color(.55,.42,.24,.5))
+
 func draw_menu() -> void:
+	if not game.first_person:
+		draw_legacy_menu()
+		return
+	draw_title_shade()
+	hearth_emblem(Vector2(77,75),13)
+	text("THE HEARTH IS WAITING",Vector2(102,80),13,GOLD,bold)
+	text("Emberkeep",Vector2(53,180),78,INK,heading)
+	text("The tower remembers your light.",Vector2(60,224),19,MUTED,heading)
+	draw_line(Vector2(60,255),Vector2(174,255),Color(.73,.56,.31,.8),1)
+	anchor(widen())
+	text("A fire before the climb",Vector2(882,650),21,INK,heading)
+	text("Return to the light. Begin again.",Vector2(884,681),14,MUTED)
+
+func draw_armory() -> void:
+	draw_title_shade()
+	text("Prepare your light",Vector2(58,156),36,INK,heading)
+	text("CHOOSE AN ARMAMENT",Vector2(61,188),12,GOLD,bold)
+	var choices = Collection.starters(chosen_seed())
+	for slot in choices.size():
+		var selected = slot == posmod(starter_index,choices.size())
+		diamond(Vector2(47,237+slot*64),4,GOLD if selected else Color(.42,.42,.34),selected)
+	var weapon: Dictionary = starter_weapon()
+	anchor(widen())
+	text("IN YOUR HAND",Vector2(794,514),12,GOLD,bold)
+	var weapon_size = 29
+	while weapon_size > 18 and heading.get_string_size(weapon.name,HORIZONTAL_ALIGNMENT_LEFT,-1,weapon_size).x > 430: weapon_size -= 1
+	text(weapon.name,Vector2(790,551),weapon_size,Color(weapon.color),heading)
+	draw_multiline_string(body,Vector2(793,583),weapon.description,HORIZONTAL_ALIGNMENT_LEFT,430,18,3,INK)
+
+func draw_legacy_menu() -> void:
 	hearth_emblem(Vector2(83, 73), 11)
 	text("A LITTLE LIGHT. A DIFFERENT RUN.", Vector2(112, 79), 14, GOLD, bold)
 	text("Emberkeep", Vector2(62, 164), 58, INK, heading)

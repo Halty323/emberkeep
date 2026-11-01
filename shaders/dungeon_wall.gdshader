@@ -1,7 +1,7 @@
 shader_type spatial;
 render_mode diffuse_lambert;
-uniform sampler2D paint : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
-uniform sampler2D relief_map : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D paint : source_color, filter_linear_mipmap, repeat_enable;
+uniform sampler2D relief_map : hint_normal, filter_linear_mipmap, repeat_enable;
 uniform vec3 tint : source_color;
 uniform float tile_scale = .5;
 uniform float relief_strength = .55;
@@ -27,5 +27,5 @@ void fragment() {
     float foot = mix(.66,1.0,smoothstep(0.0,.7,world.y));
     ALBEDO = tint * paint_color * 1.5 * foot;
     ROUGHNESS = .87;
-    SPECULAR = .25;
+    SPECULAR = .14;
 }

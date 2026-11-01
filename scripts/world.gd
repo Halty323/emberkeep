@@ -56,6 +56,7 @@ var effects: EffectsPool
 var cloths: Array = []
 var paintings: Dictionary = {}
 var candle_points: Array[Vector3] = []
+var interiors_report: Dictionary = {}
 
 func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 	game = owner_game
@@ -74,7 +75,6 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 	collect_sockets(room, preview)
 	build_floor()
 	build_walls()
-	if first_person_room: FirstPersonArchitecture.build(self)
 	var points: Array = room.get("lights", default_lights())
 	var burning: Array = FloorLight.lit_lanterns(points.size(), light, int(room.get("seed", 53)))
 	# A room remembers lanterns relit or put out once its fight was over.
@@ -109,6 +109,9 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 	make_candles()
 	make_embers()
 	add_ambient_emitters()
+	if first_person_room:
+		interiors_report = ThemedInteriors.decorate(self)
+		FirstPersonArchitecture.build(self)
 	set_open(true)
 	apply_lighting_quality()
 
@@ -264,9 +267,9 @@ func make_gate(socket: Dictionary) -> void:
 
 func make_wall(at: Vector3, dimensions: Vector3, front_side := Vector2i.ZERO, line := 0.0, from := 0.0, to := 0.0) -> Dictionary:
 	var body = Geo.box(self, at, dimensions, Color(look.get("wall", "394148")))
-	body.material_override = DungeonStyle.wall_material(Color(look.get("wall", "394148"))) if first_person_room else Look.wall_material(Color(look.get("wall", "394148")))
+	body.material_override = DungeonStyle.wall_material(Color(look.get("wall", "394148")), false, Run.theme_id()) if first_person_room else Look.wall_material(Color(look.get("wall", "394148")))
 	var cap = Geo.box(self, at + Vector3(0, dimensions.y / 2 + .035, 0), Vector3(dimensions.x + .06, .09, dimensions.z + .06), Color(look.get("cap", "656358")))
-	cap.material_override = DungeonStyle.wall_material(Color(look.get("cap", "656358")), true) if first_person_room else Look.wall_material(Color(look.get("cap", "656358")), true)
+	cap.material_override = DungeonStyle.wall_material(Color(look.get("cap", "656358")), true, Run.theme_id()) if first_person_room else Look.wall_material(Color(look.get("cap", "656358")), true)
 	var collider = Geo.collider(self, at, dimensions + Vector3(0, 2, 0))
 	var entry = {"body": body, "cap": cap, "collider": collider}
 	if front_side != Vector2i.ZERO:
@@ -537,8 +540,17 @@ func make_candle(p: Vector3, height: float) -> void:
 	var pool = Geo.cylinder(self, p + Vector3(0, .01, 0), .2, .02, Color("d9c08f"))
 	pool.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	candle_points.append(p + Vector3(0, height + .2, 0))
-	var flame = Geo.sphere(self, p + Vector3(0, height + .1, 0), .11, Color("ffe0a1"), 2.0)
-	flame.scale = Vector3(.7, 1.5, .7)
+	if first_person_room:
+		var flame = MeshInstance3D.new()
+		flame.mesh = DungeonStyle.candle_flame_mesh()
+		flame.material_override = DungeonStyle.candle_flame()
+		flame.position = p + Vector3(0,height+.13,0)
+		flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		flame.layers = 2
+		add_child(flame)
+	else:
+		var flame = Geo.sphere(self, p + Vector3(0, height + .1, 0), .11, Color("ffe0a1"), 2.0)
+		flame.scale = Vector3(.7, 1.5, .7)
 	Geo.halo(self, p + Vector3(0, .025, 0), 2.3, Color(1, .5, .13, .14))
 
 func make_candles() -> void:

@@ -5,6 +5,7 @@ const CAMERA_FOLLOW_GAIN = .45
 const CAMERA_FOCUS_LIMIT = Vector2(3.6, 2.8)
 var first_person := OS.get_environment("EMBERKEEP_LEGACY_TEST") != "1" and not "--isometric" in OS.get_cmdline_user_args()
 var fps: FirstPersonController
+var title_scene: EmberkeepTitleScene
 var room: DungeonRoom
 var camera: Camera3D
 var camera_focus = Vector3.ZERO
@@ -91,12 +92,14 @@ var screen_down = Vector3(18, 0, 22).normalized()
 func _ready() -> void:
 	# Packaged-build diagnostic: report what the catalog actually loaded.
 	if "--verify-catalog" in OS.get_cmdline_user_args():
-		print("EMBERKEEP CATALOG REPORT " + JSON.stringify(Content.report()))
+		var report = Content.report().duplicate(true)
+		report.errors.append_array(DungeonStyle.verify_material_assets())
+		print("EMBERKEEP CATALOG REPORT " + JSON.stringify(report))
 		# Quit lands after this frame; nothing below was built, so stay idle.
 		set_process(false)
 		set_physics_process(false)
 		set_process_unhandled_input(false)
-		get_tree().quit(0 if Content.errors.is_empty() else 1)
+		get_tree().quit(0 if report.errors.is_empty() else 1)
 		return
 	setup_inputs()
 	# Reserve a useful 512px tile for the single optional lantern shadow.
@@ -240,6 +243,8 @@ func _notification(what: int) -> void:
 		if is_instance_valid(ui) and is_playing():
 			pause_game()
 	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		if is_instance_valid(ui) and in_menu and first_person:
+			ui.handle_title_back()
 		if is_instance_valid(ui) and not in_menu:
 			if ui.mode == "play": pause_game()
 			elif ui.mode == "pause": resume_game()
@@ -601,6 +606,10 @@ func _process(delta: float) -> void:
 func update_camera(delta: float, snap := false) -> void:
 	if not camera:
 		return
+	if first_person and in_menu and is_instance_valid(title_scene):
+		if fps: fps.update_view(delta)
+		title_scene.pose(camera)
+		return
 	if first_person and fps and not in_menu:
 		fps.update_view(delta)
 		return
@@ -682,6 +691,19 @@ func clean_room(keep_view := false) -> void:
 func show_title_room() -> void:
 	in_menu = true
 	paused = true
+	if first_person:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		clean_room()
+		player = null
+		room = DungeonRoom.new()
+		scene_root.add_child(room)
+		room.geometry = RoomGeometry.new([Vector2i.ZERO])
+		room.geometry.apply_shader_mask()
+		room.set_process(false)
+		apply_floor_light()
+		title_scene = EmberkeepTitleScene.create(scene_root,self)
+		title_scene.pose(camera)
+		return
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	camera.h_offset = -4.5

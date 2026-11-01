@@ -1,7 +1,7 @@
 shader_type spatial;
 render_mode diffuse_lambert;
-uniform sampler2D paint : filter_linear_mipmap_anisotropic, repeat_enable;
-uniform sampler2D relief_map : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D paint : filter_linear_mipmap, repeat_enable;
+uniform sampler2D relief_map : hint_normal, filter_linear_mipmap, repeat_enable;
 uniform sampler2D detail : filter_linear_mipmap, repeat_enable;
 uniform vec3 palette_a : source_color;
 uniform vec3 palette_b : source_color;
@@ -31,9 +31,9 @@ void fragment() {
     float damp = wetness * smoothstep(.3,.8, patches.a);
     ALBEDO = color * (1.0 - damp * .22);
     NORMAL_MAP = texture(relief_map, p).rgb;
-    NORMAL_MAP_DEPTH = .27;
+    NORMAL_MAP_DEPTH = .17;
     ROUGHNESS = mix(tile.a, .39, damp);
-    SPECULAR = .35;
+    SPECULAR = .18;
     METALLIC = brass * smoothstep(.92,1.0,tile.b) * .4;
     EMISSION = ember_color * tile.g * embers * (.18 + patches.r * .22);
 }

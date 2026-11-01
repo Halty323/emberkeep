@@ -12,6 +12,7 @@ func exercise() -> void:
 	var content = root.get_node("Content")
 	var settings = root.get_node("Settings")
 	var original_rng: int = root.get_node("Run").rng.state
+	check(style.verify_material_assets().is_empty(), "all painted material sheets load as packaged resources")
 	for quality in ["low", "balanced", "high"]:
 		settings.set_value("effects_detail", quality)
 		for theme in content.families.floors:
@@ -22,6 +23,16 @@ func exercise() -> void:
 			check(mat.get_shader_parameter("paint").get_width() == 256, "bounded period texture dimensions")
 	check(style.maps.size() <= 3, "three reusable maps cover every theme")
 	check(root.get_node("Run").rng.state == original_rng, "cosmetic textures never consume gameplay random numbers")
+	var textures = load("res://scripts/graphics/dungeon_textures.gd")
+	var surfaces: Dictionary = {}
+	for theme in content.families.floors:
+		var texture = textures.wall(theme.id)
+		check(texture == textures.wall(theme.id), "theme masonry reuses its generated texture: " + theme.id)
+		check(texture.paint.get_width() == 256 and texture.normal.get_width() == 256, "theme masonry fits the texture budget")
+		surfaces[hash(texture.paint.get_image().get_data())] = true
+	check(surfaces.size() >= 6, "floors have distinct masonry artwork, not just different tint values")
+	check(textures.wall("unknown_future_floor") == textures.wall("masonry"), "unknown theme uses bounded fallback artwork")
+	check(root.get_node("Run").rng.state == original_rng, "theme masonry does not consume gameplay randomness")
 	var policy = load("res://scripts/graphics/render_policy.gd")
 	policy.device_override = policy.for_device("Android", "Imagination", "PowerVR", "gl_compatibility")
 	check(not policy.current().post_processing and not policy.current().msaa, "style preserves PowerVR restrictions")

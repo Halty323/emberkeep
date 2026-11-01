@@ -1,6 +1,6 @@
 # Emberkeep
 
-A native Godot prototype of a cozy, first-person 3D dungeon roguelike for Android and iOS. Characters, furniture and effects use simple procedural geometry and plain colors; the only bundled artwork will be the reproductions of twelve public-domain paintings. Warm lanterns, dynamic shadows, soft additive halos and drifting embers establish the atmosphere.
+A cozy, first-person 3D dungeon roguelike built in Godot for Android, iOS, Linux and Windows. Faceted geometry, small painted material sheets, warm lanterns and deep shadows give the tower a PS2-era fantasy direction. An animated hearth room welcomes you before each climb.
 
 You wake as a captive at the bottom of a tower, remembering nothing, with only a little light of your own. Each run climbs five floors toward the hearth at the top, and no two seeds climb the same tower or carry the same weapons. The tower's story is in [docs/LORE.md](docs/LORE.md).
 
@@ -10,7 +10,7 @@ Use **Godot 4.7.2 Standard**; no .NET, external libraries or asset downloads are
 
 1. Import `project.godot` into Godot.
 2. Press **F6** with `scenes/main.tscn` open, or **F5** to run the project.
-3. Choose one of the four weapons forged for this run's seed (**New weapons ↻** forges four more) and begin. The Paint Sprayer joins them once the painting collection or the PAINTSPRAYER code unlocks it.
+3. Choose **New journey**, select one of the four weapons forged for this run's seed (**Reforge** forges four more), then **Enter the tower**. The Paint Sprayer joins them once the painting collection or the PAINTSPRAYER code unlocks it.
 
 From a terminal:
 
@@ -20,7 +20,7 @@ godot --path /path/to/emberkeep
 
 If a companion `emberkeep.pck` is supplied, it can be run with the same Godot version using `godot --main-pack /path/to/emberkeep.pck`. This still requires the Godot executable and is not an Android installer.
 
-Android export instructions are in [docs/ANDROID.md](docs/ANDROID.md). The repository includes an Android export preset; an SDK, matching Godot export templates and a debug signing key are still required to produce an APK. An APK is not included in this source prototype.
+Android export instructions are in [docs/ANDROID.md](docs/ANDROID.md). The repository includes an Android export preset; an SDK, matching Godot export templates and a debug signing key are still required to produce an APK. The **Android APK** workflow supplies signed standard and separately installable Preview APKs.
 
 Windows: the **Windows build** GitHub Actions workflow produces a single, self-contained `Emberkeep.exe` (64-bit, no installer, not code-signed) whenever code on `main` changes, or on demand from the Actions tab. Download the **Emberkeep-Windows** artifact, unzip it and run the exe; if SmartScreen warns, choose *More info* → *Run anyway*. Locally, `GODOT_BIN=/path/to/godot ./tools/build_windows.sh` does the same with Godot 4.7.2 and its Windows templates installed.
 
@@ -96,6 +96,8 @@ Safe rooms save automatically, as do bombs and item uses. If the app closes mid-
 
 ## First-person update
 
+The [0.3.0 presentation overhaul](docs/PRESENTATION_OVERHAUL.md) adds an authored hearth title screen, separate armament preparation, 27 packed material sheets and distinct interior details for all eight floor themes. Decorations use at most four mesh batches per room and preserve interaction and movement space.
+
 The [0.2.1 traversal and visual update](docs/PS2_UPDATE.md) fixes the reported ramp trap and dash overrun, adds a PS2-inspired painted stone/timber look and expands physical movement and stress coverage.
 
 First-person gameplay is the default: full-height capsule movement, gravity, jumping, yaw-relative strafing, 3D aiming and swept projectile hits, a procedural held weapon, crosshair/hit confirmation and directional damage feedback. Full walls, ceilings, instanced vault ribs and beams give rooms an eye-level silhouette. Camera settings include FOV, mouse/touch sensitivity, invert Y and optional head bob (off by default). Existing weapons, relics, actives, bosses, paintings and secrets remain connected to the same run systems.
@@ -129,7 +131,7 @@ python3 tools/import_paintings.py --check
 python3 tools/make_content.py
 ```
 
-Twenty headless suites cover settings, the content catalog, multi-cell geometry and generation, items, furniture and secrets, pooled effects, the painting collection, gameplay, lighting, combat, the tower (climbs, themes, twists, hazards, the new foes and bosses, forged weapons and the dark store), secret codes, camera presentation, UI and first-person movement/combat/touch/migration. See [docs/TESTING.md](docs/TESTING.md) for what is verified and what still needs real devices.
+Twenty-two headless suites cover settings, the content catalog, multi-cell geometry and generation, items, furniture and secrets, pooled effects, the painting collection, gameplay, lighting, combat, the tower (climbs, themes, twists, hazards, the new foes and bosses, forged weapons and the dark store), secret codes, camera presentation, UI, title navigation, themed interiors and first-person movement/combat/touch/migration. See [docs/TESTING.md](docs/TESTING.md) for what is verified and what still needs real devices.
 
 | Location | Purpose |
 | --- | --- |
@@ -138,7 +140,9 @@ Twenty headless suites cover settings, the content catalog, multi-cell geometry 
 | `scripts/run.gd` | Run state, painting assignment and versioned local saves |
 | `scripts/settings_service.gd` | Device settings: render scale, FPS, VSync, detail levels |
 | `scripts/content.gd`, `content/*.json` | Typed, validated content families |
-| `scripts/dungeon/` | Room geometry, floor generation, navigation, furnishing and prop visuals |
+| `scripts/dungeon/` | Room geometry, floor generation, navigation, furnishing and batched themed interiors |
+| `scripts/presentation/` | Authored hearth title room and armament preview |
+| `assets/materials/` | Small painted material sheets and normals; original artwork |
 | `scripts/items/`, `scripts/interactions/` | Pickups, drops, active items, bombs and the validated action handlers |
 | `scripts/effects/effects_pool.gd`, `scripts/fx.gd` | Pooled, budgeted effects behind the `Effects` facade |
 | `scripts/progression/` | Painting collection, library and wall views |

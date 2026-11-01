@@ -14,6 +14,11 @@ static func floor_mesh() -> PlaneMesh:
 
 static func surface_maps(kind: int) -> Dictionary:
 	if maps.has(kind): return maps[kind]
+	var paint_path = "res://assets/materials/floor_%d_paint.png" % kind
+	var normal_path = "res://assets/materials/floor_%d_normal.png" % kind
+	if OS.get_environment("EMBERKEEP_BAKE_MATERIALS") != "1" and ResourceLoader.exists(paint_path) and ResourceLoader.exists(normal_path):
+		maps[kind] = {"paint": load(paint_path), "normal": load(normal_path)}
+		return maps[kind]
 	const SIZE := 256
 	var paint = Image.create(SIZE, SIZE, false, Image.FORMAT_RGBA8)
 	var height = Image.create(SIZE, SIZE, false, Image.FORMAT_RGB8)
@@ -27,14 +32,14 @@ static func surface_maps(kind: int) -> Dictionary:
 			var edge = minf(minf(shifted % 64, 63 - shifted % 64), minf(y % 64, 63 - y % 64))
 			var grain = noise.get_noise_2d(x, y) * .5 + .5
 			var id = (shifted / 64) + row * 7
-			var tone = .76 + .24 * fposmod(sin(float(id) * 17.31) * 431.7, 1.0)
-			var bevel = smoothstep(1.0 + grain * 1.6, 6.0, edge)
+			var tone = .82 + .18 * fposmod(sin(float(id) * 17.31) * 431.7, 1.0)
+			var bevel = smoothstep(.8 + grain * .7, 3.4, edge)
 			if kind == 1:
-				bevel = smoothstep(.2, .65, grain)
+				bevel = .66 + .34 * smoothstep(.2, .75, grain)
 			elif kind == 2:
 				bevel = .7 + .3 * grain
 			# Light brushwork at the lip and pooled dirt in the joint.
-			var value = tone * (.83 + grain * .24) * lerpf(.28, 1.0, bevel)
+			var value = tone * (.9 + grain * .16) * lerpf(.38, 1.0, bevel)
 			var lip = maxf(0, 1.0 - absf(edge - 5.5) / 2.0) * .08 if kind == 0 else 0.0
 			paint.set_pixel(x, y, Color(clampf(value + lip, 0, 1), 1.0 - bevel, fposmod(id * .317, 1.0) if kind == 0 else grain, .72 + .25 * (1.0 - bevel)))
 			height.set_pixel(x, y, Color(bevel * (.8 + grain * .2), bevel * (.8 + grain * .2), bevel * (.8 + grain * .2)))
@@ -65,17 +70,17 @@ static func floor_material(look: Dictionary) -> ShaderMaterial:
 	materials[key] = mat
 	return mat
 
-static func wall_material(color: Color, cap := false) -> ShaderMaterial:
-	var key = "wall" + color.to_html() + str(cap)
+static func wall_material(color: Color, cap := false, family := "masonry") -> ShaderMaterial:
+	var key = "wall" + color.to_html() + str(cap) + family
 	if materials.has(key): return materials[key]
-	Look.bricks()
+	var textures = DungeonTextures.wall("dressed" if cap else family)
 	var mat = ShaderMaterial.new()
 	mat.shader = preload("res://shaders/dungeon_wall.gdshader")
-	mat.set_shader_parameter("tint", color.lightened(.12))
-	mat.set_shader_parameter("paint", Look.brick_albedo)
-	mat.set_shader_parameter("relief_map", Look.brick_normal)
-	mat.set_shader_parameter("tile_scale", .35 if cap else .5)
-	mat.set_shader_parameter("relief_strength", .22 if cap else .55)
+	mat.set_shader_parameter("tint", color.lightened(.17))
+	mat.set_shader_parameter("paint", textures.paint)
+	mat.set_shader_parameter("relief_map", textures.normal)
+	mat.set_shader_parameter("tile_scale", .22 if cap else .27)
+	mat.set_shader_parameter("relief_strength", .12 if cap else .2)
 	materials[key] = mat
 	return mat
 
@@ -105,3 +110,33 @@ static func lantern_glass() -> ShaderMaterial:
 	mat.shader = preload("res://shaders/lantern_glass.gdshader")
 	materials.glass = mat
 	return mat
+
+static var candle_mesh: QuadMesh
+static func candle_flame() -> ShaderMaterial:
+	if materials.has("candle_flame"): return materials.candle_flame
+	var mat = ShaderMaterial.new()
+	mat.shader = preload("res://shaders/hearth_flame.gdshader")
+	mat.set_shader_parameter("billboard",true)
+	materials.candle_flame = mat
+	return mat
+
+static func candle_flame_mesh() -> QuadMesh:
+	if not candle_mesh:
+		candle_mesh = QuadMesh.new()
+		candle_mesh.size = Vector2(.16,.25)
+	return candle_mesh
+
+static func verify_material_assets() -> Array[String]:
+	var errors: Array[String] = []
+	var paths: Array[String] = ["res://assets/materials/aging.png"]
+	for kind in 3:
+		for channel in ["paint","normal"]: paths.append("res://assets/materials/floor_%d_%s.png" % [kind,channel])
+	for family in ["cellar","cistern","halls","crypt","archive","kiln","belfry","hearth","masonry","dressed"]:
+		for channel in ["paint","normal"]: paths.append("res://assets/materials/wall_%s_%s.png" % [family,channel])
+	for path in paths:
+		if not ResourceLoader.exists(path):
+			errors.append("Missing material sheet: " + path)
+			continue
+		var texture = load(path)
+		if not texture is Texture2D or texture.get_width() <= 0: errors.append("Unreadable material sheet: " + path)
+	return errors

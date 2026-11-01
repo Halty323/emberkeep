@@ -36,6 +36,9 @@ static func build(room) -> void:
 		for column in count:
 			var offset = (float(column) + .5) / count * length - length * .5
 			var p = at + Vector3(offset, -.23, 0).rotated(Vector3.UP, yaw)
+			# Wall mechanisms and memorials occupy authored niches. Leave the
+			# supporting mouldings, but do not put a pilaster through their face.
+			if niche_reserved(room, Vector2(p.x,p.z), segment.dir): continue
 			box(stone, p + Vector3.UP * 2.51, Vector3(.28, 4.7, .13), yaw)
 			box(dressed, p + Vector3.UP * .38, Vector3(.49, .16, .19), yaw)
 			box(dressed, p + Vector3.UP * 3.18, Vector3(.47, .2, .2), yaw)
@@ -88,3 +91,8 @@ static func batch(room, label: String, transforms: Array[Transform3D], material:
 	view.material_override = material
 	view.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	room.add_child(view)
+
+static func niche_reserved(room, at: Vector2, direction: Vector2i) -> bool:
+	for anchor in room.interiors_report.get("walls", []):
+		if Vector2i(anchor.dir) == direction and anchor.at.distance_to(at) < 1.55: return true
+	return false

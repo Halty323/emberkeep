@@ -1,6 +1,6 @@
 # Completed project files
 
-Godot import caches, Python bytecode and Git internals are generated locally and excluded from the source archive. Painting reproductions appear under `assets/paintings/` once `tools/import_paintings.py` has been run.
+Godot import caches, Python bytecode and Git internals are generated locally and excluded from the source archive. Original material sheets are under `assets/materials/`; painting reproductions appear under `assets/paintings/` once `tools/import_paintings.py` has been run.
 
 ```text
 .github/workflows/android.yml
@@ -22,6 +22,61 @@ assets/fonts/licenses/Bitstream-Vera.txt
 assets/fonts/licenses/Open-Sans-Notice.txt
 assets/icon.svg
 assets/icon.svg.import
+assets/materials/README.md
+assets/materials/aging.png
+assets/materials/aging.png.import
+assets/materials/floor_0_normal.png
+assets/materials/floor_0_normal.png.import
+assets/materials/floor_0_paint.png
+assets/materials/floor_0_paint.png.import
+assets/materials/floor_1_normal.png
+assets/materials/floor_1_normal.png.import
+assets/materials/floor_1_paint.png
+assets/materials/floor_1_paint.png.import
+assets/materials/floor_2_normal.png
+assets/materials/floor_2_normal.png.import
+assets/materials/floor_2_paint.png
+assets/materials/floor_2_paint.png.import
+assets/materials/wall_archive_normal.png
+assets/materials/wall_archive_normal.png.import
+assets/materials/wall_archive_paint.png
+assets/materials/wall_archive_paint.png.import
+assets/materials/wall_belfry_normal.png
+assets/materials/wall_belfry_normal.png.import
+assets/materials/wall_belfry_paint.png
+assets/materials/wall_belfry_paint.png.import
+assets/materials/wall_cellar_normal.png
+assets/materials/wall_cellar_normal.png.import
+assets/materials/wall_cellar_paint.png
+assets/materials/wall_cellar_paint.png.import
+assets/materials/wall_cistern_normal.png
+assets/materials/wall_cistern_normal.png.import
+assets/materials/wall_cistern_paint.png
+assets/materials/wall_cistern_paint.png.import
+assets/materials/wall_crypt_normal.png
+assets/materials/wall_crypt_normal.png.import
+assets/materials/wall_crypt_paint.png
+assets/materials/wall_crypt_paint.png.import
+assets/materials/wall_dressed_normal.png
+assets/materials/wall_dressed_normal.png.import
+assets/materials/wall_dressed_paint.png
+assets/materials/wall_dressed_paint.png.import
+assets/materials/wall_halls_normal.png
+assets/materials/wall_halls_normal.png.import
+assets/materials/wall_halls_paint.png
+assets/materials/wall_halls_paint.png.import
+assets/materials/wall_hearth_normal.png
+assets/materials/wall_hearth_normal.png.import
+assets/materials/wall_hearth_paint.png
+assets/materials/wall_hearth_paint.png.import
+assets/materials/wall_kiln_normal.png
+assets/materials/wall_kiln_normal.png.import
+assets/materials/wall_kiln_paint.png
+assets/materials/wall_kiln_paint.png.import
+assets/materials/wall_masonry_normal.png
+assets/materials/wall_masonry_normal.png.import
+assets/materials/wall_masonry_paint.png
+assets/materials/wall_masonry_paint.png.import
 content/actives.json
 content/collections.json
 content/drop_tables.json
@@ -42,6 +97,7 @@ docs/LORE.md
 docs/ONLINE.md
 docs/PAINTING_COLLECTION_PLAN.md
 docs/PAINTING_CREDITS.md
+docs/PRESENTATION_OVERHAUL.md
 docs/PS2_UPDATE.md
 docs/TESTING.md
 export_presets.cfg
@@ -73,6 +129,8 @@ scripts/dungeon/room_navigation.gd
 scripts/dungeon/room_navigation.gd.uid
 scripts/dungeon/staircase.gd
 scripts/dungeon/staircase.gd.uid
+scripts/dungeon/themed_interiors.gd
+scripts/dungeon/themed_interiors.gd.uid
 scripts/effects/effects_pool.gd
 scripts/effects/effects_pool.gd.uid
 scripts/enemy.gd
@@ -153,6 +211,8 @@ scripts/geo.gd
 scripts/geo.gd.uid
 scripts/graphics/dungeon_style.gd
 scripts/graphics/dungeon_style.gd.uid
+scripts/graphics/dungeon_textures.gd
+scripts/graphics/dungeon_textures.gd.uid
 scripts/graphics/look.gd
 scripts/graphics/look.gd.uid
 scripts/graphics/render_policy.gd
@@ -183,6 +243,8 @@ scripts/main.gd
 scripts/main.gd.uid
 scripts/pickup.gd
 scripts/pickup.gd.uid
+scripts/presentation/title_scene.gd
+scripts/presentation/title_scene.gd.uid
 scripts/progression/collection_service.gd
 scripts/progression/collection_service.gd.uid
 scripts/progression/painting_library.gd
@@ -223,6 +285,8 @@ shaders/foe_rim.gdshader
 shaders/foe_rim.gdshader.uid
 shaders/halo.gdshader
 shaders/halo.gdshader.uid
+shaders/hearth_flame.gdshader
+shaders/hearth_flame.gdshader.uid
 shaders/lantern_glass.gdshader
 shaders/lantern_glass.gdshader.uid
 shaders/light_shaft.gdshader
@@ -289,6 +353,10 @@ tests/render_ps2_update.gd
 tests/render_ps2_update.gd.uid
 tests/render_stress.gd
 tests/render_stress.gd.uid
+tests/render_themed_interiors.gd
+tests/render_themed_interiors.gd.uid
+tests/render_title.gd
+tests/render_title.gd.uid
 tests/render_ui.gd
 tests/render_ui.gd.uid
 tests/render_visibility.gd
@@ -299,10 +367,16 @@ tests/settings.gd
 tests/settings.gd.uid
 tests/smoke.gd
 tests/smoke.gd.uid
+tests/themed_interiors.gd
+tests/themed_interiors.gd.uid
+tests/title_presentation.gd
+tests/title_presentation.gd.uid
 tests/tower.gd
 tests/tower.gd.uid
 tests/ui_presentation.gd
 tests/ui_presentation.gd.uid
+tools/bake_dungeon_materials.gd
+tools/bake_dungeon_materials.gd.uid
 tools/build_appimage.sh
 tools/build_ios_unsigned.sh
 tools/build_windows.sh
