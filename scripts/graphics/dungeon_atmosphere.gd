@@ -20,6 +20,7 @@ static func configure(environment: Environment, light: Dictionary = {}) -> void:
 		environment.sky = sky
 	environment.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	var material: ShaderMaterial = environment.sky.sky_material
+	if light.is_empty() and environment.sky.has_meta("carved_palette"): return
 	var palette := {"vault":light.get("ambient_color",environment.ambient_light_color).lerp(Color("8caed0"),.55),
 		"hearth":light.get("lamp_color",Color("ffdbab"))}
 	# Avoid filtering the static radiance again when another room on the same

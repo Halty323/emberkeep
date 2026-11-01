@@ -15,6 +15,18 @@ static func relief_budget() -> float:
 	if RenderPolicy.current().lightweight_surfaces or Look.quality() == 0: return 0.0
 	return .6 if Look.quality() == 1 else 1.0
 
+static func set_relief(material: ShaderMaterial, metres: float) -> void:
+	material.set_meta("carved_relief",metres)
+	material.set_shader_parameter("relief_depth",metres*relief_budget())
+
+## Preferences also apply to surfaces already held by the room, title and
+## view model. Update shared uniforms; never rebuild geometry or the run.
+static func apply_quality() -> void:
+	var budget := relief_budget()
+	for material in materials.values():
+		if material.has_meta("carved_relief"):
+			material.set_shader_parameter("relief_depth",float(material.get_meta("carved_relief"))*budget)
+
 static func floor_mesh() -> PlaneMesh:
 	if not floor_sheet:
 		floor_sheet = PlaneMesh.new()
@@ -45,7 +57,7 @@ static func floor_material(look: Dictionary) -> ShaderMaterial:
 	mat.set_shader_parameter("tile_scale", .24 * 2.4 / maxf(.8, float(surface.get("size", 2.4))))
 	mat.set_shader_parameter("earth", 1.0 if kind == 2 else 0.0)
 	mat.set_shader_parameter("relief_strength", .95 if kind == 0 else .85)
-	mat.set_shader_parameter("relief_depth", .06 * relief_budget())
+	set_relief(mat,.06)
 	for parameter in ["wetness", "moss", "frost", "embers", "brass"]:
 		mat.set_shader_parameter(parameter, float(surface.get(parameter, 0)))
 	mat.set_shader_parameter("moss_color", Color(surface.get("moss_color", "40532b")))
@@ -66,7 +78,7 @@ static func wall_material(color: Color, cap := false, family := "masonry") -> Sh
 	mat.set_shader_parameter("uv_aspect", textures.uv_aspect)
 	mat.set_shader_parameter("tile_scale", .28 if cap else .25)
 	mat.set_shader_parameter("relief_strength", .5 if cap else 1.0)
-	mat.set_shader_parameter("relief_depth", (.025 if cap else .075) * relief_budget())
+	set_relief(mat,.025 if cap else .075)
 	mat.set_shader_parameter("dampness", .55 if family == "cistern" else (.16 if family == "halls" else 0.0))
 	materials[key] = mat
 	return mat
@@ -83,7 +95,7 @@ static func wood_material(color: Color, local_space := false) -> ShaderMaterial:
 	mat.set_shader_parameter("relief_map", textures.normal)
 	mat.set_shader_parameter("orm", textures.orm)
 	mat.set_shader_parameter("uv_aspect", textures.uv_aspect)
-	mat.set_shader_parameter("relief_depth", .025 * relief_budget())
+	set_relief(mat,.025)
 	materials[key] = mat
 	return mat
 

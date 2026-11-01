@@ -57,6 +57,9 @@ func exercise() -> void:
 	game.start_run("candle",18523427,false)
 	game.paused = true
 	await settle()
+	var wall_material = style.wall_material(Color.WHITE)
+	var held_material: ShaderMaterial = game.fps.weapon_shape.get_child(0).material_override
+	var held_id: int = held_material.get_instance_id()
 	game.camera.position = Vector3(1,1.5,5)
 	game.camera.look_at(Vector3(0,0,-4))
 	game.camera.fov = 88
@@ -97,10 +100,15 @@ func exercise() -> void:
 	settings.set_value("effects_detail","low")
 	game._process(.016)
 	check(game.mirror.render_target_update_mode == SubViewport.UPDATE_DISABLED,"effects Low stops the extra reflected room render")
-	RenderPolicy.device_override = RenderPolicy.for_device("Android","Imagination","PowerVR","gl_compatibility")
+	check(is_zero_approx(wall_material.get_shader_parameter("relief_depth")) and is_zero_approx(held_material.get_shader_parameter("relief_depth")),"effects Low immediately updates wall and held-weapon materials already in use")
 	settings.set_value("effects_detail","high")
+	check(wall_material.get_shader_parameter("relief_depth")>0 and held_material.get_shader_parameter("relief_depth")>0,"returning to High restores existing surface relief")
+	check(held_material.get_instance_id()==held_id and game.fps.weapon_shape.get_child(0).material_override==held_material,"live quality changes reuse the original view model material")
+	RenderPolicy.device_override = RenderPolicy.for_device("Android","Imagination","PowerVR","gl_compatibility")
+	game.screen_fx.apply_quality()
 	game.mirror.follow(true,Vector2(2424,1080))
 	check(game.mirror.render_target_update_mode == SubViewport.UPDATE_DISABLED,"PowerVR cannot enable the mirror even when requested directly")
+	check(is_zero_approx(held_material.get_shader_parameter("relief_depth")),"the conservative device policy also updates existing held materials")
 	game.queue_free()
 	await settle()
 	RenderPolicy.device_override = {}

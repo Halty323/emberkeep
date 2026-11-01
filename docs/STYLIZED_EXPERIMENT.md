@@ -14,6 +14,8 @@ Desktop uses 2K color and normal maps. Android/iOS use 1K derivatives with renor
 
 Stone, floors and timber use a short, finite height refinement near the camera. It takes two height samples, fades before distant mips, and never displaces vertices or changes collision. Effects Low and the PowerVR fallback omit these offsets while retaining the authored normal maps and roughness. The ground remains two triangles per section.
 
+Effects changes update existing shared material uniforms immediately, including the held weapon and the title. Changing quality does not rebuild the room, reset the run, or keep an old High material's relief active at Low. Returning to High restores the same material instances.
+
 Small hammered metal details use the same lighting: the held weapon retains its three surfaces and original animation rig. Its separate steel/brass vertex colors remain intact. Furniture, doorways, ceilings, plinths and the title hearth share the surface library.
 
 The existing limit of five local lantern fills and one local shadow spotlight remains. Cooler shadow light is less saturated, and warmer fixtures provide the contrast. Braziers now use the shared turbulent fire shader and dim coals, replacing bright solid flame spheres and additive floor/air halos in first person. Lantern and candle flames occupy a reflected world-effect layer, separate from screen effects.
@@ -40,7 +42,7 @@ The screenshots below are native eye-level Godot captures of generated rooms, wi
 
 ![Room geometry reflected in dark glazed water](images/stylized-water.png)
 
-The complete **31-suite** regression run passed **161,766 checks**, including the original gameplay/save/navigation coverage and new material/reflection tests. After the final atlas correction, the affected render-policy and lighting suites passed again, with the dedicated stylized suite at **44 checks**. Android, Linux and iOS resource packs loaded the complete catalog and all required material assets, then each ran 240 quickstart frames.
+The complete **31-suite** regression run passed **161,766 checks**, including the original gameplay/save/navigation coverage and new material/reflection tests. After the final atlas and live-quality corrections, the affected material, render-policy and lighting suites passed again, with the dedicated stylized suite at **48 checks**. Android, Linux and iOS resource packs loaded the complete catalog and all required material assets, then each ran 240 quickstart frames.
 
 Native Compatibility review covered five generated rooms under desktop and simulated PowerVR policies, plus the title and the water on/off comparison. At the captured viewpoints, the safe policy used approximately **23.65–23.66 MB** of texture memory and **30.6–31.0 MB** total video memory; desktop used approximately **78.3 MB** textures and **85–86 MB** video memory. These are renderer measurements, not source JPEG sizes or estimates of Android FPS.
 
