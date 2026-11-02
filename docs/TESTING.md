@@ -4,7 +4,7 @@ Current first-person work uses **Godot 4.7.2 Standard** on Linux. The headless r
 
 ## Frame pacing
 
-The [frame pacing update](FRAME_PACING.md) removes the long single frames behind first-person stutter. These came from corridor staging, fight-start route grids, room entry and first-use shader compiles. It also smooths eye motion between fixed ticks. The new `frame_pacing` suite passes **34 checks**. All **35 suites** pass with Godot 4.7.2. `tools/profile_frames.gd` reproduces the measurements: a bot plays real rooms and corridors and reports the worst frames with what caused them. Its desktop and llvmpipe numbers are workload references, not phone frame times.
+The [frame pacing update](FRAME_PACING.md) removes the long single frames behind first-person stutter. These came from corridor staging, fight-start route grids, room entry and first-use shader compiles. It also smooths eye motion between fixed ticks. The new `frame_pacing` suite passes **41 checks**. All **35 suites** pass with Godot 4.7.2. `tools/profile_frames.gd` reproduces the measurements: a bot plays real rooms and corridors and reports the worst frames with what caused them. Its desktop and llvmpipe numbers are workload references, not phone frame times.
 
 ## Stylized-lighting branch
 
@@ -78,7 +78,7 @@ The 2026-10-31 PowerVR safeguard run passed **133,052 checks** across all suites
 | `render_policy` | 63 | PowerVR fallback, MSAA and framebuffer policy, render-resolution budget and shader selection. |
 | `first_person_navigation` | 330 | Physical ramp traversal, landing, dash release, doorway clearance, recovery and saved terrain validation. |
 | `first_person_stress` | 52 | Bounded projectile resources, room rebuilds, routing work and elevated combat effects. |
-| `frame_pacing` | 34 | Paced and hurried staged rooms identical to ordinary builds; staged and bucketed route grids equal to brute force; kept ledge residue surfaces; shared doorway meshes; eye interpolation, snapping and per-frame touch look; a shader warm-up that never touches the run. |
+| `frame_pacing` | 41 | Paced and hurried staged rooms identical to ordinary builds; staged and bucketed route grids equal to brute force; kept ledge residue surfaces; shared doorway meshes; eye interpolation, snapping and per-frame touch look; a shader warm-up that never touches the run. |
 | `dungeon_style` | 178 | Shared high-resolution physical materials, theme variation, device map/cache bounds, all packed assets, shader compatibility and isolated cosmetic randomness. |
 | `lighting_centered` | 55 | First-person profile isolation, real flames, fixture/door cues, bounded lights, snuffing/relighting and settings transitions. |
 | `title_presentation` | 58–61 | Home/preparation/Continue/Daily/journal/settings navigation, controller/back input, touch sizing, armament preview, seed selection and clean scene lifecycle. |
