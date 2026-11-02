@@ -37,6 +37,7 @@ func exercise() -> void:
 	current_scene = game
 	game.set_physics_process(false)
 	game.set_process(false)
+	await test_free_assembly(stair_type)
 	game.start_run("candle",18523427,false)
 	for id in run.rooms:
 		if run.rooms[id].type == "boss":
@@ -178,3 +179,70 @@ func exercise() -> void:
 	await process_frame
 	print("STAIR CINEMATIC: %d checks, %d failures" % [checks,failures])
 	quit(0 if failures==0 else 1)
+
+## The exit can assemble without owning input or suspending the run clock.
+## Use the real first-person capsule, commands and simulation, including a
+## player entering the footprint on the very last animation tick.
+func test_free_assembly(stair_type) -> void:
+	game.start_run("candle",18523427,false)
+	for id in run.rooms:
+		if run.rooms[id].type=="boss": run.current_room=id; break
+	game.enter_room(Vector3(0,0,2))
+	for enemy in game.enemies:
+		enemy.alive=false
+		enemy.queue_free()
+	game.enemies.clear()
+	game.clear_room()
+	await settle()
+	check(is_instance_valid(game.stairs) and not game.stairs.built and not game.in_transition(),"boss exit assembles without a gameplay transition")
+	var footprint: Vector3=game.stairs.position+Vector3.UP*.03
+	var at: Vector3=game.stairs.approach_point()+Vector3.UP*.03
+	game.player.place(at)
+	game.player.velocity=Vector3.ZERO
+	game.player.invulnerability=999
+	var forward: Vector3=game.room.pedestal-game.stairs.position
+	game.fps.yaw=atan2(-forward.x,-forward.z)
+	game.fps.pitch=0
+	game.update_camera(0,true)
+	var eye: Vector3=game.camera.global_position
+	var elapsed: float=run.elapsed
+	run.cooldowns["gale_bell"]=3.0
+	check(game.submit({"type":"place_bomb"}).ok,"normal commands work while the stair is assembling")
+	var bomb: Dictionary=run.pending_bombs.back()
+	var fuse: float=bomb.fuse
+	game.ui.left_vector=Vector2(0,-1)
+	game.ui.fire_touch=99
+	var fired:=false
+	for tick in 30:
+		await physics_frame
+		game._physics_process(1.0/60.0)
+		game.update_camera(1.0/60.0)
+		fired=fired or not game.shots.is_empty()
+	check(game.player.position.distance_to(at)>1.0,"the actual capsule keeps responding to movement during assembly")
+	check(fired and game.fps.weapon.visible,"firing remains available during assembly")
+	check(game.camera.global_position.distance_to(eye)>1.0 and not game.stair_cinematic.active,"the camera follows player control without a forced stair shot")
+	check(is_equal_approx(run.elapsed,elapsed+.5) and is_equal_approx(run.cooldowns["gale_bell"],2.5) and is_equal_approx(bomb.fuse,fuse-.5),"run time, active cooldowns and bomb fuses keep advancing during assembly")
+	var held_time: float=game.stairs.time
+	var held_position: Vector3=game.player.position
+	var held_fuse: float=bomb.fuse
+	game.paused=true
+	for tick in 12: game._physics_process(1.0/60.0)
+	check(is_equal_approx(game.stairs.time,held_time) and game.player.position.is_equal_approx(held_position) and is_equal_approx(bomb.fuse,held_fuse),"explicit pause still holds movement, assembly and fuses")
+	game.paused=false
+	game.ui.left_vector=Vector2.ZERO
+	game.ui.fire_touch=-1
+	game.player.place(footprint)
+	game.player.velocity=Vector3.ZERO
+	game.player.push=Vector3.ZERO
+	game.stairs.time=stair_type.BUILD_TIME-1.0/120.0
+	await physics_frame
+	game._physics_process(1.0/60.0)
+	check(game.stairs.built and not game.interactions.targets.has("stairs"),"finishing assembly cannot add solid collision around an overlapping player")
+	for tick in 60:
+		if game.interactions.targets.has("stairs"): break
+		await physics_frame
+		game._physics_process(1.0/60.0)
+	check(game.interactions.targets.has("stairs") and not game.in_transition(),"the exit becomes usable once the footprint clears, with gameplay still live")
+	check(Vector2(game.player.position.x-footprint.x,game.player.position.z-footprint.z).length()>=stair_type.OUTER+.4,"assembly leaves the capsule safely outside the completed stair")
+	for tick in 5: game._physics_process(1.0/60.0)
+	check(game.stairs.find_children("*","StaticBody3D",true,false).size()==1,"background updates register stair collision only once")

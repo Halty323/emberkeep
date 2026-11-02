@@ -565,17 +565,17 @@ func test_stairs() -> void:
 	game.get_boss().take_hit(100000, Vector3.ZERO)
 	# The killing blow's hitstop passes before the room clears.
 	var waited = 0
-	while not game.in_transition() and waited < 60:
+	while not is_instance_valid(game.stairs) and waited < 60:
 		step(1)
 		waited += 1
-	check(is_instance_valid(game.stairs) and not game.stairs.built and game.transition.get("kind", "") == "build", "the boss's fall starts the stair building")
-	check(not game.interactions.targets.has("stairs") and game.submit({"type": "place_bomb"}).get("reason", "") == "between rooms", "nothing to climb and nothing to do while it builds")
+	check(is_instance_valid(game.stairs) and not game.stairs.built and not game.in_transition(), "the boss's fall starts the stair building without locking gameplay")
+	check(not game.interactions.targets.has("stairs") and game.submit({"type": "place_bomb"}).ok, "the stair is not climbable yet, but ordinary actions still work during assembly")
 	var ticks = 0
 	game.paused = true
 	step(30)
 	check(game.stairs.time < .05, "pausing holds the build")
 	game.paused = false
-	while game.in_transition() and ticks < 400:
+	while not game.stairs.built and ticks < 400:
 		step(1)
 		ticks += 1
 	check(absi(ticks - roundi(Stairs.BUILD_TIME * 60)) <= 1, "the stair takes %.1f s to build (%d ticks)" % [Stairs.BUILD_TIME, ticks])

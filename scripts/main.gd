@@ -321,6 +321,7 @@ func _physics_process(delta: float) -> void:
 		player.dash()
 		request_dash = false
 	player.update_sim(delta, move_input, aim, shooting)
+	advance_stair_assembly(delta)
 	for enemy in enemies.duplicate():
 		if is_instance_valid(enemy) and is_playing() and enemy.alive: enemy.update_sim(delta)
 	enemies = enemies.filter(func(e): return is_instance_valid(e) and e.alive)
@@ -395,12 +396,6 @@ func advance_transition(delta: float) -> void:
 		return
 	if transition.get("kind", "") == "stairs":
 		advance_climb()
-		return
-	if transition.get("kind", "") == "build":
-		ease_from_stairs(delta)
-		if not is_instance_valid(stairs) or stairs.advance(delta):
-			if is_instance_valid(stairs): stairs_ready(true)
-			transition = {}
 		return
 	match transition.phase:
 		"exit":
@@ -627,10 +622,8 @@ func update_camera(delta: float, snap := false) -> void:
 	var target = Vector3.ZERO
 	if not in_menu and is_instance_valid(player):
 		target = camera_target(player.position)
-		# Rise with a climb so the figure stays framed on the stair; watch a
-		# stair build from a little above its middle.
+		# Rise with a climb so the figure stays framed on the stair.
 		if transition.get("kind", "") == "stairs": target.y = player.position.y
-		elif transition.get("kind", "") == "build" and is_instance_valid(stairs): target = stairs.position + Vector3(0, 2.8, 0)
 		var actors: Array = []
 		for enemy in enemies:
 			if is_instance_valid(enemy) and enemy.alive: actors.append(enemy.position)
@@ -1166,14 +1159,27 @@ func stairs_ready(announce: bool) -> void:
 		if Run.last_floor(): ui.notify("The last stair", "It climbs out into the light.", Color("f3dfb8"))
 		else: ui.notify("A stair winds upward", "Climb it toward the light above.", Color("f3dfb8"))
 
-## While the stair builds, nobody stands where it will be solid.
+## Assembly is scenery on the ordinary simulation clock, not a transition.
+## Keep input, timers and actions live; add solid collision only once the
+## player has cleared the stair's footprint, even on its final build tick.
+func advance_stair_assembly(delta: float) -> void:
+	if not is_instance_valid(stairs) or interactions.targets.has("stairs"): return
+	ease_from_stairs(delta)
+	stairs.advance(delta)
+	var away := Vector2(player.position.x-stairs.position.x,player.position.z-stairs.position.z)
+	if stairs.built and away.length() >= Staircase.OUTER+.4:
+		stairs_ready(true)
+
+## Gently clear the assembling stair without taking ownership of movement.
 func ease_from_stairs(delta: float) -> void:
 	var away = Vector2(player.position.x - stairs.position.x, player.position.z - stairs.position.z)
 	var room_needed = Staircase.OUTER + .5 - away.length()
 	if room_needed <= 0: return
 	var direction = away.normalized() if away.length() > .01 else Vector2(0, 1)
 	var moved = direction * minf(room_needed, 6.0 * delta)
-	player.position += Vector3(moved.x, 0, moved.y)
+	var motion := Vector3(moved.x, 0, moved.y)
+	if first_person: player.move_and_collide(motion)
+	else: player.position += motion
 
 func clear_room() -> void:
 	var data: Dictionary = Run.rooms[Run.current_room]
@@ -1187,9 +1193,8 @@ func clear_room() -> void:
 	Audio.play_sound("door", 1.3)
 	ui.notify("A little more warmth", "The doorways are open.")
 	if data.type == "boss":
-		# The stair builds as a short scene: play waits and the camera watches.
+		# The exit assembles in the background while the player keeps control.
 		raise_stairs(true)
-		transition = {"kind": "build", "time": 0.0}
 	if ExpeditionBalance.active_new_run():
 		resolve_expedition_clear(data)
 	elif data.type == "boss" or Run.cleared % 2 == 0:

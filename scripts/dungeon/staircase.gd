@@ -105,7 +105,7 @@ func advance(delta: float) -> bool:
 	pose()
 	return built
 
-## Solid once standing (while it builds, the game eases anyone out of its way).
+## Solid once standing and its footprint is clear. Assembly never locks input.
 func make_solid() -> void:
 	add_child(solid_cylinder(OUTER, 6.0))
 
