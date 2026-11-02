@@ -5,14 +5,21 @@ extends RefCounted
 ## into them. Blockers can be removed later (a broken crate) and only the
 ## affected cells are recomputed.
 const STEP := .5
+const NO_BLOCKERS: Array = []
 var geometry: RoomGeometry
 var clearance := .5
 var grid := AStarGrid2D.new()
 var origin := Vector2.ZERO
 var blockers: Dictionary = {}
 var level := 0.0
+# Each blocker grown by the clearance, and the grid cells each one can reach.
+# A point is tested only against the blockers filed under its own cell, so a
+# furnished room's grid builds in one pass instead of cells x blockers tests.
+var grown: Dictionary = {}
+var buckets: Dictionary = {}
 
-func _init(room_geometry: RoomGeometry, actor_clearance := .5, initial_blockers: Dictionary = {}, elevation := 0.0) -> void:
+## `deferred` leaves the cells for fill_column(), one column at a time.
+func _init(room_geometry: RoomGeometry, actor_clearance := .5, initial_blockers: Dictionary = {}, elevation := 0.0, deferred := false) -> void:
 	geometry = room_geometry
 	clearance = actor_clearance
 	blockers = initial_blockers.duplicate()
@@ -20,12 +27,28 @@ func _init(room_geometry: RoomGeometry, actor_clearance := .5, initial_blockers:
 	var area = geometry.bounds()
 	origin = area.position
 	grid.region = Rect2i(0, 0, ceili(area.size.x / STEP), ceili(area.size.y / STEP))
+	for id in blockers: file_blocker(id)
 	grid.cell_size = Vector2.ONE
 	grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
 	grid.default_compute_heuristic = AStarGrid2D.HEURISTIC_OCTILE
 	grid.default_estimate_heuristic = AStarGrid2D.HEURISTIC_OCTILE
 	grid.update()
-	refresh_area(area)
+	if not deferred: refresh_area(area)
+
+## The columns refresh_area() covers for the whole room, low to high.
+func columns() -> Array:
+	var area = geometry.bounds()
+	var low = to_grid(area.position - Vector2.ONE * (clearance + STEP))
+	var high = to_grid(area.end + Vector2.ONE * (clearance + STEP))
+	return range(low.x, high.x + 1)
+
+func fill_column(x: int) -> void:
+	var area = geometry.bounds()
+	var low = to_grid(area.position - Vector2.ONE * (clearance + STEP))
+	var high = to_grid(area.end + Vector2.ONE * (clearance + STEP))
+	for y in range(low.y, high.y + 1):
+		var cell = Vector2i(x, y)
+		grid.set_point_solid(cell, not walkable(to_world(cell)))
 
 func to_grid(point: Vector2) -> Vector2i:
 	var cell = Vector2i(floori((point.x - origin.x) / STEP), floori((point.y - origin.y) / STEP))
@@ -34,6 +57,28 @@ func to_grid(point: Vector2) -> Vector2i:
 func to_world(cell: Vector2i) -> Vector2:
 	return origin + (Vector2(cell) + Vector2(.5, .5)) * STEP
 
+## The cell a point falls in, before clamping to the grid.
+func raw_cell(point: Vector2) -> Vector2i:
+	return Vector2i(floori((point.x - origin.x) / STEP), floori((point.y - origin.y) / STEP))
+
+func file_blocker(id) -> void:
+	var rect: Rect2 = blockers[id].grow(clearance)
+	grown[id] = rect
+	# Every point inside the rect floors into this cell range.
+	var low := raw_cell(rect.position).clamp(grid.region.position, grid.region.end - Vector2i.ONE)
+	var high := raw_cell(rect.end).clamp(grid.region.position, grid.region.end - Vector2i.ONE)
+	for x in range(low.x, high.x + 1):
+		for y in range(low.y, high.y + 1):
+			var cell := Vector2i(x, y)
+			if not buckets.has(cell): buckets[cell] = []
+			buckets[cell].append(id)
+
+func unfile_blocker(id) -> void:
+	grown.erase(id)
+	for cell in buckets.keys():
+		buckets[cell].erase(id)
+		if buckets[cell].is_empty(): buckets.erase(cell)
+
 func walkable(point: Vector2) -> bool:
 	if not geometry.contains(point, clearance):
 		return false
@@ -41,8 +86,14 @@ func walkable(point: Vector2) -> bool:
 		if geometry.terrain.loft:
 			if not geometry.terrain.loft.walkable(point,clearance,level): return false
 		elif not geometry.terrain.traversable(point, clearance): return false
-	for id in blockers:
-		if blockers[id].grow(clearance).has_point(point):
+	var cell := raw_cell(point)
+	if not grid.region.has_point(cell):
+		# Outside the grid nothing is filed: test every blocker.
+		for id in grown:
+			if grown[id].has_point(point): return false
+		return true
+	for id in buckets.get(cell, NO_BLOCKERS):
+		if grown[id].has_point(point):
 			return false
 	return true
 
@@ -59,6 +110,7 @@ func remove_blocker(id: String) -> void:
 		return
 	var area: Rect2 = blockers[id]
 	blockers.erase(id)
+	unfile_blocker(id)
 	refresh_area(area)
 
 func is_open(cell: Vector2i) -> bool:

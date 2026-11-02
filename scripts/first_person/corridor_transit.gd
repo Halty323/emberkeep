@@ -15,8 +15,15 @@ var left_room := false
 var handoffs := 0
 var staged_room: DungeonRoom
 var staged_id := ""
+# An armed doorway stays armed until the player is this far from it, so
+# pacing along the arming edge never rebuilds the corridor and its neighbour.
+const DISARM_DISTANCE := 5.5
 
 func setup(owner_game) -> void: game=owner_game
+
+## The hidden neighbour builds a slice per frame while the corridor is walked.
+func _process(_delta: float) -> void:
+	if is_instance_valid(staged_room) and staged_room.building: staged_room.resume_build()
 
 func reset() -> void:
 	if is_instance_valid(staged_room):
@@ -45,16 +52,18 @@ func prepare() -> void:
 	if left_room or not game.room.open: return
 	var nearest := ""
 	var separation := 4.0
+	var armed_distance := INF
 	for id in Run.rooms[Run.current_room].get("portals",[]):
 		if Run.portals[id].state not in ["open","revealed"]: continue
 		var side:=Run.portal_side(id,Run.current_room)
 		var door:=RoomGeometry.socket_point(side.cell,side.dir)
 		var distance:=door.distance_to(point)
+		if id==portal_id: armed_distance=distance
 		if distance<separation:
 			separation=distance
 			nearest=id
 	if not nearest.is_empty() and nearest!=portal_id: arm(nearest)
-	elif nearest.is_empty() and is_instance_valid(active): reset()
+	elif nearest.is_empty() and is_instance_valid(active) and armed_distance>DISARM_DISTANCE: reset()
 
 func arm(id: String) -> void:
 	if id==portal_id or not Run.portals.has(id) or not game.room.open: return
@@ -83,18 +92,22 @@ func preload_room() -> void:
 		staged_room.queue_free()
 	staged_room=DungeonRoom.new()
 	staged_id=other
+	# Hidden and inert from the start: its colliders never join the world
+	# until the handoff adopts it.
+	staged_room.visible=false
+	staged_room.process_mode=Node.PROCESS_MODE_DISABLED
 	add_child(staged_room)
 	var offset: Vector2=destination_offset if Run.current_room==source_room else -destination_offset
 	staged_room.position=Vector3(offset.x,0,offset.y)
-	staged_room.build(game,Run.rooms[other])
-	staged_room.visible=false
-	staged_room.process_mode=Node.PROCESS_MODE_DISABLED
-	# Staging a neighbor must not change the active room's global effect mask.
-	game.room.geometry.apply_shader_mask()
+	# Returns after the first slice; _process() builds the rest.
+	staged_room.build(game,Run.rooms[other],false,true)
+	# Staging a neighbor must not steal the active room's particles.
 	EffectsPool.current=game.room.effects
 
 func take_preloaded(id: String) -> DungeonRoom:
 	if not is_instance_valid(staged_room) or staged_id!=id: return null
+	# Reached before its last slice: finish it now.
+	staged_room.resume_build(true)
 	var result:=staged_room
 	remove_child(result)
 	staged_room=null

@@ -61,10 +61,7 @@ func setup(owner_game: Node3D, room_geometry: RoomGeometry, elevation := 0.0) ->
 	game = owner_game
 	first_person = game.get("first_person") == true
 	geometry = room_geometry
-	# A tile of margin on every side lets the edges fade out cleanly.
-	var area: Rect2 = geometry.bounds()
-	grid_origin = key(Vector3(area.position.x, 0, area.position.y)) - Vector2i.ONE
-	grid_size = key(Vector3(area.end.x, 0, area.end.y)) - grid_origin + Vector2i(2, 2)
+	grid_for(geometry)
 	for kind in LOOKS:
 		var look: Array = LOOKS[kind]
 		var image = Image.create(grid_size.x, grid_size.y, false, Image.FORMAT_R8)
@@ -263,25 +260,62 @@ func kind_at(at: Vector3) -> String:
 
 ## One shared mesh follows the room's physical floor, including cellar ramps.
 ## Cliff-crossing quads are omitted instead of stretching a puddle up a wall.
+## A tile of margin on every side lets the edges fade out cleanly.
+func grid_for(room_geometry: RoomGeometry) -> void:
+	var area: Rect2 = room_geometry.bounds()
+	grid_origin = key(Vector3(area.position.x, 0, area.position.y)) - Vector2i.ONE
+	grid_size = key(Vector3(area.end.x, 0, area.end.y)) - grid_origin + Vector2i(2, 2)
+
+# The split-level surface depends only on the room's fixed footprint and
+# terrain, so it is kept on the geometry: built once, while a staged room
+# is prepared, instead of on the frame the room is entered.
+func surface_meta() -> String:
+	return "residue_surface_%d" % roundi(surface_level * 100.0)
+
 func build_elevated_surface() -> ArrayMesh:
+	if geometry.has_meta(surface_meta()): return geometry.get_meta(surface_meta())
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for x in range(grid_origin.x,grid_origin.x+grid_size.x):
-		for z in range(grid_origin.y,grid_origin.y+grid_size.y):
-			var points: Array[Vector3] = [Vector3(x*TILE,0,z*TILE),Vector3((x+1)*TILE,0,z*TILE),Vector3((x+1)*TILE,0,(z+1)*TILE),Vector3(x*TILE,0,(z+1)*TILE)]
-			if not geometry.contains(Vector2((x+.5)*TILE,(z+.5)*TILE),.05): continue
-			var low := INF
-			var high := -INF
-			for i in 4:
-				points[i].y = ground_height(points[i])
-				low = minf(low,points[i].y)
-				high = maxf(high,points[i].y)
-			if high-low > .65: continue
-			for index in [0,1,2,0,2,3]:
-				surface.set_uv(Vector2(points[index].x,points[index].z))
-				surface.add_vertex(points[index])
+	for x in range(grid_origin.x,grid_origin.x+grid_size.x): surface_column(surface,x)
+	return finish_surface(surface)
+
+func surface_column(surface: SurfaceTool, x: int) -> void:
+	for z in range(grid_origin.y,grid_origin.y+grid_size.y):
+		var points: Array[Vector3] = [Vector3(x*TILE,0,z*TILE),Vector3((x+1)*TILE,0,z*TILE),Vector3((x+1)*TILE,0,(z+1)*TILE),Vector3(x*TILE,0,(z+1)*TILE)]
+		if not geometry.contains(Vector2((x+.5)*TILE,(z+.5)*TILE),.05): continue
+		var low := INF
+		var high := -INF
+		for i in 4:
+			points[i].y = ground_height(points[i])
+			low = minf(low,points[i].y)
+			high = maxf(high,points[i].y)
+		if high-low > .65: continue
+		for index in [0,1,2,0,2,3]:
+			surface.set_uv(Vector2(points[index].x,points[index].z))
+			surface.add_vertex(points[index])
+
+func finish_surface(surface: SurfaceTool) -> ArrayMesh:
 	surface.generate_normals()
-	return surface.commit()
+	var mesh := surface.commit()
+	geometry.set_meta(surface_meta(), mesh)
+	return mesh
+
+## Builds a staged first-person room's ledge surface a column per slice.
+static func prepare_surface(room) -> void:
+	var room_geometry: RoomGeometry = room.geometry
+	if not room_geometry.terrain or not room_geometry.terrain.ledge.has_area(): return
+	var field := ResidueField.new()
+	field.first_person = true
+	field.geometry = room_geometry
+	field.grid_for(room_geometry)
+	if not room_geometry.has_meta(field.surface_meta()):
+		var surface := SurfaceTool.new()
+		surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for x in range(field.grid_origin.x,field.grid_origin.x+field.grid_size.x):
+			field.surface_column(surface,x)
+			await room.pace()
+		field.finish_surface(surface)
+	field.free()
 
 ## Tiles inside the floor within a radius of a point.
 func tiles_in(at: Vector3, radius: float) -> Array:

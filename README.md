@@ -98,6 +98,8 @@ Safe rooms save automatically, as do bombs and item uses. If the app closes mid-
 
 ## First-person update
 
+The [frame pacing update](docs/FRAME_PACING.md) targets first-person stutter. Neighbour rooms build a slice per frame while you walk their corridor, foes' route grids are ready before a fight starts, and the eye moves smoothly between physics ticks. Each floor also compiles its shaders behind the opening light veil, not on the first fight, kill or puddle.
+
 The [0.5.0 expedition update](docs/EXPEDITION_UPDATE.md) adds compact denser towers, internal walls, upper rooms/cellars, chest-exclusive active items, scarcer rewards, stronger encounters, physical doorway presentation, ember-crust hazards, fullscreen, real SSAO and a third-person stair-climb sequence. On `experiment/stylized-lighting`, the [corridor update](docs/CORRIDOR_UPDATE.md) replaces first-person doorway teleports with physical lit corridors, guarantees a two-level chamber on each new floor's boss route and enables SSAO on PowerVR. Start a **new run** for the full generation guarantee; existing runs retain their saved economy.
 
 The [0.4.0 lighting and material update](docs/LIGHTING_UPDATE.md) replaces the PS2 material direction with genuine high-resolution CC0 surfaces, mapped roughness/occlusion, warmer real fixture light, softer shadows, flame lanterns and a more detailed dark-iron weapon. Mobile selects smaller mipmapped maps while keeping the same surface response.
@@ -140,7 +142,7 @@ python3 tools/import_paintings.py --check
 python3 tools/make_content.py
 ```
 
-Thirty-four headless suites cover settings, the content catalog, multi-cell geometry and generation, items, furniture and secrets, pooled effects, the painting collection, gameplay, lighting, combat, the tower (climbs, themes, twists, hazards, the new foes and bosses, forged weapons and the dark store), secret codes, camera presentation, UI, title navigation, themed interiors, stylized lighting, dense room layouts, vertical traversal, reward transactions, physical doorways, SSAO/fullscreen, the stair cinematic reversible corridor streaming, real overlapping storeys and live theme-material bindings. See [docs/TESTING.md](docs/TESTING.md) for what is verified and what still needs real devices.
+Thirty-five headless suites cover settings, the content catalog, multi-cell geometry and generation, items, furniture and secrets, pooled effects, the painting collection, gameplay, lighting, combat, the tower (climbs, themes, twists, hazards, the new foes and bosses, forged weapons and the dark store), secret codes, camera presentation, UI, title navigation, themed interiors, stylized lighting, dense room layouts, vertical traversal, reward transactions, physical doorways, SSAO/fullscreen, the stair cinematic, reversible corridor streaming, real overlapping storeys, live theme-material bindings and frame pacing. See [docs/TESTING.md](docs/TESTING.md) for what is verified and what still needs real devices.
 
 | Location | Purpose |
 | --- | --- |

@@ -220,10 +220,14 @@ func standing_height(point: Vector2, radius: float, reference_y := 0.0) -> float
 		surface += maxf(0,radius) * (sqrt(1.0+slope*slope)-1.0)
 	return surface
 
+const AXES: Array[Vector2] = [Vector2.LEFT, Vector2.RIGHT, Vector2.UP, Vector2.DOWN]
+
 func traversable(point: Vector2, clearance: float) -> bool:
 	if loft: return loft.walkable(point,clearance,0)
+	# A level room has one height everywhere: nothing to step over.
+	if not ledge.has_area() and not ramp.has_area(): return true
 	var here = height(point)
-	for direction in [Vector2.LEFT, Vector2.RIGHT, Vector2.UP, Vector2.DOWN]:
+	for direction in AXES:
 		if absf(height(point + direction * clearance) - here) > .65: return false
 	return true
 

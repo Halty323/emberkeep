@@ -44,6 +44,8 @@ var previous_view: Node3D
 # The footprint the glow mask was last set to by a transition.
 var view_mask: RoomGeometry
 var fade_prewarm = 0
+# Each floor's shaders compile behind the veil, not mid-fight (ShaderPrewarm).
+var prewarm: ShaderPrewarm
 # The way up: a stair that builds itself when the boss falls, climbed into
 # the light from the floor above; the next floor opens at its stairwell.
 const CLIMB_APPROACH := .5
@@ -392,6 +394,7 @@ func advance_transition(delta: float) -> void:
 				Run.next_floor()
 				enter_room(Vector3(0, 0, 2))
 				light_veil.color.a = 1.0
+				warm_shaders()
 				ui.announce_floor()
 		return
 	if transition.get("kind", "") == "stairs":
@@ -476,6 +479,7 @@ func reach_next_floor() -> void:
 	light_veil.color.a = 1.0
 	Run.entry = {"room": Run.current_room, "position": [snappedf(arrival.x, .001), snappedf(arrival.z, .001)]}
 	if first_person: stair_cinematic.begin(self,true)
+	warm_shaders()
 	Run.save_run()
 	ui.announce_floor()
 
@@ -587,6 +591,10 @@ func _process(delta: float) -> void:
 		fade_prewarm -= 1
 		if fade_prewarm == 0 and in_menu and is_instance_valid(player): player.set_fade(1.0)
 	if first_person and transition.is_empty(): light_veil.color.a = move_toward(light_veil.color.a, 0, delta * 2)
+	var warming: bool = is_instance_valid(prewarm) and prewarm.active()
+	if warming:
+		light_veil.color.a = 1.0
+		prewarm.step()
 	shake = maxf(0, shake - delta * .9)
 	hurt_flash = maxf(0, hurt_flash - delta * 1.6)
 	update_camera(delta)
@@ -594,6 +602,8 @@ func _process(delta: float) -> void:
 	# The water's mirror runs only where there is water or ice to show it.
 	var wet = not in_menu and residue != null and is_instance_valid(residue) and residue.reflective()
 	if first_person and corridors.walking(): wet=false
+	# The water mirror's own variants compile with the rest.
+	if warming: wet = true
 	mirror.follow(wet, get_viewport().get_visible_rect().size)
 	if residue and is_instance_valid(residue):
 		residue.set_mirror(mirror.render_target_update_mode == SubViewport.UPDATE_ALWAYS)
@@ -616,7 +626,7 @@ func update_camera(delta: float, snap := false) -> void:
 		return
 	if first_person and stair_cinematic.pose(self): return
 	if first_person and fps and not in_menu:
-		fps.update_view(delta)
+		fps.update_view(delta, snap)
 		return
 	if first_person and fps: fps.update_view(delta)
 	var target = Vector3.ZERO
@@ -745,6 +755,7 @@ func start_run(weapon: String, seed_input: int, is_daily: bool) -> void:
 	entity_counter = 10
 	reset_combat()
 	enter_room(Vector3(0, 0, 2.0))
+	warm_shaders()
 	ui.show_screen("play")
 	var arrival: Array = Run.theme().arrival
 	if first_person and not Run.profile.get("fps_tutorial_seen", false):
@@ -753,6 +764,14 @@ func start_run(weapon: String, seed_input: int, is_daily: bool) -> void:
 		Run.save_profile()
 	else: ui.notify(arrival[0], arrival[1])
 	ui.announce_floor()
+
+## Draws one of everything this floor can show while the veil is up. Headless
+## runs draw nothing, so there is nothing to compile.
+func warm_shaders() -> void:
+	if not first_person or in_menu or DisplayServer.get_name() == "headless": return
+	if is_instance_valid(prewarm): prewarm.queue_free()
+	prewarm = ShaderPrewarm.begin(self)
+	light_veil.color.a = 1.0
 
 func continue_run() -> void:
 	if not Run.load_run():
@@ -768,6 +787,7 @@ func continue_run() -> void:
 	camera.size = CAMERA_GAME_SIZE
 	reset_combat()
 	enter_room(saved_entry())
+	warm_shaders()
 	ui.show_screen("play")
 	ui.notify("Welcome back, little light", "Your last safe room remembers you.")
 	ui.announce_floor()
