@@ -57,23 +57,25 @@ Both runs use the same seed and the same bot route, 7 rooms and about 6,100 fram
 
 | Headless CPU (desktop) | Before | After |
 | --- | ---: | ---: |
-| Worst frame | 83.4 ms | 38.1 ms (22.2 ms on a repeat run) |
-| Frames over 16.7 ms | 23 | 6 |
-| Frames over 33.3 ms | 5 | 1 |
-| Median / 99th percentile | 1.83 / 4.46 ms | 2.07 / 6.71 ms |
-| Fight start, 8 foes, 4-cell room | 83 ms | about 20 ms |
-| Entering a room from its corridor | 22–44 ms | 10–24 ms |
+| Worst frame | 83.4 ms | 24.2 ms (47.8 ms once, with no event) |
+| Frames over 16.7 ms | 23 | 1 |
+| Frames over 33.3 ms | 5 | 0–1 |
+| Median / 99th percentile | 1.83 / 4.46 ms | 1.84 / 5.40 ms |
+| Fight start, 8 foes, 4-cell room | 83 ms | under 11 ms |
+| Entering a room from its corridor | 22–44 ms | about 10 ms |
 
-The median and the 99th percentile rise slightly. That is the trade: up to 2.5 ms of a frame now goes to the room being staged while you walk a corridor, instead of one long frame. The remaining 20 ms frames are entering a 4-cell fight room and that fight's first tick, when eight foes make their first route searches.
+The remaining 24 ms frame is the bot itself removing a foe it could not shoot down, not something play does. Staging now costs up to 2.5 ms of a frame while you walk a corridor, which shows in the 99th percentile instead of as one long frame.
 
 Rendered runs use Mesa llvmpipe at 640×360 with the same route. Godot keeps compiled shaders in a cache on disk, so each run starts with empty user storage to show what a first session after installing looks like. An earlier comparison reused one cache across runs and overstated the gain. Software rendering makes every frame slow, so only stalls in play are compared, over the first 1,700 frames:
 
-| Rendered, cold shader cache (llvmpipe) | Before | Warm-up drawing each shader in each lighting situation |
+| Rendered, cold shader cache (llvmpipe) | Before | After |
 | --- | ---: | ---: |
-| Stalls over 1 s during play | 20 | 4 |
-| Time in those stalls | 47.6 s | 15.8 s |
+| Stalls over 1 s during play, first 1,800 frames | 16 | 6 |
+| Time in those stalls | 40.4 s | 15.6 s |
 
-The fight-start, kill and drop stalls are gone. Each remaining stall coincided with shader-cache writes for room materials, a few frames after a new room came into view. That is why the warm-up now also shows each room under its own lights. The opening veil takes the compile cost instead: on llvmpipe that is a long wait, but it happens once. A warm cache, from the second session on, showed no stalls over 1 s during play.
+The fight-start, kill, drop and most corridor stalls are gone. The opening veil takes the compile cost instead; on llvmpipe that is a long wait, but it happens once. With a warm cache, from the second session on, no frame in play exceeded 1 s.
+
+A few programs still compiled in play on a cold cache. They were for the doorway stone, one prop finish, and the floor, water and residue surfaces, the first time water appeared after a fight. Each matched a shader-cache write. Showing each room under its own lights did not catch them, so they come from a variant the warm-up does not reproduce yet. On a phone they cost a short hitch, once per install.
 
 ## Verification
 
