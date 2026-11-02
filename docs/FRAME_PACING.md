@@ -66,7 +66,7 @@ Both runs use the same seed and the same bot route, 7 rooms and about 6,100 fram
 
 The remaining 24 ms frame is the bot itself removing a foe it could not shoot down, not something play does. Staging now costs up to 2.5 ms of a frame while you walk a corridor, which shows in the 99th percentile instead of as one long frame.
 
-Rendered runs use Mesa llvmpipe at 640×360 with the same route. Godot keeps compiled shaders in a cache on disk, so each run starts with empty user storage to show what a first session after installing looks like. An earlier comparison reused one cache across runs and overstated the gain. Software rendering makes every frame slow, so only stalls in play are compared, over the first 1,700 frames:
+Rendered runs use Mesa llvmpipe at 640×360 with the same route. Godot keeps compiled shaders in a cache on disk, so each run starts with empty user storage to show what a first session after installing looks like. An earlier comparison reused one cache across runs and overstated the gain. Software rendering makes every frame slow, so only stalls in play are compared:
 
 | Rendered, cold shader cache (llvmpipe) | Before | After |
 | --- | ---: | ---: |
