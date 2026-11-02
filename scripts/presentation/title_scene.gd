@@ -28,7 +28,7 @@ func timber(at: Vector3, size: Vector3, tint := Color("64482f")) -> MeshInstance
 func build(game) -> void:
 	name = "TitleHearth"
 	var floor = Geo.box(self, Vector3(0,-.13,0), Vector3(15,.25,13), Color("6b6251"))
-	floor.material_override = DungeonStyle.floor_material({"floor": ["69614e","5c5949","6c6556","615842","74674f"], "surface": {"pattern":"slabs","size":2.5,"roughness":.86}})
+	floor.material_override = DungeonStyle.floor_material({"materials":{"theme":"hearth"}, "floor": ["69614e","5c5949","6c6556","615842","74674f"], "surface": {"pattern":"slabs","size":2.5,"roughness":.86}})
 	stone(Vector3(.4,2.9,-4), Vector3(14,5.8,.65),Color("5d594d"))
 	stone(Vector3(6.6,2.9,-2), Vector3(.65,5.8,4.2),Color("4e524e"))
 	# An actual chimney gives firelight a heavy central mass to shape. Its

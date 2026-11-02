@@ -38,7 +38,7 @@ def noise(rng, w, h, cells_x, cells_y):
                            order=3, mode="grid-wrap").clip(0, 1)
 
 
-def stone_polygons(rng, w, h, family):
+def stone_polygons(rng, w, h, family, layout=None):
     import numpy as np
     if family == "rock":
         from scipy.spatial import Voronoi
@@ -59,8 +59,7 @@ def stone_polygons(rng, w, h, family):
                             vertex * .88 + polygon[(j+1) % len(polygon)] * .12])
             yield np.array(cut)
         return
-    rows = 4 if family == "masonry" else 3
-    cols = 4
+    rows, cols = layout or (4 if family == "masonry" else 3, 4)
     for row in range(rows):
         widths = rng.uniform(.78, 1.22, cols)
         bounds = np.r_[0, np.cumsum(widths / widths.sum() * w)]
@@ -94,7 +93,7 @@ def stone_polygons(rng, w, h, family):
             yield np.array(outline)
 
 
-def carved_stone(rng, w, h, family):
+def carved_stone(rng, w, h, family, layout=None, palette=None):
     import numpy as np
     from scipy.ndimage import distance_transform_edt, gaussian_filter
     broad = noise(rng, w, h, 12, 8)
@@ -110,7 +109,7 @@ def carved_stone(rng, w, h, family):
         "flagstone": [(100,124,143),(120,140,152),(108,127,145),(132,146,151),(97,117,137)],
         "rock": [(99,118,140),(111,127,147),(126,136,153),(108,121,144),(123,131,146)],
     }
-    for index, poly in enumerate(stone_polygons(rng, w, h, family)):
+    for index, poly in enumerate(stone_polygons(rng, w, h, family, layout)):
         # Build each stone once, then wrap its patch. Border normals are
         # derived periodically below; repeating tiles have no lighting seam.
         lo = np.floor(poly.min(axis=0)-3).astype(int)
@@ -156,7 +155,8 @@ def carved_stone(rng, w, h, family):
         groove = gaussian_filter(np.asarray(incisions,dtype=np.float32)/255,.85)
         face -= groove*.13
         # Edge paint is neutral wear, with no baked directional highlights.
-        body = np.array(palettes[family][int(rng.integers(len(palettes[family])))],np.float32)
+        choices = palette or palettes[family]
+        body = np.array(choices[int(rng.integers(len(choices)))],np.float32)
         tone = 1 + (np.round(cuts*7)/7-.5)*.10 + (fine[ty,tx]-.5)*.018
         patch_color = body[None,None,:]*tone[...,None]
         edge_paint = np.maximum(0,1-abs(distance-12)/13)*.20

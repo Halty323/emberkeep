@@ -11,7 +11,7 @@ var tile_count := 0
 var wall_count := 0
 var lamps: Array[OmniLight3D]=[]
 
-func build(points: Array[Vector2], preview := false) -> void:
+func build(points: Array[Vector2], preview := false, look: Dictionary = {}) -> void:
 	path=points.duplicate()
 	regions=CorridorPlan.strips(path)
 	var xs: Array[float]=[]
@@ -61,7 +61,7 @@ func build(points: Array[Vector2], preview := false) -> void:
 		var view := MeshInstance3D.new()
 		view.name="Corridor"+str(kind).capitalize()
 		view.mesh=mesh
-		view.material_override=DungeonStyle.corridor_material("flagstone" if kind=="floor" else "masonry")
+		view.material_override=DungeonStyle.corridor_material("flagstone" if kind=="floor" else "masonry",look)
 		view.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		# An idle preview receives the room's existing fixture light. The full
 		# connector has its own stable lights across the hidden room handoff.

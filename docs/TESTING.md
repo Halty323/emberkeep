@@ -4,6 +4,8 @@ Current first-person work uses **Godot 4.7.2 Standard** on Linux. The headless r
 
 ## Stylized-lighting branch
 
+The [theme-material update](THEME_MATERIALS.md) restores separate authored wall and ground forms for all eight themes across the actual room, upper gallery, ceiling and live corridor. Its focused suite passes **195 checks** and the native PowerVR-policy run passes the same checks with eight screenshots. Texture memory remains at **34.83 MB** across all eight theme rebuilds. The runner now includes **34 suites**, and both common/themed asset manifests are verified offline.
+
 The [proper two-storey update](TWO_STOREY_ROOMS.md) replaces the primary raised annex with an overlapping upstairs floor and usable space below. The new `two_storey` suite passes **113 checks** and follows normal fresh-run corridors, physically traverses both floors, verifies enemy pursuit in both directions and tests separate residue, clouds, saved pickup height and the upstairs reward chest. Native PowerVR-policy screenshots show the actual room from its entrance, beneath the slab and upstairs.
 
 For source `a084650`, Android, Windows and AppImage CI each passed **33 suites / 167,356 checks with zero failures**. All downloaded artifacts passed digest/CRC and binary hash checks. Both APKs passed their catalog/240-frame packaged checks and retain the existing signing certificate; version **0.5.0-android.100014**. [Current downloads and screenshots](TWO_STOREY_ROOMS.md#verified-builds), [artifact hashes](reports/two-storey-builds.json). Seed **31609250** reaches the gallery in the first combat room of a fresh run.
@@ -55,7 +57,7 @@ The [0.2.1 update report](PS2_UPDATE.md) describes the ramp reproduction, correc
 
 ## Headless suites
 
-`./tools/test.sh` imports the project, runs every suite with disposable user storage, and fails on any script error even if Godot exits successfully. The runner now includes 33 suites; results are recorded above. The earlier pre-first-person run passed **133,076 checks** plus the painting importer's offline test.
+`./tools/test.sh` imports the project, runs every suite with disposable user storage, and fails on any script error even if Godot exits successfully. The runner now includes 34 suites; results are recorded above. The earlier pre-first-person run passed **133,076 checks** plus the painting importer's offline test.
 
 The 2026-10-31 PowerVR safeguard run passed **133,052 checks** across all suites plus the importer test; the subsequently expanded policy suite passed **63 checks** (five additional checks). Android, Linux and iOS resource packs each passed their catalog check and 240 quickstart frames. A native desktop OpenGL smoke also rendered the full High post/glow/water-reflection path without shader errors.
 
@@ -94,6 +96,7 @@ The 2026-10-31 PowerVR safeguard run passed **133,052 checks** across all suites
 | `stylized_lighting` | 48 | Original authored maps, shared live relief, lighting/radiance budgets, real perspective mirror projection and supported render policies. |
 | `corridors` | 5,306 | Generated main-route vertical rooms, blueprint serialization, separate previews, supported architecture, safe save repair, physics occlusion and traversal, retained player/projectile state, staging and encounter entry. |
 | `two_storey` | 113 | Fresh-run corridor progression, real overlapping floors, capsule ascent/descent, melee/ranged/clockwork enemy pursuit, upstairs attack targets, independent residue/clouds, saved pickup height, real clear chest and legacy-run architecture. |
+| `themed_materials` | 195 | Actual bound room/gallery/ceiling/corridor textures, distinct artwork, active-floor cache bounds, unchanged blueprints and gameplay RNG, 1K conservative PowerVR path and native eight-theme capture. |
 | `tools/test_import_paintings.py` | — | The importer against a local mock source: refused licences and wrong proportions, recorded provenance and hashes, bounded sizes, unverified records refused, offline `--check` catching a replaced file, regenerated credits. Needs Python with Pillow; skipped otherwise. |
 
 ## OpenGL captures (opt-in)

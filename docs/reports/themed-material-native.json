@@ -1,0 +1,74 @@
+[
+  {
+    "cached_theme_surfaces": 2,
+    "draw_calls": 430.0,
+    "policy": "Android PowerVR Compatibility",
+    "room": "1,0",
+    "texture_mb": 34.8322858810425,
+    "theme": "cellar",
+    "video_mb": 42.4769048690796
+  },
+  {
+    "cached_theme_surfaces": 2,
+    "draw_calls": 418.0,
+    "policy": "Android PowerVR Compatibility",
+    "room": "1,0",
+    "texture_mb": 34.8322858810425,
+    "theme": "cistern",
+    "video_mb": 42.1547231674194
+  },
+  {
+    "cached_theme_surfaces": 2,
+    "draw_calls": 421.0,
+    "policy": "Android PowerVR Compatibility",
+    "room": "1,0",
+    "texture_mb": 34.8322858810425,
+    "theme": "halls",
+    "video_mb": 42.4050359725952
+  },
+  {
+    "cached_theme_surfaces": 2,
+    "draw_calls": 462.0,
+    "policy": "Android PowerVR Compatibility",
+    "room": "1,0",
+    "texture_mb": 34.8322858810425,
+    "theme": "crypt",
+    "video_mb": 42.4164724349976
+  },
+  {
+    "cached_theme_surfaces": 2,
+    "draw_calls": 422.0,
+    "policy": "Android PowerVR Compatibility",
+    "room": "1,0",
+    "texture_mb": 34.8322858810425,
+    "theme": "archive",
+    "video_mb": 42.4241781234741
+  },
+  {
+    "cached_theme_surfaces": 2,
+    "draw_calls": 465.0,
+    "policy": "Android PowerVR Compatibility",
+    "room": "1,0",
+    "texture_mb": 34.8322858810425,
+    "theme": "kiln",
+    "video_mb": 42.1924886703491
+  },
+  {
+    "cached_theme_surfaces": 2,
+    "draw_calls": 436.0,
+    "policy": "Android PowerVR Compatibility",
+    "room": "1,0",
+    "texture_mb": 34.8322858810425,
+    "theme": "belfry",
+    "video_mb": 42.7868719100952
+  },
+  {
+    "cached_theme_surfaces": 2,
+    "draw_calls": 434.0,
+    "policy": "Android PowerVR Compatibility",
+    "room": "1,0",
+    "texture_mb": 34.8322858810425,
+    "theme": "hearth",
+    "video_mb": 42.3297033309937
+  }
+]

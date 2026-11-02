@@ -92,9 +92,9 @@ static func build(room) -> void:
 		var height := float(record.height)
 		var node := Node3D.new();node.name="MasonryPartition";room.add_child(node)
 		var body = Geo.box(node,Vector3(at.x,height/2,at.y),Vector3(area.size.x,height,area.size.y),Color("635e50"))
-		body.material_override=DungeonStyle.wall_material(Color(room.look.get("wall","635e50")),false,Run.theme_id())
+		body.material_override=DungeonStyle.wall_material(Color(room.look.get("wall","635e50")),false,DungeonStyle.theme_for(room.look))
 		var cap = Geo.box(node,Vector3(at.x,height+.045,at.y),Vector3(area.size.x+.1,.09,area.size.y+.1),Color("8b806b"))
-		cap.material_override=DungeonStyle.wall_material(Color("8b806b"),true,Run.theme_id())
+		cap.material_override=DungeonStyle.wall_material(Color("8b806b"),true,DungeonStyle.theme_for(room.look))
 		Geo.collider(node,Vector3(at.x,height/2,at.y),Vector3(area.size.x,height,area.size.y))
 		room.obstacles.append({"id":record.id,"position":Vector3(at.x,0,at.y),"radius":maxf(area.size.x,area.size.y)/2,
 			"rect":area})

@@ -6,8 +6,8 @@ extends RefCounted
 static func build(room) -> void:
 	var parts := layout(room)
 	var cap = Color(room.look.get("cap", "766e5b")).lerp(Color("a18d69"), .22)
-	batch(room, "VaultRibs", parts.stone, DungeonStyle.wall_material(cap.darkened(.12)))
-	batch(room, "DressedStone", parts.dressed, DungeonStyle.wall_material(cap.lightened(.07), true))
+	batch(room, "VaultRibs", parts.stone, DungeonStyle.structural_material(room.look,cap.darkened(.12)))
+	batch(room, "DressedStone", parts.dressed, DungeonStyle.structural_material(room.look,cap.lightened(.07),true))
 	batch(room, "CeilingCoffers", parts.timber, DungeonStyle.wood_material(Color("66523a")))
 
 ## Keep the authored transforms available before GPU upload. This is also

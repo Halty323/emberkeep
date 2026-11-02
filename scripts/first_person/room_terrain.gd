@@ -237,7 +237,7 @@ func build(room) -> void:
 	var bottom := minf(-.08,rise-.18)
 	var thickness := rise+.08 if rise > 0 else .22
 	var deck = Geo.box(room,Vector3(at.x,rise-thickness*.5,at.y),Vector3(ledge.size.x,thickness,ledge.size.y),Color("514c42"))
-	deck.material_override = DungeonStyle.wall_material(Color(room.look.get("wall","514c42")))
+	deck.material_override = DungeonStyle.wall_material(Color(room.look.get("wall","514c42")),false,DungeonStyle.theme_for(room.look))
 	Geo.collider(room,deck.position,Vector3(ledge.size.x,thickness,ledge.size.y))
 	var paving := MeshInstance3D.new()
 	var paving_mesh := PlaneMesh.new()
@@ -273,7 +273,7 @@ func build(room) -> void:
 	facing.generate_normals()
 	var sides := MeshInstance3D.new()
 	sides.mesh = facing.commit()
-	sides.material_override = DungeonStyle.wall_material(Color(room.look.get("wall","514c42")))
+	sides.material_override = DungeonStyle.wall_material(Color(room.look.get("wall","514c42")),false,DungeonStyle.theme_for(room.look))
 	room.add_child(sides)
 	if kind == "cellar": build_cellar_banks(room)
 	else: build_upper_rails(room)
@@ -290,7 +290,7 @@ func build_upper_rails(room) -> void:
 			post.material_override=finish
 
 func build_cellar_banks(room) -> void:
-	var stone := DungeonStyle.wall_material(Color(room.look.get("wall","514c42")))
+	var stone := DungeonStyle.wall_material(Color(room.look.get("wall","514c42")),false,DungeonStyle.theme_for(room.look))
 	var full := ledge.merge(ramp)
 	# Full-height bank faces stop cellar actors walking through the outside
 	# foundation. At the ramp, the retaining walls follow its rising profile.
@@ -323,7 +323,7 @@ func build_cellar_banks(room) -> void:
 	# A shallow masonry coping makes the open cellar edge readable and
 	# covers coplanar joins with the original main floor. The ramp mouth
 	# stays completely open and authoritative collision is unchanged.
-	var cap_finish := DungeonStyle.wall_material(Color(room.look.get("cap","736c58")),true)
+	var cap_finish := DungeonStyle.structural_material(room.look,Color(room.look.get("cap","736c58")),true)
 	for x in [full.position.x,full.end.x]:
 		var cap = Geo.box(room,Vector3(x,.04,full.get_center().y),Vector3(.2,.08,full.size.y),Color("736c58"))
 		cap.material_override=cap_finish
@@ -334,7 +334,7 @@ func build_annex_details(room) -> void:
 	# Architectural shelves and braces make the destination read as a room,
 	# without new navigation blockers, lamps or expensive viewport effects.
 	var center := ledge.get_center()
-	var stone := DungeonStyle.wall_material(Color(room.look.get("cap","736c58")),true)
+	var stone := DungeonStyle.structural_material(room.look,Color(room.look.get("cap","736c58")),true)
 	for side in [-1,1]:
 		var column = Geo.box(room,Vector3(center.x+side*(ledge.size.x*.5-.2),rise+1.0,ledge.position.y+.18),Vector3(.22,2.0,.24),Color("736c58"))
 		column.material_override = stone

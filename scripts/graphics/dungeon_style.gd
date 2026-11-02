@@ -5,6 +5,26 @@ extends RefCounted
 static var maps: Dictionary = {}
 static var materials: Dictionary = {}
 static var floor_sheet: PlaneMesh
+static var active_theme := ""
+
+static func theme_for(look: Dictionary) -> String:
+	var theme: String=look.get("materials",{}).get("theme","")
+	return theme if theme in DungeonPBR.THEMES else ""
+
+static func prepare_theme(theme: String) -> void:
+	if theme not in DungeonPBR.THEMES or theme==active_theme: return
+	for key in materials.keys():
+		if materials[key].has_meta("surface_theme"): materials.erase(key)
+	active_theme=theme
+	DungeonPBR.activate_theme(theme)
+
+static func ceiling_material(look: Dictionary) -> ShaderMaterial:
+	if look.get("materials",{}).get("ceiling","")=="wood": return wood_material(Color(look.get("cap","76614b")))
+	return wall_material(Color(look.get("wall","454847")),false,theme_for(look))
+
+static func structural_material(look: Dictionary, tint: Color, cap := false) -> ShaderMaterial:
+	if look.get("materials",{}).get("structure","")=="wood": return wood_material(tint)
+	return wall_material(tint,cap,theme_for(look))
 
 static func quality_key() -> String:
 	return str(DungeonPBR.resolution()) + ":" + str(Look.quality()) + ":" + str(RenderPolicy.current().lightweight_surfaces)
@@ -40,12 +60,15 @@ static func surface_maps(kind: int) -> Dictionary:
 	return maps[key]
 
 static func floor_material(look: Dictionary) -> ShaderMaterial:
+	var theme:=theme_for(look)
+	prepare_theme(theme)
 	var key = "floor" + JSON.stringify(look) + quality_key()
 	if materials.has(key): return materials[key]
 	var surface: Dictionary = look.get("surface", {})
 	var kind = maxi(0, Look.PATTERNS.find(surface.get("pattern", "slabs")))
-	var textures = surface_maps(kind)
+	var textures = DungeonPBR.theme_maps(theme,"floor") if not theme.is_empty() else surface_maps(kind)
 	var mat = ShaderMaterial.new()
+	if not theme.is_empty(): mat.set_meta("surface_theme",theme)
 	mat.shader = preload("res://shaders/dungeon_floor.gdshader")
 	var colors: Array = look.get("floor", Look.DEFAULT_PALETTE)
 	for i in 5: mat.set_shader_parameter("palette_" + "abcde"[i], Color(colors[i]))
@@ -66,10 +89,13 @@ static func floor_material(look: Dictionary) -> ShaderMaterial:
 	return mat
 
 static func wall_material(color: Color, cap := false, family := "masonry") -> ShaderMaterial:
+	if family not in DungeonPBR.THEMES and family not in DungeonPBR.FAMILIES: family="masonry"
+	prepare_theme(family)
 	var key = "wall" + color.to_html() + str(cap) + family + quality_key()
 	if materials.has(key): return materials[key]
-	var textures = DungeonPBR.maps("rock" if family in ["cistern", "halls"] and not cap else "masonry")
+	var textures = DungeonPBR.theme_maps(family) if family in DungeonPBR.THEMES else DungeonPBR.maps(family)
 	var mat = ShaderMaterial.new()
+	if family in DungeonPBR.THEMES: mat.set_meta("surface_theme",family)
 	mat.shader = preload("res://shaders/dungeon_wall.gdshader")
 	mat.set_shader_parameter("tint", color.lightened(.45))
 	mat.set_shader_parameter("paint", textures.paint)
@@ -116,11 +142,14 @@ static func metal_material(color: Color, local_space := false, vertex_color := f
 
 ## Corridor vertices keep their authored UV frame when the streaming origin
 ## moves. Reusing the dominant-axis shader avoids any texture jump at a bend.
-static func corridor_material(family: String) -> ShaderMaterial:
-	var key := "corridor:"+family+":"+str(DungeonPBR.resolution())
+static func corridor_material(family: String, look: Dictionary = {}) -> ShaderMaterial:
+	var theme:=theme_for(look)
+	prepare_theme(theme)
+	var key := "corridor:"+family+":"+theme+":"+str(DungeonPBR.resolution())
 	if materials.has(key): return materials[key]
-	var textures := DungeonPBR.maps(family)
+	var textures := DungeonPBR.theme_maps(theme,"floor" if family=="flagstone" else "wall") if not theme.is_empty() else DungeonPBR.maps(family)
 	var mat := ShaderMaterial.new()
+	if not theme.is_empty(): mat.set_meta("surface_theme",theme)
 	mat.shader=preload("res://shaders/dungeon_wood.gdshader")
 	mat.set_shader_parameter("local_space",true)
 	mat.set_shader_parameter("tint",Color("ced6dc"))

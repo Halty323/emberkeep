@@ -146,13 +146,15 @@ func build(room) -> void:
 	var root:=Node3D.new()
 	root.name="TwoStoreyChamber"
 	room.add_child(root)
-	var stone:=DungeonStyle.wall_material(Color("7c8074"),true)
+	var stone:=DungeonStyle.structural_material(room.look,Color(room.look.get("cap","7c8074")),true)
 	var wood:=DungeonStyle.wood_material(Color("796448"))
 	var center:=deck.get_center()
 	var slab=Geo.box(root,Vector3(center.x,RISE-SLAB*.5,center.y),Vector3(deck.size.x,SLAB,deck.size.y),Color("77796a"))
+	slab.name="GallerySlab"
 	slab.material_override=stone
 	Geo.collider(root,slab.position,Vector3(deck.size.x,SLAB,deck.size.y))
 	var paving:=MeshInstance3D.new()
+	paving.name="GalleryFloor"
 	var plane:=PlaneMesh.new();plane.size=deck.size
 	paving.mesh=plane;paving.position=Vector3(center.x,RISE+.003,center.y)
 	paving.material_override=DungeonStyle.floor_material(room.look)

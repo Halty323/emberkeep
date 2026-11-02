@@ -9,10 +9,15 @@ static var finishes: Dictionary = {}
 static var pending: Dictionary = {}
 
 static func stone(tint: Color, bounced := false, family := "masonry") -> StandardMaterial3D:
+	if family in DungeonPBR.THEMES:
+		DungeonStyle.prepare_theme(family)
+		for old in finishes.keys():
+			if finishes[old].has_meta("surface_theme") and finishes[old].get_meta("surface_theme")!=family: finishes.erase(old)
 	var key: String = family + tint.to_html() + str(bounced) + str(DungeonPBR.resolution())
 	if finishes.has(key): return finishes[key]
-	var maps: Dictionary = DungeonPBR.maps(family)
+	var maps: Dictionary = DungeonPBR.theme_maps(family) if family in DungeonPBR.THEMES else DungeonPBR.maps(family)
 	var material := StandardMaterial3D.new()
+	if family in DungeonPBR.THEMES: material.set_meta("surface_theme",family)
 	material.albedo_color = tint.lightened(.5)
 	material.albedo_texture = maps.paint
 	material.normal_enabled = true
@@ -67,17 +72,18 @@ static func build(room, socket: Dictionary) -> Node3D:
 	gate.rotation.y = atan2(float(direction.x),float(direction.y))
 	gate.set_meta("portal",socket.portal)
 	gate.set_meta("physical_doorway",true)
-	var stone_finish := stone(Color(room.look.get("wall","666456")))
+	var stone_finish := stone(Color(room.look.get("wall","666456")),false,DungeonStyle.theme_for(room.look))
 	var wood := stone(Color("665240"),true,"wood")
+	var frame_finish:=wood if room.look.get("materials",{}).get("structure","")=="wood" else stone_finish
 	var iron := Geo.material(Color("394047"))
 	var brass := Geo.material(Color("98805b"))
 	# Thick jambs, a broad lintel and a recessed arch make the opening read as
 	# a passage through the wall, instead of an emissive rectangular boundary.
 	for side in [-1,1]:
-		box(gate,Vector3(side*1.18,1.54,.06),Vector3(.34,3.08,.66),stone_finish)
-		box(gate,Vector3(side*1.18,.16,.02),Vector3(.49,.3,.79),stone_finish)
-		box(gate,Vector3(side*1.18,2.72,.02),Vector3(.48,.18,.78),stone_finish)
-	box(gate,Vector3(0,3.05,.06),Vector3(2.72,.38,.69),stone_finish)
+		box(gate,Vector3(side*1.18,1.54,.06),Vector3(.34,3.08,.66),frame_finish)
+		box(gate,Vector3(side*1.18,.16,.02),Vector3(.49,.3,.79),frame_finish)
+		box(gate,Vector3(side*1.18,2.72,.02),Vector3(.48,.18,.78),frame_finish)
+	box(gate,Vector3(0,3.05,.06),Vector3(2.72,.38,.69),frame_finish)
 	var roof: float=room.ceiling_height()
 	var upper_at:=Vector3(0,(3.15+roof)*.5,.06)
 	var upper_size:=Vector3(2.5,roof-3.15,.46)
@@ -109,7 +115,7 @@ static func build(room, socket: Dictionary) -> Node3D:
 	gate.add_child(preview)
 	preview.transform=gate.transform.affine_inverse()
 	var first: Array[Vector2]=[path[0],path[1],path[2]]
-	preview.build(first,true)
+	preview.build(first,true,room.look)
 	return gate
 
 static func door_leaf(parent: Node3D, side: int, opened: bool, wood: Material, iron: Material, brass: Material) -> void:

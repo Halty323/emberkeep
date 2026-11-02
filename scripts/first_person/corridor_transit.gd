@@ -70,7 +70,7 @@ func arm(id: String) -> void:
 	active=WalkableCorridor.new()
 	active.name="ActiveCorridor"
 	add_child(active)
-	active.build(CorridorPlan.from_room(plan,portal,source_room))
+	active.build(CorridorPlan.from_room(plan,portal,source_room),false,game.room.look)
 	hide_preview()
 	call_deferred("preload_room")
 

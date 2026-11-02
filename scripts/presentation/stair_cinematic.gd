@@ -179,7 +179,7 @@ static func build_shaft(room, at: Vector2, radius: float) -> Node3D:
 	room.add_child(shaft)
 	var height := 2.7
 	var base := 5.45
-	var material := DungeonStyle.wall_material(Color("89816d"),false,"masonry")
+	var material := DungeonStyle.wall_material(Color("89816d"),false,DungeonStyle.theme_for(room.look))
 	for side in [-1,1]:
 		for axis in [0,1]:
 			var p := Vector3(at.x,base+height/2,at.y)

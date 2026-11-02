@@ -193,7 +193,8 @@ func build_floor() -> void:
 			for roof in roof_sections:
 				var at := roof.get_center()
 				var ceiling = Geo.box(self,Vector3(at.x,ceiling_height()+.15,at.y),Vector3(roof.size.x,.3,roof.size.y),Color("454847"))
-				ceiling.material_override = DungeonStyle.wall_material(Color("454847"),false,"masonry")
+				ceiling.set_meta("surface_role","ceiling")
+				ceiling.material_override = DungeonStyle.ceiling_material(look)
 				Geo.collider(self,ceiling.position,Vector3(roof.size.x,.3,roof.size.y))
 			for beam in [-1,1]:
 				var beam_rect := Rect2(center+Vector2(beam*5.4-.12,-7),Vector2(.24,14))
@@ -336,7 +337,7 @@ func make_gate(socket: Dictionary) -> void:
 	if first_person_room:
 		barrier.material_override = DungeonStyle.wood_material(Color("66504a"))
 		var upper_wall = Geo.box(gate, Vector3(0, 4.2, 0), Vector3(.45, 2.5, 2.5) if rotated else Vector3(2.5, 2.5, .45), Color("393a36"))
-		upper_wall.material_override = DungeonStyle.wall_material(Color(look.get("wall","393a36")),false,Run.theme_id())
+		upper_wall.material_override = DungeonStyle.wall_material(Color(look.get("wall","393a36")),false,DungeonStyle.theme_for(look))
 		Geo.collider(gate, Vector3(0, 4.2, 0), Vector3(.45, 2.5, 2.5) if rotated else Vector3(2.5, 2.5, .45))
 	barrier.name = "Barrier"
 	if not first_person_room:
@@ -361,9 +362,10 @@ func make_gate(socket: Dictionary) -> void:
 
 func make_wall(at: Vector3, dimensions: Vector3, front_side := Vector2i.ZERO, line := 0.0, from := 0.0, to := 0.0) -> Dictionary:
 	var body = Geo.box(self, at, dimensions, Color(look.get("wall", "394148")))
-	body.material_override = DungeonStyle.wall_material(Color(look.get("wall", "394148")), false, Run.theme_id()) if first_person_room else Look.wall_material(Color(look.get("wall", "394148")))
+	body.set_meta("surface_role","wall")
+	body.material_override = DungeonStyle.wall_material(Color(look.get("wall", "394148")), false, DungeonStyle.theme_for(look)) if first_person_room else Look.wall_material(Color(look.get("wall", "394148")))
 	var cap = Geo.box(self, at + Vector3(0, dimensions.y / 2 + .035, 0), Vector3(dimensions.x + .06, .09, dimensions.z + .06), Color(look.get("cap", "656358")))
-	cap.material_override = DungeonStyle.wall_material(Color(look.get("cap", "656358")), true, Run.theme_id()) if first_person_room else Look.wall_material(Color(look.get("cap", "656358")), true)
+	cap.material_override = DungeonStyle.wall_material(Color(look.get("cap", "656358")), true, DungeonStyle.theme_for(look)) if first_person_room else Look.wall_material(Color(look.get("cap", "656358")), true)
 	var collider = Geo.collider(self, at, dimensions + Vector3(0, 2, 0))
 	var entry = {"body": body, "cap": cap, "collider": collider}
 	if front_side != Vector2i.ZERO:
@@ -458,7 +460,7 @@ func build_props(records: Array) -> void:
 					if not part is MeshInstance3D: continue
 					var original = part.material_override
 					if original is StandardMaterial3D:
-						part.material_override = DungeonStyle.wall_material(original.albedo_color, part.position.y > 1.0)
+						part.material_override = DungeonStyle.structural_material(look,original.albedo_color,part.position.y > 1.0)
 			make_candle(Vector3(at.x, 1.32, at.y), .6)
 		var cloth = built.node.get_node_or_null("Cloth")
 		if cloth: cloths.append(cloth)
