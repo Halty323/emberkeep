@@ -212,6 +212,7 @@ docs/images/stylized-cellar.png
 docs/images/stylized-hall.png
 docs/images/stylized-hearth.png
 docs/images/stylized-water.png
+docs/reports/corridor-builds.json
 docs/reports/corridor-powervr.json
 docs/reports/stylized-desktop.json
 docs/reports/stylized-mobile-safe.json

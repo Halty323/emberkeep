@@ -1,0 +1,63 @@
+{
+  "source": "a3b5863fa58ab85ca805da756bbd2f5292754802",
+  "godot": "4.7.2",
+  "suites": 32,
+  "checks": 168154,
+  "failures": 0,
+  "artifacts": {
+    "android-preview": {
+      "file": "Emberkeep-Preview.apk",
+      "sha256": "ea975fd36059b42f4b53ec77f93a8c83abfb5069160f907f497d13fb893fe1dd",
+      "bytes": 107032003,
+      "package": "org.emberkeep.preview",
+      "version_code": 100012,
+      "certificate_sha256": "4cf9cd28712f39670ea845ace110dba80c756a07db3bdfc264f3d560605bf3a9",
+      "workflow_run": 41435651956,
+      "artifact_id": 13136532096,
+      "archive_sha256": "18fb255a87f0e943fe5fbc6ed8e2de9b8bd5a1d4f1a74791e7dc74e64e09e17e",
+      "url": "https://github.com/Halty323/emberkeep/actions/runs/41435651956/artifacts/13136532096",
+      "version": "0.5.0-android.100012",
+      "quickstart_frames": 240
+    },
+    "android": {
+      "file": "Emberkeep-Android.apk",
+      "sha256": "73ae6496e0f63c7aab66c2a9739a253a25d38cdce0c861076647e84e50e6c7d8",
+      "bytes": 107032003,
+      "package": "org.emberkeep.game",
+      "version_code": 100012,
+      "certificate_sha256": "4cf9cd28712f39670ea845ace110dba80c756a07db3bdfc264f3d560605bf3a9",
+      "workflow_run": 41435651956,
+      "artifact_id": 13137110404,
+      "archive_sha256": "ea85ff2d953f17b0a1ca1ca390ab800ffd82d5b8cff426f9ce9dbd194efb119e",
+      "url": "https://github.com/Halty323/emberkeep/actions/runs/41435651956/artifacts/13137110404",
+      "version": "0.5.0-android.100012",
+      "quickstart_frames": 240
+    },
+    "windows": {
+      "file": "Emberkeep.exe",
+      "sha256": "4714bca08d6466174c7aea7c4f2cbbf11afce561780c546f92c47ed13acabaa7",
+      "bytes": 159241368,
+      "workflow_run": 41435677430,
+      "artifact_id": 13136851405,
+      "archive_sha256": "df3ac1a8fc7c4a83f3fcaac9343605a599d82834bf8cb871930730a101d72eb4",
+      "url": "https://github.com/Halty323/emberkeep/actions/runs/41435677430/artifacts/13136851405"
+    },
+    "linux": {
+      "file": "Emberkeep-x86_64.AppImage",
+      "sha256": "949e24751941225abb618d3ec2216cc033d9762faf5d5e6cf4a8a4aa47cf1eb3",
+      "bytes": 44820984,
+      "workflow_run": 41435680198,
+      "artifact_id": 13135904270,
+      "archive_sha256": "59f7296a774f09beb23c888e8e7ba67d566db4b2eae89e25d16450a77fa166da",
+      "url": "https://github.com/Halty323/emberkeep/actions/runs/41435680198/artifacts/13135904270"
+    }
+  },
+  "date": "2026-11-02",
+  "native": {
+    "views": 9,
+    "reported_seed": 31609250,
+    "power_vr_ssao_samples_low": 6,
+    "handoff_mean_rgb_difference": 6.21255467e-06,
+    "device": "Mesa llvmpipe with simulated Android PowerVR policy"
+  }
+}

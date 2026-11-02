@@ -40,7 +40,7 @@ Vault ribs are emitted only across cells that have actual supporting walls on bo
 
 `tests/corridors.gd` passes **5,334 checks**: 32 generated floors including seed **31609250**, guaranteed main-route levels, serialized/reversible connectors, separated doorway previews, supported architecture, old-save repair, complete aperture occlusion, retained player/projectile state, hidden staging, live effects settings, combat entry and actual capsule traversal in all four doorway orientations. Existing physical upper/cellar traversal and chest transaction tests remain in the full runner.
 
-The full local 32-suite run passed **168,151 checks with zero failures**. The final bomb-continuity and idle-door-lighting changes then passed the 5,334-check corridor suite and all 54 doorway checks. The legacy pendulum fixture now keeps its damage target stationary instead of depending on whether its AI leaves the swing before contact.
+The final Android, Windows and AppImage CI runs each passed all **32 suites / 168,154 checks with zero failures**, including the final bomb-continuity and idle-door-lighting changes. The corridor suite supplies 5,334 checks and the doorway suite 54. The legacy pendulum fixture now keeps its damage target stationary instead of depending on whether its AI leaves the swing before contact.
 
 The native OpenGL capture rendered nine views under the simulated PowerVR policy, including upper and cellar rooms, SSAO Off/Low, the upper landing and a corridor loading comparison. With HUD and held-weapon animation excluded, mean RGB change during the atomic handoff was **0.00000621** on a 0–1 scale. The entire player and camera survived the step. There were no script, shader or framebuffer errors.
 
@@ -53,3 +53,19 @@ GODOT_BIN=/path/to/Godot_4.7.2 bash tools/test.sh
 GODOT_BIN=/path/to/Godot_4.7.2 bash tools/verify_pack.sh
 XDG_DATA_HOME=/tmp/emberkeep-corridor-test EMBERKEEP_CORRIDOR_CAPTURE=/tmp/emberkeep-corridor-views godot --path . --audio-driver Dummy --script res://tests/render_corridors.gd
 ```
+
+
+## Verified builds
+
+All three workflows succeeded for source **`a3b5863fa58ab85ca805da756bbd2f5292754802`** on 2 November 2026. Downloaded artifact archives passed GitHub SHA-256 and ZIP CRC checks; extracted binaries match their published hashes. The APKs also passed Android signature/alignment verification, packaged-catalog validation and 240 quickstart frames. Windows and AppImage exports passed their packaged-game checks.
+
+| Platform | Download |
+| --- | --- |
+| Android Preview | [Emberkeep-Preview](https://github.com/Halty323/emberkeep/actions/runs/41435651956/artifacts/13136532096) |
+| Android regular package | [Emberkeep-Android](https://github.com/Halty323/emberkeep/actions/runs/41435651956/artifacts/13137110404) |
+| Windows x86-64 | [Emberkeep-Windows](https://github.com/Halty323/emberkeep/actions/runs/41435677430/artifacts/13136851405) |
+| Linux x86-64 AppImage | [Emberkeep-Linux-AppImage](https://github.com/Halty323/emberkeep/actions/runs/41435680198/artifacts/13135904270) |
+
+The APK version is **0.5.0-android.100012**, version code **100012**. Preview uses `org.emberkeep.preview`; the regular package uses `org.emberkeep.game`. Both retain the existing certificate `4cf9cd28712f39670ea845ace110dba80c756a07db3bdfc264f3d560605bf3a9`. The Preview APK SHA-256 is `ea975fd36059b42f4b53ec77f93a8c83abfb5069160f907f497d13fb893fe1dd`. [Full artifact hashes and verification metadata](reports/corridor-builds.json) include all four downloads. GitHub artifacts use seven-day retention.
+
+The Android SDK configuration editor emitted RID cleanup diagnostics during its shutdown, before APK export. Both produced APKs completed the clean packaged-catalog and 240-frame checks. The native screenshots and regressions verify these paths on desktop; appearance, sustained performance and touch feel on the actual PowerVR phone still require playtesting.
