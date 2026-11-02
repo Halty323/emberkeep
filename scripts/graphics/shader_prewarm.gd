@@ -24,6 +24,17 @@ static var swatch_multimesh: MultiMesh
 var swatches := 0
 var game
 var frames_left := HOLD_FRAMES
+# Shaders still to be laid out. A few go down each frame: a cold driver may
+# take a long while per program, and one frame holding them all could stall
+# the app long enough for Android to call it unresponsive.
+const PER_FRAME := 4
+var queued: Array = []
+# Other rooms still to be shown for a frame, and the one on show now.
+var room_queue: Array = []
+var shown_room: DungeonRoom
+var swatches_laid := false
+var near_spot := Vector3(-1.4, 0, .2)
+var far_spot := Vector3(-3.0, 0, -FAR)
 var residue_shown: Dictionary = {}
 var mist_shown := false
 var lights_before := 0
@@ -37,7 +48,7 @@ static func begin(owner_game) -> ShaderPrewarm:
 	return warm
 
 func active() -> bool:
-	return frames_left > 0
+	return frames_left > 0 or not queued.is_empty() or not room_queue.is_empty() or is_instance_valid(shown_room) or not swatches_laid
 
 ## Low on the floor ahead of the camera, wherever it looks (an arrival shot
 ## included): in view of the eye and of the water mirror alike.
@@ -111,28 +122,42 @@ func stock() -> void:
 	emit_effects()
 	show_residue(true)
 
-## Builds each other room of the floor once, hidden and inert, notes every
-## shader it draws with, and frees it. Only one room exists at a time.
+## Shows each other room of the floor for one frame, built around the eye
+## with its own lanterns and shadow lamp (and the forced water mirror), so
+## its surfaces compile under its real lights. Every shader it draws with is
+## noted for the swatches, then it is freed. One room exists at a time.
 func room_swatches() -> void:
 	gather(self)
 	gather(game.room)
 	gather(game.residue)
-	var pool = EffectsPool.current
 	for id in Run.rooms:
-		if id == Run.current_room: continue
-		var room := DungeonRoom.new()
-		room.prepare_entry = false
-		room.visible = false
-		room.process_mode = Node.PROCESS_MODE_DISABLED
-		add_child(room)
-		room.build(game, Run.rooms[id], false, true)
-		room.resume_build(true)
-		gather(room)
-		remove_child(room)
-		room.free()
-	EffectsPool.current = pool
-	lay_swatches()
+		if id != Run.current_room: room_queue.append(id)
 	lay_corridor()
+	show_next_room()
+
+func show_next_room() -> void:
+	if room_queue.is_empty(): return
+	var pool = EffectsPool.current
+	shown_room = DungeonRoom.new()
+	shown_room.prepare_entry = false
+	# Drawn, but inert: no processing and no collision in the world.
+	shown_room.process_mode = Node.PROCESS_MODE_DISABLED
+	add_child(shown_room)
+	shown_room.build(game, Run.rooms[room_queue.pop_front()], false, true)
+	shown_room.resume_build(true)
+	var eye: Vector3 = game.camera.global_position
+	var floor_y: float = game.player.global_position.y if is_instance_valid(game.player) else 0.0
+	shown_room.global_transform = Transform3D(Basis(), Vector3(eye.x, floor_y, eye.z))
+	EffectsPool.current = pool
+
+func retire_room() -> void:
+	if not is_instance_valid(shown_room): return
+	gather(shown_room)
+	var pool = EffectsPool.current
+	remove_child(shown_room)
+	shown_room.free()
+	shown_room = null
+	EffectsPool.current = pool if is_instance_valid(pool) else game.room.effects
 
 ## Notes one material per distinct shader under a node. Godot builds one
 ## program per shader and lighting situation, not per material, so a few
@@ -171,18 +196,42 @@ func shader_key(material: Material, instanced: bool) -> String:
 		keys[id] = key
 	return keys[id] + (":instanced" if instanced else "")
 
-## Each shader drawn in each lighting situation play puts it in: near the eye
-## under the carried light, under a shadowed spot lamp as well, and far off
-## with no light at all. (The scene shader is specialised on exactly these:
-## lights present or not, and an extra pass per shadowed light.)
+## Each shader drawn in each lighting situation play puts it in. Godot's
+## Compatibility renderer builds a program per shader for: point lights
+## reaching it or not, the first shadowed light folded into its first pass (a
+## shadow lamp, otherwise the key light), and the water mirror's pass, which
+## tonemaps itself. So: near the eye under a point light; there and under a
+## shadow lamp; far off with no light; far off under a shadow lamp alone. All
+## sit low ahead, where the forced-on mirror sees them too.
 func lay_swatches() -> void:
-	var spot_cluster := Vector3(-1.4, 0, .2)
 	var near_light := OmniLight3D.new()
 	near_light.light_cull_mask = Geo.LIT_LAYERS
 	near_light.omni_range = 3.0
 	near_light.light_energy = .4
 	add_child(near_light)
 	near_light.position = Vector3(.6, 1.0, .3)
+	for at in [near_spot, far_spot]: shadow_lamp(at)
+	queued = shaders.keys()
+	lay_batch()
+
+func lay_batch() -> void:
+	for i in mini(PER_FRAME, queued.size()):
+		var key = queued.pop_front()
+		var material: Material = shaders[key][0]
+		var instanced: bool = shaders[key][1]
+		var column := swatches % 16
+		var row := swatches / 16
+		var across := (column - 7.5) * SWATCH * 1.3
+		var up := .06 + row * SWATCH * 1.3
+		add_swatch(material, instanced, Vector3(across + .6, up, .3))
+		add_swatch(material, instanced, Vector3(across * .5, up, -FAR))
+		if not instanced:
+			add_swatch(material, instanced, near_spot + Vector3(across * .4, up, 0))
+			add_swatch(material, instanced, far_spot + Vector3(across * .4, up, 0))
+		swatches += 1
+
+## A spot lamp like a room's shadow lamp, pointing straight down at a cluster.
+func shadow_lamp(at: Vector3) -> void:
 	var spot := SpotLight3D.new()
 	spot.light_cull_mask = Geo.LIT_LAYERS
 	spot.shadow_enabled = bool(Settings.values.shadows)
@@ -190,18 +239,8 @@ func lay_swatches() -> void:
 	spot.spot_angle = 24.0
 	spot.light_energy = .4
 	add_child(spot)
-	spot.position = spot_cluster + Vector3(0, 2.6, 0)
+	spot.position = at + Vector3(0, 2.6, 0)
 	spot.rotation_degrees.x = -90.0
-	for key in shaders:
-		var material: Material = shaders[key][0]
-		var instanced: bool = shaders[key][1]
-		var column := swatches % 16
-		var row := swatches / 16
-		var across := (column - 7.5) * SWATCH * 1.3
-		add_swatch(material, instanced, Vector3(across + .6, .06 + row * SWATCH * 1.3, .3))
-		add_swatch(material, instanced, Vector3(across * .5, .06 + row * SWATCH * 1.3, -FAR))
-		if not instanced: add_swatch(material, instanced, spot_cluster + Vector3(across * .4, .06 + row * SWATCH * 1.3, 0))
-		swatches += 1
 
 ## One real corridor, lit by its own lamps, far ahead: corridor surfaces are
 ## lit only by corridor lamps, a situation no room surface is ever in.
@@ -270,6 +309,18 @@ func show_residue(on: bool) -> void:
 
 ## Counts the drawn frames, then removes everything it showed.
 func step() -> void:
+	if is_instance_valid(shown_room):
+		retire_room()
+		if not room_queue.is_empty():
+			show_next_room()
+			return
+	if not swatches_laid:
+		swatches_laid = true
+		if game.first_person: lay_swatches()
+		return
+	if not queued.is_empty():
+		lay_batch()
+		return
 	if frames_left <= 0: return
 	frames_left -= 1
 	if frames_left > 0: return

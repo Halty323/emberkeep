@@ -238,9 +238,6 @@ func prewarm_is_inert() -> void:
 	var visited: Array = run.rooms.keys().filter(func(id): return run.rooms[id].get("visited", false))
 	var warm = Prewarm.begin(game)
 	check(warm.find_children("*", "DungeonEnemy", true, false).size() >= 2, "warm-up shows this floor's foes")
-	check(warm.swatches > 10 and warm.find_children("*", "DungeonRoom", true, false).is_empty(), "warm-up keeps swatches of the other rooms' materials, not the rooms (%d)" % warm.swatches)
-	check(run.rooms.keys().filter(func(id): return run.rooms[id].get("visited", false)) == visited and run.current_room == game.room.data.id, "building the other rooms visits none of them")
-	check(load("res://scripts/effects/effects_pool.gd").current == game.room.effects, "the active room keeps its particle pool")
 	check(warm.find_children("*", "EmberShot", true, false).size() == 2, "warm-up shows a friendly and a hostile shot")
 	check(game.entity_counter == entity_counter and run.rng.state == rng_state, "warm-up leaves entity ids and the run's RNG alone")
 	check(game.enemies.size() == enemies and game.shots.size() == shots and game.pickups.size() == pickups and get_nodes_in_group("enemies").size() == enemies, "warm-up foes, shots and drops are not in play")
@@ -248,7 +245,20 @@ func prewarm_is_inert() -> void:
 	check(game.scene_root.get_child_count() == roots + 1, "everything a warm-up setup left behind is held by the warm-up")
 	var pool = load("res://scripts/effects/effects_pool.gd").current
 	check(pool == null or pool.transient_count() > 0, "warm-up draws every effect")
-	for i in Prewarm.HOLD_FRAMES: warm.step()
+	var steps := 0
+	var most_rooms := 0
+	var shown := {}
+	while warm.active() and steps < 500:
+		var rooms: Array = warm.find_children("*", "DungeonRoom", true, false)
+		most_rooms = maxi(most_rooms, rooms.size())
+		for room in rooms: shown[room.data.id] = true
+		warm.step()
+		steps += 1
+	check(shown.size() == run.rooms.size() - 1 and most_rooms == 1, "warm-up shows every other room, one at a time (%d)" % shown.size())
+	check(warm.shaders.size() > 10 and warm.find_children("*", "DungeonRoom", true, false).is_empty(), "warm-up ends with one swatch set per distinct shader and no rooms (%d shaders)" % warm.shaders.size())
+	check(run.rooms.keys().filter(func(id): return run.rooms[id].get("visited", false)) == visited and run.current_room == game.room.data.id, "showing the other rooms visits none of them")
+	check(load("res://scripts/effects/effects_pool.gd").current == game.room.effects, "the active room keeps its particle pool")
+	check(steps > Prewarm.HOLD_FRAMES and warm.swatches == warm.shaders.size(), "warm-up lays its shaders a few per frame, then holds (%d frames)" % steps)
 	check(pool == null or pool.transient_count() == 0, "warm-up particles are gone when the veil lifts")
 	await settle()
 	check(not is_instance_valid(warm) and game.scene_root.get_child_count() == roots, "warm-up removes itself after its frames")
