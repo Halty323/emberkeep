@@ -48,3 +48,14 @@ All eight views use the same generated two-storey chamber under the simulated Po
 ![Archive: pale stone and silvered boards](images/theme-archive.png)
 
 ![Hearth: plaster, timber and terracotta](images/theme-hearth.png)
+
+## Verified downloads
+
+Android, Windows and AppImage CI each passed **34 suites / 167,551 checks with zero failures** for source `99d8560c38c0feed2b97427ddba5b93e284bfc67`. The local full run passed the same count. Both APKs passed catalog/asset validation and 240 packaged quickstart frames. All four downloaded archives passed GitHub digest and ZIP CRC checks, and each extracted binary matched its recorded hash. Android build **0.5.0-android.100015**, code **100015**, retains the existing development signing certificate. [Hashes and build metadata](reports/themed-material-builds.json).
+
+- [Android APK](https://github.com/Halty323/emberkeep/actions/runs/41488530413/artifacts/13163048086)
+- [Separately installable Android Preview](https://github.com/Halty323/emberkeep/actions/runs/41488530413/artifacts/13163526858)
+- [Windows](https://github.com/Halty323/emberkeep/actions/runs/41488596495/artifacts/13163421939)
+- [Linux AppImage](https://github.com/Halty323/emberkeep/actions/runs/41488722395/artifacts/13164540407)
+
+GitHub artifacts have seven-day retention. These are development builds; physical-device frame rates are not inferred from headless checks or software-rendered captures.

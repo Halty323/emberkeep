@@ -1,0 +1,73 @@
+{
+  "source": "99d8560c38c0feed2b97427ddba5b93e284bfc67",
+  "godot": "4.7.2",
+  "date": "2026-11-02",
+  "suites": 34,
+  "failures": 0,
+  "artifacts": {
+    "android": {
+      "workflow_run": 41488530413,
+      "artifact_id": 13163048086,
+      "archive_sha256": "4419ea1cfd8991cda8fd996587e5e619ed392dac0e033e2039e4a459b42cc250",
+      "url": "https://github.com/Halty323/emberkeep/actions/runs/41488530413/artifacts/13163048086",
+      "package": "org.emberkeep.game",
+      "version": "0.5.0-android.100015",
+      "version_code": 100015,
+      "certificate_sha256": "4cf9cd28712f39670ea845ace110dba80c756a07db3bdfc264f3d560605bf3a9",
+      "quickstart_frames": 240,
+      "file": "Emberkeep-Android.apk",
+      "bytes": 202222141,
+      "sha256": "faf4b79e6b5791626473050691862908a5edf1ab9d159f268a5b079058f1113c"
+    },
+    "android-preview": {
+      "workflow_run": 41488530413,
+      "artifact_id": 13163526858,
+      "archive_sha256": "0743f602c33822e13095a7476d764a461539fade73d29727e0c53fd2402055a0",
+      "url": "https://github.com/Halty323/emberkeep/actions/runs/41488530413/artifacts/13163526858",
+      "package": "org.emberkeep.preview",
+      "version": "0.5.0-android.100015",
+      "version_code": 100015,
+      "certificate_sha256": "4cf9cd28712f39670ea845ace110dba80c756a07db3bdfc264f3d560605bf3a9",
+      "quickstart_frames": 240,
+      "file": "Emberkeep-Preview.apk",
+      "bytes": 202222141,
+      "sha256": "15a3d69b14fb44f881627d5df5b2dcf6c23c439717b886d83e55f35d50dab889"
+    },
+    "windows": {
+      "workflow_run": 41488596495,
+      "artifact_id": 13163421939,
+      "archive_sha256": "afd88ad833919fa006d35c0d04ed8b5817c278601fc052821ad19f945f905664",
+      "url": "https://github.com/Halty323/emberkeep/actions/runs/41488596495/artifacts/13163421939",
+      "file": "Emberkeep.exe",
+      "bytes": 254404928,
+      "sha256": "cb6c0e7f44723d6248abd4fad19c1b0b9487bb703821c6049ba02b581cbe712e"
+    },
+    "linux": {
+      "workflow_run": 41488722395,
+      "artifact_id": 13164540407,
+      "archive_sha256": "e13a5397dd24102b9f070db8149857340be56685b614eba6c5c84070d90045d5",
+      "url": "https://github.com/Halty323/emberkeep/actions/runs/41488722395/artifacts/13164540407",
+      "file": "Emberkeep-x86_64.AppImage",
+      "bytes": 84228600,
+      "sha256": "748d507c5549c6a95411d01a22d1173127c40d87267efa1cdeeca63bd8f531c2"
+    }
+  },
+  "checks": 167551,
+  "ci_results": {
+    "linux": {
+      "suites": 34,
+      "checks": 167551,
+      "failures": 0
+    },
+    "windows": {
+      "suites": 34,
+      "checks": 167551,
+      "failures": 0
+    },
+    "android": {
+      "suites": 34,
+      "checks": 167551,
+      "failures": 0
+    }
+  }
+}
