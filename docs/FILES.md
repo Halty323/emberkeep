@@ -214,6 +214,7 @@ docs/images/stylized-hearth.png
 docs/images/stylized-water.png
 docs/reports/corridor-builds.json
 docs/reports/corridor-powervr.json
+docs/reports/stair-assembly-builds.json
 docs/reports/stylized-desktop.json
 docs/reports/stylized-mobile-safe.json
 docs/reports/stylized-reflection.json
