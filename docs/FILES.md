@@ -349,6 +349,7 @@ docs/EXPANSION_PLAN.md
 docs/EXPEDITION_UPDATE.md
 docs/FILES.md
 docs/FIRST_PERSON_UPDATE_PLAN.md
+docs/FRAME_PACING.md
 docs/IOS.md
 docs/LIGHTING_UPDATE.md
 docs/LINUX.md
@@ -533,6 +534,8 @@ scripts/graphics/render_policy.gd
 scripts/graphics/render_policy.gd.uid
 scripts/graphics/screen_fx.gd
 scripts/graphics/screen_fx.gd.uid
+scripts/graphics/shader_prewarm.gd
+scripts/graphics/shader_prewarm.gd.uid
 scripts/graphics/water_mirror.gd
 scripts/graphics/water_mirror.gd.uid
 scripts/interactions/game_actions.gd
@@ -671,6 +674,8 @@ tests/first_person_navigation.gd
 tests/first_person_navigation.gd.uid
 tests/first_person_stress.gd
 tests/first_person_stress.gd.uid
+tests/frame_pacing.gd
+tests/frame_pacing.gd.uid
 tests/furniture.gd
 tests/furniture.gd.uid
 tests/items.gd
@@ -754,6 +759,8 @@ tools/export_android.sh
 tools/import_dungeon_materials.py
 tools/import_paintings.py
 tools/make_content.py
+tools/profile_frames.gd
+tools/profile_frames.gd.uid
 tools/render_lighting.sh
 tools/render_mobile_startup.sh
 tools/render_ps2_update.sh

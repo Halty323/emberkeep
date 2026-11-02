@@ -2,6 +2,10 @@
 
 Current first-person work uses **Godot 4.7.2 Standard** on Linux. The headless regression runner keeps original gameplay/presentation suites in explicit legacy mode (`EMBERKEEP_LEGACY_TEST=1`) and switches the dedicated `first_person` suite back to the default gameplay mode. Historical rendering/build measurements below retain their original engine context. Phone performance is not inferred from desktop software rendering.
 
+## Frame pacing
+
+The [frame pacing update](FRAME_PACING.md) removes the long single frames behind first-person stutter. These came from corridor staging, fight-start route grids, room entry and first-use shader compiles. It also smooths eye motion between fixed ticks. The new `frame_pacing` suite passes **34 checks**. All **35 suites** pass with Godot 4.7.2. `tools/profile_frames.gd` reproduces the measurements: a bot plays real rooms and corridors and reports the worst frames with what caused them. Its desktop and llvmpipe numbers are workload references, not phone frame times.
+
 ## Stylized-lighting branch
 
 The [theme-material update](THEME_MATERIALS.md) restores separate authored wall and ground forms for all eight themes across the actual room, upper gallery, ceiling and live corridor. Its focused suite passes **195 checks** and the native PowerVR-policy run passes the same checks with eight screenshots. Texture memory remains at **34.83 MB** across all eight theme rebuilds. The runner now includes **34 suites**, and both common/themed asset manifests are verified offline.
@@ -59,7 +63,7 @@ The [0.2.1 update report](PS2_UPDATE.md) describes the ramp reproduction, correc
 
 ## Headless suites
 
-`./tools/test.sh` imports the project, runs every suite with disposable user storage, and fails on any script error even if Godot exits successfully. The runner now includes 34 suites; results are recorded above. The earlier pre-first-person run passed **133,076 checks** plus the painting importer's offline test.
+`./tools/test.sh` imports the project, runs every suite with disposable user storage, and fails on any script error even if Godot exits successfully. The runner now includes 35 suites; results are recorded above. The earlier pre-first-person run passed **133,076 checks** plus the painting importer's offline test.
 
 The 2026-10-31 PowerVR safeguard run passed **133,052 checks** across all suites plus the importer test; the subsequently expanded policy suite passed **63 checks** (five additional checks). Android, Linux and iOS resource packs each passed their catalog check and 240 quickstart frames. A native desktop OpenGL smoke also rendered the full High post/glow/water-reflection path without shader errors.
 
@@ -74,6 +78,7 @@ The 2026-10-31 PowerVR safeguard run passed **133,052 checks** across all suites
 | `render_policy` | 63 | PowerVR fallback, MSAA and framebuffer policy, render-resolution budget and shader selection. |
 | `first_person_navigation` | 330 | Physical ramp traversal, landing, dash release, doorway clearance, recovery and saved terrain validation. |
 | `first_person_stress` | 52 | Bounded projectile resources, room rebuilds, routing work and elevated combat effects. |
+| `frame_pacing` | 34 | Paced and hurried staged rooms identical to ordinary builds; staged and bucketed route grids equal to brute force; kept ledge residue surfaces; shared doorway meshes; eye interpolation, snapping and per-frame touch look; a shader warm-up that never touches the run. |
 | `dungeon_style` | 178 | Shared high-resolution physical materials, theme variation, device map/cache bounds, all packed assets, shader compatibility and isolated cosmetic randomness. |
 | `lighting_centered` | 55 | First-person profile isolation, real flames, fixture/door cues, bounded lights, snuffing/relighting and settings transitions. |
 | `title_presentation` | 58–61 | Home/preparation/Continue/Daily/journal/settings navigation, controller/back input, touch sizing, armament preview, seed selection and clean scene lifecycle. |
