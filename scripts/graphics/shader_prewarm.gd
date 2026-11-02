@@ -6,11 +6,20 @@ extends Node3D
 ## So each floor begins behind the light veil with one of everything it can
 ## show drawn for a few frames just ahead of the eye: this floor's foes and
 ## boss, friendly and hostile shots, every drop, every effect, the elite ward,
-## each residue surface and the water mirror. When the veil lifts, those
-## shaders are built. Nothing here touches the run, its RNG or its entity ids.
+## each residue surface and the water mirror, and a swatch of every material
+## the floor's other rooms use (each built once, unseen, then freed). When
+## the veil lifts, those shaders are built. Nothing here touches the run, its
+## RNG or its entity ids.
 const HOLD_FRAMES := 3
 const AHEAD := 2.6
 const SPACING := .32
+const SWATCH := .07
+const MAX_SWATCHES := 360
+# Materials this warm-up already draws, or the current room already shows.
+var warmed: Dictionary = {}
+static var swatch_mesh: BoxMesh
+static var swatch_multimesh: MultiMesh
+var swatches := 0
 var game
 var frames_left := HOLD_FRAMES
 var residue_shown: Dictionary = {}
@@ -96,8 +105,74 @@ func stock() -> void:
 		while room.extra_lights.size() > lights_before: room.extra_lights.pop_back()
 	for child in game.scene_root.get_children():
 		if child != self and child not in roots_before: child.reparent(self)
+	if game.first_person: room_swatches()
 	emit_effects()
 	show_residue(true)
+
+## Builds each other room of the floor once, hidden and inert, and keeps a
+## small swatch of every material it draws with (instanced ones instanced).
+## Only one room exists at a time; each is freed straight after.
+func room_swatches() -> void:
+	for material in collect(game.room): warmed[material] = true
+	var pool = EffectsPool.current
+	for id in Run.rooms:
+		if id == Run.current_room or swatches >= MAX_SWATCHES: continue
+		var room := DungeonRoom.new()
+		room.prepare_entry = false
+		room.visible = false
+		room.process_mode = Node.PROCESS_MODE_DISABLED
+		add_child(room)
+		room.build(game, Run.rooms[id], false, true)
+		room.resume_build(true)
+		var found := collect(room)
+		remove_child(room)
+		room.free()
+		for key in found:
+			if warmed.has(key) or swatches >= MAX_SWATCHES: continue
+			warmed[key] = true
+			add_swatch(found[key][0], found[key][1])
+	EffectsPool.current = pool
+
+## Every material a room's geometry draws with: [material, instanced].
+func collect(room: Node) -> Dictionary:
+	var found := {}
+	if not is_instance_valid(room): return found
+	for node in room.find_children("*", "GeometryInstance3D", true, false):
+		var instanced: bool = node is MultiMeshInstance3D
+		var materials: Array = [node.material_override, node.material_overlay]
+		if node is MeshInstance3D and node.mesh:
+			for surface in node.mesh.get_surface_count():
+				materials.append(node.get_active_material(surface))
+		for material in materials:
+			if material == null: continue
+			found["%d:%s" % [material.get_instance_id(), instanced]] = [material, instanced]
+	return found
+
+func add_swatch(material: Material, instanced: bool) -> void:
+	if swatch_mesh == null:
+		swatch_mesh = BoxMesh.new()
+		swatch_mesh.size = Vector3.ONE * SWATCH
+		swatch_multimesh = MultiMesh.new()
+		swatch_multimesh.transform_format = MultiMesh.TRANSFORM_3D
+		swatch_multimesh.use_colors = true
+		swatch_multimesh.mesh = swatch_mesh
+		swatch_multimesh.instance_count = 1
+		swatch_multimesh.set_instance_transform(0, Transform3D.IDENTITY)
+		swatch_multimesh.set_instance_color(0, Color.WHITE)
+	var node: GeometryInstance3D
+	if instanced:
+		node = MultiMeshInstance3D.new()
+		node.multimesh = swatch_multimesh
+	else:
+		node = MeshInstance3D.new()
+		node.mesh = swatch_mesh
+	node.material_override = material
+	add_child(node)
+	# A low wall of swatches ahead, beside the foes and drops.
+	var column := swatches % 24
+	var row := swatches / 24
+	node.position = Vector3((column - 11.5) * SWATCH * 1.3, .6 + row * SWATCH * 1.3, .4)
+	swatches += 1
 
 ## Every effect recipe, a ring and a beam, from the room's own pool.
 func emit_effects() -> void:

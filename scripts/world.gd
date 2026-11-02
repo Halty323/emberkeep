@@ -70,6 +70,8 @@ const SLICE_USEC := 2500
 var paced := false
 var building := false
 var slice_start := 0
+# Off for a warm-up build, which is never entered.
+var prepare_entry := true
 
 func pace() -> void:
 	if not paced or Time.get_ticks_usec() - slice_start < SLICE_USEC: return
@@ -165,9 +167,9 @@ func build(owner_game: Node3D, room: Dictionary, preview := false, staged := fal
 	# A staged room also prepares what entering it would otherwise build in
 	# that frame: its ledge residue surface and, for a fight still to come,
 	# its foes' route grids (computed on the encounter's first frame before).
-	if staged and first_person_room:
+	if staged and first_person_room and prepare_entry:
 		await ResidueField.prepare_surface(self)
-	if staged and first_person_room and room.get("type", "") in ["combat", "boss"] and not room.get("cleared", false):
+	if staged and first_person_room and prepare_entry and room.get("type", "") in ["combat", "boss"] and not room.get("cleared", false):
 		await prepare_navigation()
 	building = false
 	paced = false
