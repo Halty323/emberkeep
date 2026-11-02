@@ -159,7 +159,7 @@ func build(owner_game: Node3D, room: Dictionary, preview := false, staged := fal
 	add_ambient_emitters()
 	await pace()
 	if first_person_room:
-		interiors_report = ThemedInteriors.decorate(self)
+		interiors_report = await ThemedInteriors.decorate(self)
 		await pace()
 		FirstPersonArchitecture.build(self)
 	set_open(true)

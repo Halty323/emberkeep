@@ -53,19 +53,24 @@ static func decorate(room) -> Dictionary:
 	builder.report.walls = []
 	builder.report.tops = []
 	builder.report.scatter = []
+	# A staged room pauses between scenes when its frame slice is spent.
+	var paced: bool = room.has_method("pace")
 	for anchor in wall_plan:
 		var inward = Vector3(-anchor.dir.x, 0, -anchor.dir.y)
 		var frame = Transform3D(Basis(Vector3.UP, atan2(inward.x, inward.z)), Vector3(anchor.at.x, 2.03, anchor.at.y))
 		if builder.try_scene(func(): builder.wall_scene(theme, frame, anchor.variant)):
 			builder.report.walls.append(anchor)
+		if paced: await room.pace()
 	for anchor in top_plan:
 		var frame = Transform3D(Basis(Vector3.UP, anchor.turn), anchor.at)
 		if builder.try_scene(func(): builder.table_scene(theme, frame, anchor.scale, anchor.variant)):
 			builder.report.tops.append(anchor)
+		if paced: await room.pace()
 	for anchor in floor_plan:
 		var frame = Transform3D(Basis(Vector3.UP, anchor.turn), anchor.at)
 		if builder.try_scene(func(): builder.floor_scene(theme, frame, anchor.variant)):
 			builder.report.scatter.append(anchor)
+		if paced: await room.pace()
 	builder.finish(room)
 	builder.report["vertices"] = builder.vertex_count
 	builder.report["pieces"] = builder.piece_count

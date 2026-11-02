@@ -300,22 +300,29 @@ func finish_surface(surface: SurfaceTool) -> ArrayMesh:
 	geometry.set_meta(surface_meta(), mesh)
 	return mesh
 
-## Builds a staged first-person room's ledge surface a column per slice.
+## Builds a staged first-person room's ledge surfaces a column per slice:
+## the floor's, and on a two-storey room the upstairs one too (made the
+## first time anything upstairs touches residue, often a foe on its first
+## step).
 static func prepare_surface(room) -> void:
 	var room_geometry: RoomGeometry = room.geometry
 	if not room_geometry.terrain or not room_geometry.terrain.ledge.has_area(): return
-	var field := ResidueField.new()
-	field.first_person = true
-	field.geometry = room_geometry
-	field.grid_for(room_geometry)
-	if not room_geometry.has_meta(field.surface_meta()):
-		var surface := SurfaceTool.new()
-		surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-		for x in range(field.grid_origin.x,field.grid_origin.x+field.grid_size.x):
-			field.surface_column(surface,x)
-			await room.pace()
-		field.finish_surface(surface)
-	field.free()
+	var levels: Array[float] = [0.0]
+	if room_geometry.terrain.loft: levels.append(LoftRoom.RISE)
+	for level in levels:
+		var field := ResidueField.new()
+		field.first_person = true
+		field.geometry = room_geometry
+		field.surface_level = level
+		field.grid_for(room_geometry)
+		if not room_geometry.has_meta(field.surface_meta()):
+			var surface := SurfaceTool.new()
+			surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+			for x in range(field.grid_origin.x,field.grid_origin.x+field.grid_size.x):
+				field.surface_column(surface,x)
+				await room.pace()
+			field.finish_surface(surface)
+		field.free()
 
 ## Tiles inside the floor within a radius of a point.
 func tiles_in(at: Vector3, radius: float) -> Array:

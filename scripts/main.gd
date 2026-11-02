@@ -46,6 +46,10 @@ var view_mask: RoomGeometry
 var fade_prewarm = 0
 # Each floor's shaders compile behind the veil, not mid-fight (ShaderPrewarm).
 var prewarm: ShaderPrewarm
+# The room a corridor leaves is deleted over the following frames.
+var reaper := NodeReaper.new()
+# A corridor arrival saves a couple of frames later, off the handoff frame.
+var save_due := -1
 # The way up: a stair that builds itself when the boss falls, climbed into
 # the light from the floor above; the next floor opens at its stairwell.
 const CLIMB_APPROACH := .5
@@ -246,8 +250,22 @@ func on_command(peer_id: int, command: Dictionary) -> void:
 	if Session.is_authority():
 		last_result = actions.perform(command, peer_id)
 
+func _exit_tree() -> void:
+	flush_save()
+	reaper.flush()
+
+func save_soon() -> void:
+	save_due = 2
+
+func flush_save() -> void:
+	if save_due < 0: return
+	save_due = -1
+	FrameWatch.mark("saving")
+	Run.save_run()
+
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
+		flush_save()
 		if is_instance_valid(ui) and is_playing():
 			pause_game()
 	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
@@ -260,6 +278,7 @@ func _notification(what: int) -> void:
 			elif ui.mode == "painting": ui.close_painting()
 			elif ui.mode == "secret": ui.close_secret_code()
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		save_due = -1
 		if first_person and Run.active: Run.save_run()
 		get_tree().quit()
 
@@ -587,6 +606,7 @@ func finish_slide() -> void:
 	transition.time = 0.0
 
 func _process(delta: float) -> void:
+	FrameWatch.frame(delta)
 	if fade_prewarm > 0:
 		fade_prewarm -= 1
 		if fade_prewarm == 0 and in_menu and is_instance_valid(player): player.set_fade(1.0)
@@ -595,6 +615,11 @@ func _process(delta: float) -> void:
 	if warming:
 		light_veil.color.a = 1.0
 		prewarm.step()
+	if reaper.pending() > 0:
+		FrameWatch.mark("freeing the room left behind")
+		reaper.step()
+	if save_due > 0: save_due -= 1
+	elif save_due == 0: flush_save()
 	shake = maxf(0, shake - delta * .9)
 	hurt_flash = maxf(0, hurt_flash - delta * 1.6)
 	update_camera(delta)
@@ -664,6 +689,7 @@ func camera_target(at: Vector3) -> Vector3:
 		center.y + clampf((at.z - center.y) * gain.y, -limit.y, limit.y))
 
 func clean_room(keep_view := false, keep_corridor := false) -> void:
+	flush_save()
 	deferred_encounter={}
 	if corridors and not keep_corridor: corridors.reset()
 	stair_cinematic.cancel(self)
@@ -693,6 +719,10 @@ func clean_room(keep_view := false, keep_corridor := false) -> void:
 	if scene_root:
 		if keep_view:
 			previous_view = scene_root
+		elif keep_corridor and first_person:
+			# Leaving through a corridor: out of the world now, deleted over
+			# the next frames instead of all on the handoff frame.
+			reaper.reap(scene_root)
 		else:
 			remove_child(scene_root)
 			scene_root.queue_free()
@@ -770,6 +800,7 @@ func start_run(weapon: String, seed_input: int, is_daily: bool) -> void:
 func warm_shaders() -> void:
 	if not first_person or in_menu or DisplayServer.get_name() == "headless": return
 	if is_instance_valid(prewarm): prewarm.queue_free()
+	FrameWatch.mark("preparing shaders")
 	prewarm = ShaderPrewarm.begin(self)
 	light_veil.color.a = 1.0
 
@@ -865,7 +896,8 @@ func enter_room(spawn: Vector3, keep_view := false, walking_state: Dictionary = 
 			make_marker("treasure", room.pedestal)
 		if data.type == "boss":
 			raise_stairs(false)
-		Run.save_run()
+		if walking_state.is_empty(): Run.save_run()
+		else: save_soon()
 	for drop in data.get("pickups", []):
 		spawn_pickup(Vector3(float(drop.position[0]), float(drop.get("height",0)), float(drop.position[1])), drop.def, float(drop.get("value", -1)), str(drop.id))
 	if data.type == "start" and Run.floor_number > 1:
@@ -946,6 +978,7 @@ func activate_corridor_encounter() -> void:
 	if id!=Run.current_room: return
 	var data: Dictionary=Run.rooms[id]
 	if not data.cleared and data.type in ["combat","boss"]:
+		FrameWatch.mark("fight start")
 		room.set_open(false)
 		spawn_room_encounter(data,player.position)
 

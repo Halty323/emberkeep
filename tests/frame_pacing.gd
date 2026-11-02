@@ -45,6 +45,7 @@ func exercise() -> void:
 	navigation_matches_brute_force()
 	doorways_share_meshes()
 	eye_interpolation()
+	await reaper_and_save()
 	await prewarm_is_inert()
 	game.queue_free()
 	await settle()
@@ -196,6 +197,32 @@ func eye_interpolation() -> void:
 	fps.update_view(1.0 / 60.0)
 	check(not is_equal_approx(fps.yaw, yaw) and game.ui.look_delta == Vector2.ZERO, "touch look turns the view on a drawn frame")
 	game.paused = true
+
+## A left room leaves the world at once and is deleted over later frames;
+## a corridor arrival saves a couple of frames after the handoff.
+func reaper_and_save() -> void:
+	var reaper = load("res://scripts/first_person/node_reaper.gd").new()
+	var top := Node3D.new()
+	var nodes: Array = [top]
+	var parent: Node3D = top
+	for i in 60:
+		var child := Node3D.new()
+		parent.add_child(child)
+		nodes.append(child)
+		if i % 6 == 0: parent = child
+	game.add_child(top)
+	reaper.reap(top)
+	check(not top.is_inside_tree() and is_instance_valid(top) and reaper.pending() == nodes.size(), "a reaped tree leaves the world at once, still to be deleted")
+	reaper.step(1000000)
+	check(reaper.pending() == 0 and nodes.all(func(node): return not is_instance_valid(node)), "the reaper deletes every node, deepest first, without errors")
+	game.save_soon()
+	check(game.save_due == 2, "a corridor arrival schedules its save")
+	await settle()
+	check(game.save_due == -1, "the scheduled save runs within a few frames")
+	var watch = load("res://scripts/graphics/frame_watch.gd")
+	watch.mark("a test cause")
+	watch.frame(.05)
+	check(watch.hitches.back()[2] == "a test cause" and int(watch.hitches.back()[1]) == 50, "a long frame is reported with what the game was doing")
 
 ## Warm-up draws foes, shots and drops that never join the run.
 func prewarm_is_inert() -> void:

@@ -980,6 +980,9 @@ func _draw() -> void:
 	if Settings.values.show_fps:
 		anchor(widen())
 		text("%d FPS" % roundi(fps_value), Vector2(1072, 697), 15, GOLD, bold)
+		# Long frames and their likely cause, to read off a phone.
+		var hitches := FrameWatch.summary()
+		text(hitches, Vector2(1140 - body.get_string_size(hitches, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x, 679), 12, GOLD, body)
 	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
 
 func hearth_emblem(at: Vector2, radius: float) -> void:

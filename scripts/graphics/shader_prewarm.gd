@@ -6,17 +6,19 @@ extends Node3D
 ## So each floor begins behind the light veil with one of everything it can
 ## show drawn for a few frames just ahead of the eye: this floor's foes and
 ## boss, friendly and hostile shots, every drop, every effect, the elite ward,
-## each residue surface and the water mirror, and a swatch of every material
-## the floor's other rooms use (each built once, unseen, then freed). When
-## the veil lifts, those shaders are built. Nothing here touches the run, its
-## RNG or its entity ids.
+## each residue surface and the water mirror. Every distinct shader the floor's
+## rooms use (each room built once, unseen, then freed) is also drawn in each
+## lighting situation play will put it in, with one real lit corridor. When
+## the veil lifts, those programs are built. Nothing here touches the run,
+## its RNG or its entity ids.
 const HOLD_FRAMES := 3
 const AHEAD := 2.6
 const SPACING := .32
 const SWATCH := .07
-const MAX_SWATCHES := 360
-# Materials this warm-up already draws, or the current room already shows.
-var warmed: Dictionary = {}
+const FAR := 36.0
+# One representative material per distinct shader: key -> [material, instanced].
+var shaders: Dictionary = {}
+var keys: Dictionary = {}
 static var swatch_mesh: BoxMesh
 static var swatch_multimesh: MultiMesh
 var swatches := 0
@@ -109,14 +111,15 @@ func stock() -> void:
 	emit_effects()
 	show_residue(true)
 
-## Builds each other room of the floor once, hidden and inert, and keeps a
-## small swatch of every material it draws with (instanced ones instanced).
-## Only one room exists at a time; each is freed straight after.
+## Builds each other room of the floor once, hidden and inert, notes every
+## shader it draws with, and frees it. Only one room exists at a time.
 func room_swatches() -> void:
-	for material in collect(game.room): warmed[material] = true
+	gather(self)
+	gather(game.room)
+	gather(game.residue)
 	var pool = EffectsPool.current
 	for id in Run.rooms:
-		if id == Run.current_room or swatches >= MAX_SWATCHES: continue
+		if id == Run.current_room: continue
 		var room := DungeonRoom.new()
 		room.prepare_entry = false
 		room.visible = false
@@ -124,31 +127,98 @@ func room_swatches() -> void:
 		add_child(room)
 		room.build(game, Run.rooms[id], false, true)
 		room.resume_build(true)
-		var found := collect(room)
+		gather(room)
 		remove_child(room)
 		room.free()
-		for key in found:
-			if warmed.has(key) or swatches >= MAX_SWATCHES: continue
-			warmed[key] = true
-			add_swatch(found[key][0], found[key][1])
 	EffectsPool.current = pool
+	lay_swatches()
+	lay_corridor()
 
-## Every material a room's geometry draws with: [material, instanced].
-func collect(room: Node) -> Dictionary:
-	var found := {}
-	if not is_instance_valid(room): return found
-	for node in room.find_children("*", "GeometryInstance3D", true, false):
+## Notes one material per distinct shader under a node. Godot builds one
+## program per shader and lighting situation, not per material, so a few
+## dozen shaders cover a floor's hundreds of materials.
+func gather(root: Node) -> void:
+	if root == null or not is_instance_valid(root): return
+	var nodes: Array = root.find_children("*", "GeometryInstance3D", true, false)
+	if root is GeometryInstance3D: nodes.append(root)
+	for node in nodes:
 		var instanced: bool = node is MultiMeshInstance3D
 		var materials: Array = [node.material_override, node.material_overlay]
 		if node is MeshInstance3D and node.mesh:
 			for surface in node.mesh.get_surface_count():
 				materials.append(node.get_active_material(surface))
 		for material in materials:
-			if material == null: continue
-			found["%d:%s" % [material.get_instance_id(), instanced]] = [material, instanced]
-	return found
+			while material != null:
+				var key := shader_key(material, instanced)
+				if not shaders.has(key): shaders[key] = [material, instanced]
+				material = material.next_pass
 
-func add_swatch(material: Material, instanced: bool) -> void:
+## Which compiled shader a material uses: a ShaderMaterial's shader, or a
+## standard material's feature switches (its colours and amounts are only
+## uniforms and share one program).
+func shader_key(material: Material, instanced: bool) -> String:
+	var id := material.get_instance_id()
+	if not keys.has(id):
+		var key := material.get_class()
+		if material is ShaderMaterial:
+			key += ":%d" % (material.shader.get_instance_id() if material.shader else 0)
+		elif material is BaseMaterial3D:
+			for property in material.get_property_list():
+				if property.usage & PROPERTY_USAGE_STORAGE == 0 or property.name == "render_priority": continue
+				if property.type == TYPE_BOOL or property.type == TYPE_INT: key += "|%s=%s" % [property.name, material.get(property.name)]
+		else:
+			key += ":%d" % id
+		keys[id] = key
+	return keys[id] + (":instanced" if instanced else "")
+
+## Each shader drawn in each lighting situation play puts it in: near the eye
+## under the carried light, under a shadowed spot lamp as well, and far off
+## with no light at all. (The scene shader is specialised on exactly these:
+## lights present or not, and an extra pass per shadowed light.)
+func lay_swatches() -> void:
+	var spot_cluster := Vector3(-1.4, 0, .2)
+	var near_light := OmniLight3D.new()
+	near_light.light_cull_mask = Geo.LIT_LAYERS
+	near_light.omni_range = 3.0
+	near_light.light_energy = .4
+	add_child(near_light)
+	near_light.position = Vector3(.6, 1.0, .3)
+	var spot := SpotLight3D.new()
+	spot.light_cull_mask = Geo.LIT_LAYERS
+	spot.shadow_enabled = bool(Settings.values.shadows)
+	spot.spot_range = 3.5
+	spot.spot_angle = 24.0
+	spot.light_energy = .4
+	add_child(spot)
+	spot.position = spot_cluster + Vector3(0, 2.6, 0)
+	spot.rotation_degrees.x = -90.0
+	for key in shaders:
+		var material: Material = shaders[key][0]
+		var instanced: bool = shaders[key][1]
+		var column := swatches % 16
+		var row := swatches / 16
+		var across := (column - 7.5) * SWATCH * 1.3
+		add_swatch(material, instanced, Vector3(across + .6, .06 + row * SWATCH * 1.3, .3))
+		add_swatch(material, instanced, Vector3(across * .5, .06 + row * SWATCH * 1.3, -FAR))
+		if not instanced: add_swatch(material, instanced, spot_cluster + Vector3(across * .4, .06 + row * SWATCH * 1.3, 0))
+		swatches += 1
+
+## One real corridor, lit by its own lamps, far ahead: corridor surfaces are
+## lit only by corridor lamps, a situation no room surface is ever in.
+func lay_corridor() -> void:
+	var portals: Array = Run.rooms[Run.current_room].get("portals", [])
+	if portals.is_empty(): return
+	var portal: Dictionary = Run.portals[portals[0]]
+	var path := CorridorPlan.from_room(CorridorPlan.ensure(portal, Run.rooms), portal, Run.current_room)
+	var corridor := WalkableCorridor.new()
+	# Drawn only: its collision never joins the world.
+	corridor.process_mode = Node.PROCESS_MODE_DISABLED
+	add_child(corridor)
+	corridor.build(path, false, game.room.look)
+	var middle: Vector2 = (path.front() + path.back()) * .5
+	corridor.position = Vector3(-middle.x, 0, -middle.y - FAR * .5)
+
+func add_swatch(material: Material, instanced: bool, at: Vector3) -> void:
 	if swatch_mesh == null:
 		swatch_mesh = BoxMesh.new()
 		swatch_mesh.size = Vector3.ONE * SWATCH
@@ -168,11 +238,7 @@ func add_swatch(material: Material, instanced: bool) -> void:
 		node.mesh = swatch_mesh
 	node.material_override = material
 	add_child(node)
-	# A low wall of swatches ahead, beside the foes and drops.
-	var column := swatches % 24
-	var row := swatches / 24
-	node.position = Vector3((column - 11.5) * SWATCH * 1.3, .6 + row * SWATCH * 1.3, .4)
-	swatches += 1
+	node.position = at
 
 ## Every effect recipe, a ring and a beam, from the room's own pool.
 func emit_effects() -> void:
