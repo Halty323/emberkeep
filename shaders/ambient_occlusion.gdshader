@@ -24,7 +24,8 @@ vec3 view_position(vec2 uv,mat4 inverse_projection) {
 void fragment() {
     vec2 uv=SCREEN_UV;
     vec3 p=view_position(uv,INV_PROJECTION_MATRIX);
-    vec3 normal=normalize(cross(dFdx(p),dFdy(p)));
+    vec3 raw_normal=cross(dFdx(p),dFdy(p));
+    vec3 normal=raw_normal/max(length(raw_normal),.000001);
     if (dot(normal,-p)<0.0) normal=-normal;
     float occlusion=0.0;
     // Stable interleaved sampling replaces visible ring/band contours.

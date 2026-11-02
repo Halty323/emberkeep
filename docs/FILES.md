@@ -183,6 +183,7 @@ content/pickups.json
 content/rooms.json
 docs/ANDROID.md
 docs/ANDROID_RENDERING_FIX.md
+docs/CORRIDOR_UPDATE.md
 docs/EXPANSION_PLAN.md
 docs/EXPEDITION_UPDATE.md
 docs/FILES.md
@@ -199,6 +200,9 @@ docs/PS2_UPDATE.md
 docs/STYLIZED_EXPERIMENT.md
 docs/TESTING.md
 docs/images/.gdignore
+docs/images/corridor-cellar-room.png
+docs/images/corridor-doorway.png
+docs/images/corridor-upper-room.png
 docs/images/expedition-cellar.png
 docs/images/expedition-door.png
 docs/images/expedition-stairs.png
@@ -208,6 +212,7 @@ docs/images/stylized-cellar.png
 docs/images/stylized-hall.png
 docs/images/stylized-hearth.png
 docs/images/stylized-water.png
+docs/reports/corridor-powervr.json
 docs/reports/stylized-desktop.json
 docs/reports/stylized-mobile-safe.json
 docs/reports/stylized-reflection.json
@@ -224,6 +229,8 @@ scripts/combat/residue.gd
 scripts/combat/residue.gd.uid
 scripts/content.gd
 scripts/content.gd.uid
+scripts/dungeon/corridor_plan.gd
+scripts/dungeon/corridor_plan.gd.uid
 scripts/dungeon/detail_batch.gd
 scripts/dungeon/detail_batch.gd.uid
 scripts/dungeon/floor_generator.gd
@@ -244,6 +251,8 @@ scripts/dungeon/staircase.gd
 scripts/dungeon/staircase.gd.uid
 scripts/dungeon/themed_interiors.gd
 scripts/dungeon/themed_interiors.gd.uid
+scripts/dungeon/vertical_plans.gd
+scripts/dungeon/vertical_plans.gd.uid
 scripts/effects/effects_pool.gd
 scripts/effects/effects_pool.gd.uid
 scripts/enemy.gd
@@ -252,6 +261,10 @@ scripts/first_person/architecture.gd
 scripts/first_person/architecture.gd.uid
 scripts/first_person/controller.gd
 scripts/first_person/controller.gd.uid
+scripts/first_person/corridor_segment.gd
+scripts/first_person/corridor_segment.gd.uid
+scripts/first_person/corridor_transit.gd
+scripts/first_person/corridor_transit.gd.uid
 scripts/first_person/room_terrain.gd
 scripts/first_person/room_terrain.gd.uid
 scripts/first_person/weapon_view.gd
@@ -456,6 +469,8 @@ tests/collection.gd
 tests/collection.gd.uid
 tests/combat.gd
 tests/combat.gd.uid
+tests/corridors.gd
+tests/corridors.gd.uid
 tests/doors_lava.gd
 tests/doors_lava.gd.uid
 tests/dungeon.gd
@@ -484,6 +499,8 @@ tests/lighting_centered.gd
 tests/lighting_centered.gd.uid
 tests/presentation.gd
 tests/presentation.gd.uid
+tests/render_corridors.gd
+tests/render_corridors.gd.uid
 tests/render_first_person.gd
 tests/render_first_person.gd.uid
 tests/render_light_materials.gd

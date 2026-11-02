@@ -186,8 +186,7 @@ func apply_fullscreen() -> void:
 				DisplayServer.window_set_position(_windowed_position)
 
 func ssao_supported() -> bool:
-	# Retain the affected PowerVR driver's established screen-copy safeguard.
-	return bool(RenderPolicy.current().post_processing)
+	return bool(RenderPolicy.current().get("ambient_occlusion",true))
 
 func effective_ssao() -> String:
 	return str(values.ssao) if ssao_supported() else "off"

@@ -4,6 +4,8 @@ Current first-person work uses **Godot 4.7.2 Standard** on Linux. The headless r
 
 ## Stylized-lighting branch
 
+The [2 November corridor update](CORRIDOR_UPDATE.md) adds physical traversal, one hidden neighbor, a guaranteed main-route vertical chamber, supported architecture and PowerVR SSAO. Its focused suite passes **5,334 checks**, including actual capsule walking in all four directions, reversible loading, complete aperture occlusion, retained motion/projectiles, live effects settings and old-save repair. Nine native views under the simulated PowerVR policy show both vertical types and SSAO Off/Low. The static corridor loading comparison measured mean RGB change **0.00000621**, with the same player and camera and no script/shader/framebuffer errors. These desktop captures do not establish phone performance.
+
 The [style experiment report](STYLIZED_EXPERIMENT.md) records the original carved maps, relief, radiance and first-person mirror. Final CI passed all **31 suites / 161,771 checks**, including **48 style checks** and **178 material checks**, after the reflection-atlas and live-quality fixes. Android/Linux/iOS resource packs each passed catalog/material validation and 240 quickstart frames; the Linux pack also ran 180 native OpenGL frames. Five-room native captures cover desktop and simulated PowerVR policies. A native image check catches the zero-size reflection-atlas failure that mathematical camera projection tests cannot see. Android Preview, Windows and AppImage builds all succeeded for `ddea955` and their downloaded artifacts passed hash checks. Previews, downloads and reproduction commands are in the report.
 
 ## Expedition update (0.5.0)
@@ -43,7 +45,7 @@ The [0.2.1 update report](PS2_UPDATE.md) describes the ramp reproduction, correc
 
 ## Headless suites
 
-`./tools/test.sh` imports the project, runs every suite with disposable user storage, and fails on any script error even if Godot exits successfully. The current 22-suite result is recorded above; the earlier pre-first-person run passed **133,076 checks** plus the painting importer's offline test.
+`./tools/test.sh` imports the project, runs every suite with disposable user storage, and fails on any script error even if Godot exits successfully. The runner now includes 32 suites; results are recorded above. The earlier pre-first-person run passed **133,076 checks** plus the painting importer's offline test.
 
 The 2026-10-31 PowerVR safeguard run passed **133,052 checks** across all suites plus the importer test; the subsequently expanded policy suite passed **63 checks** (five additional checks). Android, Linux and iOS resource packs each passed their catalog check and 240 quickstart frames. A native desktop OpenGL smoke also rendered the full High post/glow/water-reflection path without shader errors.
 
@@ -58,7 +60,7 @@ The 2026-10-31 PowerVR safeguard run passed **133,052 checks** across all suites
 | `render_policy` | 63 | PowerVR fallback, MSAA and framebuffer policy, render-resolution budget and shader selection. |
 | `first_person_navigation` | 330 | Physical ramp traversal, landing, dash release, doorway clearance, recovery and saved terrain validation. |
 | `first_person_stress` | 52 | Bounded projectile resources, room rebuilds, routing work and elevated combat effects. |
-| `dungeon_style` | 147 | Shared high-resolution physical materials, theme variation, device map/cache bounds, all packed assets, shader compatibility and isolated cosmetic randomness. |
+| `dungeon_style` | 178 | Shared high-resolution physical materials, theme variation, device map/cache bounds, all packed assets, shader compatibility and isolated cosmetic randomness. |
 | `lighting_centered` | 55 | First-person profile isolation, real flames, fixture/door cues, bounded lights, snuffing/relighting and settings transitions. |
 | `title_presentation` | 58–61 | Home/preparation/Continue/Daily/journal/settings navigation, controller/back input, touch sizing, armament preview, seed selection and clean scene lifecycle. |
 | `themed_interiors` | 2,717 | 48 furnished rooms across all eight themes; deterministic plans, clear portals/ramps/paintings, no breakable-supported vignettes, whole-scene vertex budgets, at most four batches, no new collision/lights/shadow casters or run RNG changes. |
@@ -76,9 +78,11 @@ The 2026-10-31 PowerVR safeguard run passed **133,052 checks** across all suites
 | `vertical_rooms` | 359 | Actual player/enemy ascents and descents, jumps, collision, saved bounds, negative cellar cutouts and height-isolated residue/clouds. |
 | `expedition_rewards` | 181 | Versioned scarcity, source-separated active equipment, actual offers, gilded credit, attack tempo, chest idempotency, legacy carried gear/cooldowns and 3D pickup reach. |
 | `expedition_integration` | 23 | Real main-scene challenge clear, chest position/interaction height, save/reload/opening, stale offer migration, passive cap and v2 continuation. |
-| `doors_lava` | 50 | Four physical door approaches, paired travel, closed/open leaf states, light/geometry budgets and unchanged hazard masks. |
-| `ssao_fullscreen` | 18 | Persisted display preferences, supported/unsafe policies, actual bounded shader and cinematic UI suppression. |
+| `doors_lava` | 54 | Four physical door approaches, real connector collision, closed/open leaf states, light/geometry budgets and unchanged hazard masks. |
+| `ssao_fullscreen` | 20 | Persisted display preferences, PowerVR-enabled bounded SSAO, actual shader and cinematic UI suppression. |
 | `stair_cinematic` | 33 | One-camera pullback, collision, deterministic pause, visible character, integrated climb/floor/arrival and FPS restoration. |
+| `stylized_lighting` | 48 | Original authored maps, shared live relief, lighting/radiance budgets, real perspective mirror projection and supported render policies. |
+| `corridors` | 5,334 | Generated main-route vertical rooms, blueprint serialization, separate previews, supported architecture, safe save repair, physics occlusion and traversal, retained player/projectile state, staging and encounter entry. |
 | `tools/test_import_paintings.py` | — | The importer against a local mock source: refused licences and wrong proportions, recorded provenance and hashes, bounded sizes, unverified records refused, offline `--check` catching a replaced file, regenerated credits. Needs Python with Pillow; skipped otherwise. |
 
 ## OpenGL captures (opt-in)

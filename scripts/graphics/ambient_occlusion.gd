@@ -26,6 +26,7 @@ static func create(camera: Camera3D) -> ScreenAmbientOcclusion:
 
 func configure(quality: String, enabled: bool) -> void:
 	visible = enabled and quality != "off"
-	surface.set_shader_parameter("sample_count",12 if quality == "high" else 8)
+	var samples: Vector2i = RenderPolicy.current().get("ssao_samples",Vector2i(8,12))
+	surface.set_shader_parameter("sample_count",samples.y if quality == "high" else samples.x)
 	surface.set_shader_parameter("radius",1.15 if quality == "high" else .85)
 	surface.set_shader_parameter("intensity",.7 if quality == "high" else .45)

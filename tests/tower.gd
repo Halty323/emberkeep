@@ -255,6 +255,10 @@ func test_hazards() -> void:
 	step(40)
 	check(pendulum.blade.position.distance_to(start) > .3, "a pendulum swings while the fight is on")
 	var foe = spawn("brute", pendulum.node.position)
+	# Keep the damage target under the blade. Its pathfinding/throwing AI
+	# can otherwise leave the swing before contact, depending on nav sync.
+	foe.speed = 0.0
+	foe.timer = 1.0e9
 	var hp: float = foe.hp
 	for i in 60 * 4: step()
 	check(not is_instance_valid(foe) or not foe.alive or foe.hp < hp, "a pendulum cuts foes too")

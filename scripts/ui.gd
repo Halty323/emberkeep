@@ -340,8 +340,11 @@ func sync_lighting() -> void:
 	if not is_instance_valid(game) or not is_instance_valid(game.camera): return
 	lighting_lamps = PackedVector4Array()
 	lighting_colors = PackedColorArray()
+	var projected_lamps: Array=[]
 	if is_instance_valid(game.room):
-		for lamp in game.room.lamps:
+		projected_lamps=game.room.lamps
+		if game.first_person and not game.in_menu and game.corridors and game.corridors.walking(): projected_lamps=game.corridors.active.lamps
+		for lamp in projected_lamps:
 			if lighting_lamps.size() == 4: break
 			if not is_instance_valid(lamp): continue
 			if game.first_person and not game.in_menu and game.camera.is_position_behind(lamp.global_position): continue

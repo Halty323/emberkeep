@@ -127,6 +127,7 @@ static func attempt_floor(seed_value: int, floor_number: int, attempt: int, gene
 		return {}
 	add_secret_room(floor_data, seed_value, floor_number)
 	dress_floor(floor_data, seed_value, floor_number)
+	if generation>=3 and not floor_data.rooms.values().any(func(room): return room.get("vertical_primary",false)): return {}
 	return floor_data
 
 const CHEST_CHANCE := {"treasure": .6, "combat": .22}
@@ -240,6 +241,7 @@ static func painting_mounts(room: Dictionary, geometry: RoomGeometry, zones: Arr
 ## content edits cannot move a chest onto an old saved spawn. Reserved space
 ## (doorways, pedestal, lanterns, painting views, chests) is claimed first.
 static func dress_floor(floor_data: Dictionary, seed_value: int, floor_number: int) -> void:
+	var verticals: Dictionary = VerticalPlans.prepare(floor_data,floor_number) if int(floor_data.get("generator",2))>=3 else {}
 	for id in floor_data.rooms:
 		var room: Dictionary = floor_data.rooms[id]
 		var gen = RandomNumberGenerator.new()
@@ -251,7 +253,7 @@ static func dress_floor(floor_data: Dictionary, seed_value: int, floor_number: i
 		var props: Array = []
 		var modern := int(room.get("generation",2)) >= 3
 		if modern:
-			room["fps_terrain"] = FirstPersonTerrain.plan_generation(room,geometry,zones)
+			room["fps_terrain"] = verticals.get(id,{})
 			zones.append_array(FirstPersonTerrain.reserved_zones(room,geometry))
 		if room.type in ["combat", "boss"]:
 			for point in pillar_points(cells, int(room.seed), vec2(room.pedestal)):

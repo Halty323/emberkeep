@@ -84,8 +84,10 @@ static func wants_vertical(data: Dictionary) -> bool:
 
 ## Called before furniture/partitions. The saved blueprint reserves one safe
 ## side annex; topology, rewards and gameplay RNG remain independent.
-static func plan_generation(data: Dictionary, geometry: RoomGeometry, zones: Array) -> Dictionary:
-	if not wants_vertical(data): return {}
+static func plan_generation(data: Dictionary, geometry: RoomGeometry, zones: Array, force := false) -> Dictionary:
+	if force:
+		if int(data.get("generation",2))<3 or data.get("type","")!="combat" or data.get("cells",[]).size()<2: return {}
+	elif not wants_vertical(data): return {}
 	var gen := RandomNumberGenerator.new()
 	gen.seed = Content.stable_hash("vertical-layout:%s:%s" % [str(data.get("seed",0)),str(data.get("id",""))])
 	var candidates: Array[Rect2] = []
@@ -259,9 +261,14 @@ func build(room) -> void:
 	if challenge(): build_annex_details(room)
 
 func build_upper_rails(room) -> void:
-	# Low raised curbs mark the drop while leaving the ramp mouth clear.
+	# Supported guards mark the drop while leaving the ramp mouth clear.
+	var finish := DungeonStyle.wood_material(Color("9b845e"))
 	for side in [ledge.position.x,ledge.end.x]:
-		Geo.box(room,Vector3(side,rise+.7,ledge.get_center().y),Vector3(.1,.1,ledge.size.y),Color("9b845e"))
+		var rail=Geo.box(room,Vector3(side,rise+.7,ledge.get_center().y),Vector3(.1,.1,ledge.size.y),Color("9b845e"))
+		rail.material_override=finish
+		for along in [.06,.5,.94]:
+			var post=Geo.box(room,Vector3(side,rise+.35,lerpf(ledge.position.y,ledge.end.y,along)),Vector3(.13,.7,.13),Color("9b845e"))
+			post.material_override=finish
 
 func build_cellar_banks(room) -> void:
 	var stone := DungeonStyle.wall_material(Color(room.look.get("wall","514c42")))
@@ -312,7 +319,7 @@ func build_annex_details(room) -> void:
 	for side in [-1,1]:
 		var column = Geo.box(room,Vector3(center.x+side*(ledge.size.x*.5-.2),rise+1.0,ledge.position.y+.18),Vector3(.22,2.0,.24),Color("736c58"))
 		column.material_override = stone
-	var shelf = Geo.box(room,Vector3(center.x,rise+.7,ledge.position.y+.22),Vector3(ledge.size.x-.7,.12,.35),Color("66523a"))
+	var shelf = Geo.box(room,Vector3(center.x,rise+.7,ledge.position.y+.22),Vector3(ledge.size.x-.4,.12,.35),Color("66523a"))
 	shelf.material_override = DungeonStyle.wood_material(Color("66523a"))
 	for i in 3:
 		var book = Geo.box(room,Vector3(center.x-.55+i*.5,rise+.9,ledge.position.y+.22),Vector3(.26,.3,.2),[Color("53614d"),Color("6a4540"),Color("4d5368")][i])

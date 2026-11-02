@@ -29,7 +29,7 @@ func setup(main_camera: Camera3D) -> void:
 	positional_shadow_atlas_quad_2 = Viewport.SHADOW_ATLAS_QUADRANT_SUBDIV_DISABLED
 	positional_shadow_atlas_quad_3 = Viewport.SHADOW_ATLAS_QUADRANT_SUBDIV_DISABLED
 	mirror = Camera3D.new()
-	mirror.cull_mask = 0xFFFFF & ~(2 | 8 | Geo.VIEW_LAYER)
+	mirror.cull_mask = 0xFFFFF & ~(2 | 8 | Geo.VIEW_LAYER | Geo.CORRIDOR_LAYER)
 	add_child(mirror)
 	mirror.current = true
 

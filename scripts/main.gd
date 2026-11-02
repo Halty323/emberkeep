@@ -5,6 +5,8 @@ const CAMERA_FOLLOW_GAIN = .45
 const CAMERA_FOCUS_LIMIT = Vector2(3.6, 2.8)
 var first_person := OS.get_environment("EMBERKEEP_LEGACY_TEST") != "1" and not "--isometric" in OS.get_cmdline_user_args()
 var fps: FirstPersonController
+var corridors: CorridorTransit
+var deferred_encounter: Dictionary={}
 var title_scene: EmberkeepTitleScene
 var stair_cinematic := StairCinematic.new()
 var room: DungeonRoom
@@ -170,6 +172,9 @@ func _ready() -> void:
 		fps = FirstPersonController.new()
 		add_child(fps)
 		fps.setup(self)
+		corridors=CorridorTransit.new()
+		add_child(corridors)
+		corridors.setup(self)
 		# Prewarm the shared ground maps for the current device budget. The
 		# remaining masonry/wood maps load with the authored title room.
 		for kind in 3: DungeonStyle.surface_maps(kind)
@@ -288,6 +293,7 @@ func _physics_process(delta: float) -> void:
 	var shooting = false
 	var aim_joy = Vector2(Input.get_joy_axis(0, JOY_AXIS_RIGHT_X), Input.get_joy_axis(0, JOY_AXIS_RIGHT_Y))
 	if first_person:
+		corridors.prepare()
 		fps.collect_look(delta)
 		aim = fps.shot_direction(fps.shot_origin())
 		shooting = ui.fire_touch >= 0 or (Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not ui.mouse_on_action and not fps.suppress_mouse_fire) or Input.get_joy_axis(0, JOY_AXIS_TRIGGER_RIGHT) > .25
@@ -322,7 +328,7 @@ func _physics_process(delta: float) -> void:
 		if is_instance_valid(shot) and is_playing(): shot.update_sim(delta)
 	shots = shots.filter(func(s): return is_instance_valid(s) and s.alive)
 	if residue: residue.update_sim(delta)
-	if hazards: hazards.update_sim(delta)
+	if hazards and deferred_encounter.is_empty(): hazards.update_sim(delta)
 	# A streak cools once kills stop coming.
 	kindle_quiet += delta
 	# A draught takes the heat away faster.
@@ -336,7 +342,7 @@ func _physics_process(delta: float) -> void:
 	if not Run.active: return
 	track_exploration()
 	# Posts and dropped lanterns never hold a room shut.
-	if not room.open and enemies.all(func(e): return e.inert):
+	if not room.open and deferred_encounter.is_empty() and enemies.all(func(e): return e.inert):
 		for enemy in enemies:
 			enemy.alive = false
 			enemy.queue_free()
@@ -355,6 +361,7 @@ func _physics_process(delta: float) -> void:
 		var portal_id: String = pending_portal
 		pending_portal = ""
 		begin_transition(portal_id)
+	if first_person: corridors.advance()
 
 func in_transition() -> bool:
 	return not transition.is_empty()
@@ -363,11 +370,7 @@ func in_transition() -> bool:
 ## simulation clock, so pausing holds it and every frame rate sees the same.
 func begin_transition(portal_id: String) -> void:
 	if first_person:
-		var facing = fps.yaw
-		travel(portal_id)
-		fps.yaw = facing
-		transition_cooldown = .65
-		light_veil.color.a = .15
+		corridors.arm(portal_id)
 		return
 	var side = Run.portal_side(portal_id, Run.current_room)
 	var door = RoomGeometry.socket_point(side.cell, side.dir)
@@ -595,6 +598,7 @@ func _process(delta: float) -> void:
 	vignette.set_shader_parameter("hurt", hurt_flash)
 	# The water's mirror runs only where there is water or ice to show it.
 	var wet = not in_menu and residue != null and is_instance_valid(residue) and residue.reflective()
+	if first_person and corridors.walking(): wet=false
 	mirror.follow(wet, get_viewport().get_visible_rect().size)
 	if residue and is_instance_valid(residue):
 		residue.set_mirror(mirror.render_target_update_mode == SubViewport.UPDATE_ALWAYS)
@@ -656,7 +660,9 @@ func camera_target(at: Vector3) -> Vector3:
 	return Vector3(center.x + clampf((at.x - center.x) * gain.x, -limit.x, limit.x), 0,
 		center.y + clampf((at.z - center.y) * gain.y, -limit.y, limit.y))
 
-func clean_room(keep_view := false) -> void:
+func clean_room(keep_view := false, keep_corridor := false) -> void:
+	deferred_encounter={}
+	if corridors and not keep_corridor: corridors.reset()
 	stair_cinematic.cancel(self)
 	for shot in shots:
 		if is_instance_valid(shot): shot.queue_free()
@@ -759,6 +765,7 @@ func continue_run() -> void:
 	if not Run.load_run():
 		ui.notify("This save could not be loaded", "Start a fresh run.")
 		return
+	if first_person and VerticalPlans.upgrade_unvisited(Run.rooms,Run.portals,Run.floor_number): Run.save_run()
 	in_menu = false
 	paused = false
 	if first_person:
@@ -777,13 +784,19 @@ func saved_entry() -> Vector3:
 		return Vector3(float(Run.entry.position[0]), 0, float(Run.entry.position[1]))
 	return Vector3(0, 0, 2.0)
 
-func enter_room(spawn: Vector3, keep_view := false) -> void:
-	clean_room(keep_view)
+func enter_room(spawn: Vector3, keep_view := false, walking_state: Dictionary = {}) -> void:
+	clean_room(keep_view,not walking_state.is_empty())
 	var data: Dictionary = Run.rooms[Run.current_room]
 	data.visited = true
-	room = DungeonRoom.new()
-	scene_root.add_child(room)
-	room.build(self, data)
+	if walking_state.get("room")!=null:
+		room=walking_state.room
+		scene_root.add_child(room)
+		room.geometry.apply_shader_mask()
+	else:
+		room = DungeonRoom.new()
+		scene_root.add_child(room)
+		room.build(self, data)
+	room.entry_portal=str(walking_state.get("portal",""))
 	residue = ResidueField.new()
 	scene_root.add_child(residue)
 	residue.setup(self, room.geometry)
@@ -799,51 +812,30 @@ func enter_room(spawn: Vector3, keep_view := false) -> void:
 	var safe = room.geometry.safe_point(Vector2(spawn.x, spawn.z), .5, room.blocked_at)
 	spawn = Vector3(safe.x, 0, safe.y)
 	Run.entry = {"room": Run.current_room, "position": [snappedf(safe.x, .001), snappedf(safe.y, .001)]}
-	player = Adventurer.new()
-	scene_root.add_child(player)
-	player.setup(self)
+	if walking_state.has("player"):
+		player=walking_state.player
+		scene_root.add_child(player)
+	else:
+		player = Adventurer.new()
+		scene_root.add_child(player)
+		player.setup(self)
 	if first_person:
 		spawn.y = room.floor_height(spawn) + .03
 		Run.entry["height"] = spawn.y
-	player.place(spawn)
-	player.invulnerability = 1.0
+	if walking_state.has("player"):
+		player.position=walking_state.position
+		player.last_valid=walking_state.last_valid
+		player.reset_physics_interpolation()
+	else:
+		player.place(spawn)
+		player.invulnerability = 1.0
 	transition_cooldown = .9
-	var gen = RandomNumberGenerator.new()
-	gen.seed = int(data.seed)
 	if not data.cleared and data.type in ["combat", "boss"]:
 		room.set_open(false)
-		# The encounter restarts from its seed: each foe has a stable source id,
-		# and the room's credit ledger stops a respawned foe paying out twice.
-		if data.type == "boss":
-			spawn_enemy(room.pedestal + Vector3(0, 0, -2.5), "boss", "%s:boss" % data.id)
+		if walking_state.is_empty():
+			spawn_room_encounter(data,spawn)
 		else:
-			var cells: int = room.geometry.cells.size()
-			var count = roundi((3 + mini(Run.floor_number, 4) + mini(int(data.depth) / 3, 2)) * (1.0 + .45 * (cells - 1)))
-			if first_person: count = clampi(roundi(count * .75), 3, 12)
-			if Run.has_twist("swarming"): count = roundi(count * 1.35)
-			var roster = Foes.roster_for(Run.theme_id(), Run.floor_number, Run.floor_plan)
-			var chance = Foes.elite_chance(Run.floor_number) + (.2 if Run.has_twist("gilded") else 0.0)
-			var plan: Array = Foes.compose(roster, chance, count, gen)
-			var spawned: Array = []
-			for i in plan.size():
-				var center = RoomGeometry.cell_center(room.geometry.cells[i % cells])
-				var p = Vector3(gen.randf_range(-6, 6), 0, gen.randf_range(-4, 4))
-				if p.distance_to(spawn - Vector3(center.x, 0, center.y)) < 3.0: p = -p
-				p += Vector3(center.x, 0, center.y)
-				# A rootling grows a few steps from its partner.
-				if plan[i].partner >= 0 and plan[i].partner < i:
-					p = spawned[plan[i].partner].global_position + Vector3(3.5, 0, 0).rotated(Vector3.UP, gen.randf() * TAU)
-				for obstacle in room.obstacles:
-					if p.distance_to(obstacle.position) < 1.6: p.z = center.y
-				if p.distance_to(spawn) < 3.0:
-					p = spawn + (p - spawn).normalized() * 3.5 if not p.is_equal_approx(spawn) else spawn + Vector3(3.5, 0, 0)
-				spawned.append(spawn_enemy(p, plan[i].kind, "%s:e%d" % [data.id, i]))
-			for i in plan.size():
-				if plan[i].partner > i: spawned[i].bind_partner(spawned[plan[i].partner])
-				if plan[i].elite == "twinned":
-					if plan[i].twin > i: spawned[i].make_elite("twinned", spawned[plan[i].twin])
-				elif plan[i].elite != "":
-					spawned[i].make_elite(plan[i].elite)
+			deferred_encounter={"room":Run.current_room}
 	else:
 		room.set_open(true)
 		if ExpeditionBalance.active_new_run() and data.type in ["combat","boss"] and data.cleared and data.has("clear_reward") and not data.get("clear_reward_paid",false): resolve_expedition_clear(data)
@@ -877,13 +869,65 @@ func enter_room(spawn: Vector3, keep_view := false) -> void:
 		var view = Vector3(float(mount.view[0]), 0, float(mount.view[1]))
 		interactions.register("painting:" + mount_id, "painting", view, 2.0, "", room.paintings[mount_id].node)
 	for bomb in Run.pending_bombs:
-		if bomb.room == Run.current_room: spawn_bomb_view(bomb)
+		if bomb.room != Run.current_room: continue
+		var carried_bombs: Dictionary=walking_state.get("bombs",{})
+		if carried_bombs.has(bomb.id):
+			var view: Node3D=carried_bombs[bomb.id]
+			scene_root.add_child(view)
+			bomb_views[bomb.id]=view
+		else: spawn_bomb_view(bomb)
 	sync_companions()
 	if data.type == "boss" and not data.cleared:
 		var line: Array = Run.theme().boss.intro
 		ui.notify(line[0], line[1], Color("e0a18b"))
 	apply_floor_light()
 	update_camera(0.0, true)
+
+func spawn_room_encounter(data: Dictionary, spawn: Vector3) -> void:
+	var gen:=RandomNumberGenerator.new()
+	gen.seed=int(data.seed)
+	# The encounter restarts from its seed: each foe has a stable source id,
+	# and the room's credit ledger stops a respawned foe paying out twice.
+	if data.type == "boss":
+		spawn_enemy(room.pedestal + Vector3(0, 0, -2.5), "boss", "%s:boss" % data.id)
+	else:
+		var cells: int = room.geometry.cells.size()
+		var count = roundi((3 + mini(Run.floor_number, 4) + mini(int(data.depth) / 3, 2)) * (1.0 + .45 * (cells - 1)))
+		if first_person: count = clampi(roundi(count * .75), 3, 12)
+		if Run.has_twist("swarming"): count = roundi(count * 1.35)
+		var roster = Foes.roster_for(Run.theme_id(), Run.floor_number, Run.floor_plan)
+		var chance = Foes.elite_chance(Run.floor_number) + (.2 if Run.has_twist("gilded") else 0.0)
+		var plan: Array = Foes.compose(roster, chance, count, gen)
+		var spawned: Array = []
+		for i in plan.size():
+			var center = RoomGeometry.cell_center(room.geometry.cells[i % cells])
+			var p = Vector3(gen.randf_range(-6, 6), 0, gen.randf_range(-4, 4))
+			if p.distance_to(spawn - Vector3(center.x, 0, center.y)) < 3.0: p = -p
+			p += Vector3(center.x, 0, center.y)
+			# A rootling grows a few steps from its partner.
+			if plan[i].partner >= 0 and plan[i].partner < i:
+				p = spawned[plan[i].partner].global_position + Vector3(3.5, 0, 0).rotated(Vector3.UP, gen.randf() * TAU)
+			for obstacle in room.obstacles:
+				if p.distance_to(obstacle.position) < 1.6: p.z = center.y
+			if p.distance_to(spawn) < 3.0:
+				p = spawn + (p - spawn).normalized() * 3.5 if not p.is_equal_approx(spawn) else spawn + Vector3(3.5, 0, 0)
+			spawned.append(spawn_enemy(p, plan[i].kind, "%s:e%d" % [data.id, i]))
+		for i in plan.size():
+			if plan[i].partner > i: spawned[i].bind_partner(spawned[plan[i].partner])
+			if plan[i].elite == "twinned":
+				if plan[i].twin > i: spawned[i].make_elite("twinned", spawned[plan[i].twin])
+			elif plan[i].elite != "":
+				spawned[i].make_elite(plan[i].elite)
+
+func activate_corridor_encounter() -> void:
+	if deferred_encounter.is_empty(): return
+	var id: String=deferred_encounter.room
+	deferred_encounter={}
+	if id!=Run.current_room: return
+	var data: Dictionary=Run.rooms[id]
+	if not data.cleared and data.type in ["combat","boss"]:
+		room.set_open(false)
+		spawn_room_encounter(data,player.position)
 
 ## The tower brightens floor by floor; the title keeps its own warm light.
 func apply_floor_light() -> void:
@@ -912,6 +956,7 @@ func heat_sources(limit: int) -> Array:
 ## Each doorway trigger names one specific portal; the transition itself is
 ## scheduled for the end of the physics tick.
 func check_portals() -> void:
+	if first_person: return # Walkable corridors own first-person room boundaries.
 	var at = Vector2(player.position.x, player.position.z)
 	for portal_id in Run.rooms[Run.current_room].get("portals", []):
 		if Run.portals[portal_id].state not in ["open", "revealed"]: continue
@@ -928,6 +973,62 @@ func travel(portal_id: String, keep_view := false) -> void:
 	Audio.play_sound("door")
 	var point = RoomGeometry.entry_point(side.cell, side.dir)
 	enter_room(Vector3(point.x, 0, point.y), keep_view)
+
+func enter_corridor_room(destination: String, portal_id: String, shift: Vector3) -> void:
+	var carried:=player
+	var at: Vector3=player.position-shift
+	var last: Vector3=player.last_valid-shift
+	var kept_shots: Array=[]
+	for shot in shots:
+		if is_instance_valid(shot) and shot.alive and corridors.contains_point(Vector2(shot.position.x-shift.x,shot.position.z-shift.z)):
+			scene_root.remove_child(shot)
+			shot.position-=shift
+			shot.start_position-=shift
+			kept_shots.append(shot)
+	shots=shots.filter(func(shot): return shot not in kept_shots)
+	var kept_bombs: Dictionary={}
+	for bomb in Run.pending_bombs:
+		if bomb.room!=Run.current_room: continue
+		var point:=FloorGenerator.vec2(bomb.position)-Vector2(shift.x,shift.z)
+		if not corridors.contains_point(point): continue
+		bomb.room=destination
+		bomb.position=FloorGenerator.point_array(point)
+		var view: Node3D=bomb_views.get(bomb.id)
+		if is_instance_valid(view):
+			scene_root.remove_child(view)
+			view.position-=shift
+			view.reset_physics_interpolation()
+			kept_bombs[bomb.id]=view
+	scene_root.remove_child(carried)
+	var prepared:=corridors.take_preloaded(destination)
+	Run.current_room=destination
+	var side:=Run.portal_side(portal_id,destination)
+	var entry_point:=RoomGeometry.entry_point(side.cell,side.dir)
+	enter_room(Vector3(entry_point.x,0,entry_point.y),false,{"player":carried,"position":at,"last_valid":last,"portal":portal_id,"room":prepared,"bombs":kept_bombs})
+	for shot in kept_shots:
+		scene_root.add_child(shot)
+		shot.shine()
+		shot.reset_physics_interpolation()
+		shots.append(shot)
+	camera.reset_physics_interpolation()
+	Audio.play_sound("door",.5)
+
+func walkable_at(point: Vector2, margin := .1) -> bool:
+	if room.geometry.contains(point,margin): return true
+	if not first_person or not corridors or not is_instance_valid(corridors.active): return false
+	if corridors.contains_point(point,margin): return true
+	# Clearance belongs to the UNION. Shrinking the room and corridor
+	# separately creates an invisible two-radius wall at their shared seam.
+	for offset in [Vector2.ZERO,Vector2.RIGHT,Vector2.LEFT,Vector2.UP,Vector2.DOWN,Vector2(.707,.707),Vector2(-.707,.707),Vector2(.707,-.707),Vector2(-.707,-.707)]:
+		var p: Vector2=point+offset*margin
+		if not room.geometry.contains(p,0) and not corridors.contains_point(p,0): return false
+	return true
+
+func recover_player(previous: Vector2, proposed: Vector2, margin: float) -> Vector2:
+	if walkable_at(proposed,margin): return proposed
+	for candidate in [Vector2(proposed.x,previous.y),Vector2(previous.x,proposed.y),previous]:
+		if walkable_at(candidate,margin): return candidate
+	return room.geometry.safe_point(previous,margin)
 
 func spawn_enemy(at: Vector3, kind: String, source := "") -> DungeonEnemy:
 	# Each floor theme has its own boss.

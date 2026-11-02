@@ -44,12 +44,13 @@ func exercise() -> void:
 	var rng_state: int = run.rng.state
 	for gate in room.gates:
 		check(gate.get_meta("physical_doorway",false),"doorway has physical connector presentation")
-		check(gate.get_node("Barrier").get_child_count()==2 and gate.get_node("Outline").get_child_count()==2,"each door has two genuine hinged leaves in both poses")
+		check(gate.get_node("Barrier").has_node("LeftLeaf") and gate.get_node("Barrier").has_node("RightLeaf") and gate.get_node("Outline").get_child_count()==2,"each door keeps both hinged leaves alongside its new physical barrier")
 		check(not gate.get_node("Barrier").visible and gate.get_node("Outline").visible,"open room shows the open leaf pose")
 		var lights: Array = gate.find_children("*","Light3D",true,false)
 		check(lights.is_empty(),"doorway does not allocate local or cube-shadow lights")
 		var meshes: Array = gate.find_children("*","MeshInstance3D",true,false)
-		check(meshes.size() <= 14,"doorway geometry is merged into bounded finish batches")
+		check(meshes.size() <= 16,"door and walkable preview geometry stay in bounded finish batches")
+		check(gate.get_node("Connector").find_children("*","StaticBody3D",true,false).size()==2,"preview has real floor and wall collision")
 		check(meshes.all(func(mesh): return mesh.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF),"connector details add no shadow passes")
 		check(not meshes.any(func(mesh): return mesh.material_override is StandardMaterial3D and mesh.material_override.blend_mode == BaseMaterial3D.BLEND_MODE_ADD),"open doorway has no emissive rectangle")
 	room.set_open(false)
@@ -106,8 +107,8 @@ func exercise() -> void:
 	var portal_id: String = record.portals[0]
 	var other_room: String = run.other_room(portal_id,run.current_room)
 	game.begin_transition(portal_id)
-	check(run.current_room==other_room,"physical doorway still travels through its explicit paired portal")
-	check(game.room.geometry.contains(Vector2(game.player.position.x,game.player.position.z),.3),"arrival after real door travel stays on walkable ground")
+	check(run.current_room!=other_room and game.corridors.portal_id==portal_id,"door approach prepares its paired corridor instead of teleporting")
+	check(game.transition.is_empty() and is_zero_approx(game.light_veil.color.a),"corridor approach never starts the retired doorway fade")
 	game.queue_free()
 	for frame in 3: await process_frame
 	print("DOORS AND EMBER SURFACES: %d checks, %d failures" % [checks,failures])

@@ -5,6 +5,7 @@ uniform sampler2D paint : source_color, filter_linear_mipmap_anisotropic, repeat
 uniform sampler2D relief_map : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D orm : filter_linear_mipmap, repeat_enable;
 uniform vec2 uv_aspect = vec2(1.0);
+uniform vec2 tile_scale = vec2(.45,.55);
 uniform bool local_space = false;
 uniform float relief_depth = 0.0;
 varying vec3 position;
@@ -30,12 +31,12 @@ void fragment() {
     } else {
         t=vec3(sign(n.z),0,0); b=vec3(0,1,0); uv=vec2(position.x*sign(n.z),position.y);
     }
-    uv *= vec2(.45,.55)*uv_aspect;
+    uv *= tile_scale*uv_aspect;
     if (relief_depth > 0.0) {
         vec3 to_eye = eye_position-position;
         float fade = 1.0-smoothstep(5.0,13.0,length(to_eye));
         vec2 slide = vec2(dot(to_eye,t),dot(to_eye,b))/max(abs(dot(to_eye,n)),.65);
-        uv = carved_uv(orm,uv,clamp(slide,vec2(-3.0),vec2(3.0))*vec2(.45,.55)*uv_aspect*relief_depth*fade);
+        uv = carved_uv(orm,uv,clamp(slide,vec2(-3.0),vec2(3.0))*tile_scale*uv_aspect*relief_depth*fade);
     }
     vec3 color = texture(paint,uv).rgb;
     vec3 physical = texture(orm,uv).rgb;

@@ -246,7 +246,7 @@ func update_sim(delta: float) -> void:
 	var geometry: RoomGeometry = game.room.geometry
 	var flat_from = Vector2(global_position.x, global_position.z)
 	var flat_to = Vector2(target_position.x, target_position.z)
-	var boundary = not geometry.contains(flat_to, .1)
+	var boundary = not game.walkable_at(flat_to,.1) if game.first_person else not geometry.contains(flat_to,.1)
 	if friendly and not hit.is_empty() and is_instance_valid(hit.collider) and hit.collider.has_meta("prop_id"):
 		game.hit_prop(hit.collider.get_meta("prop_id"), damage)
 	if not hit.is_empty() or boundary:

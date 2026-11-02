@@ -1,6 +1,6 @@
 # Carved-light style experiment
 
-Branch: **`experiment/stylized-lighting`**, based on the verified 0.5.0 expedition update. Engine: **Godot 4.7.2 Standard**, Compatibility renderer. This branch changes presentation; the compact dungeon generator, difficulty, chest-only active items, stairs, controls, collections and save format remain the same.
+Branch: **`experiment/stylized-lighting`**, based on the verified 0.5.0 expedition update. Engine: **Godot 4.7.2 Standard**, Compatibility renderer. The [2 November corridor update](CORRIDOR_UPDATE.md) adds walkable room connections, guaranteed main-route vertical chambers, supported architecture and PowerVR SSAO. Difficulty, chest-only active items, stairs, controls, collections and save format retain their existing rules.
 
 ## Art direction
 
@@ -28,7 +28,7 @@ The extra room render stops in dry rooms and at Effects Low. It is bounded to 25
 
 The Compatibility renderer dropped lit opaque surfaces when the mirror's shadow atlas was disabled with size zero. A **256px atlas with one 128px spotlight tile** supplies a valid bounded target; no new shadow lights or cube shadows are added. The native review now checks detail in the mirror image itself, in addition to testing its projection mathematically. The fixed fixture contains 21,161 surface edges; the broken image contained only 595 edges from its sky boundary and small flames.
 
-The PowerVR GLES policy keeps reflections/radiance, refraction, glow and depth-based SSAO off, mobile MSAA disabled, and the existing 1280×720 pixel budget. It still receives the new artwork, normal detail, material roughness, fixture lighting and flame shaders. No Vulkan requirement or runtime asset downloads are added.
+The PowerVR GLES policy keeps reflections/radiance, refraction and glow off, mobile MSAA disabled, and the existing 1280×720 pixel budget. The 2 November update enables depth-based SSAO with a six/eight-sample budget independent of color post-processing. It also receives the authored artwork, normal detail, material roughness, fixture lighting and flame shaders. No Vulkan requirement or runtime asset downloads are added.
 
 ## Review
 

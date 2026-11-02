@@ -6,6 +6,7 @@ static var materials: Dictionary = {}
 # (layer 5). Unlit screen effects and reflected flames stay outside this mask.
 const VIEW_LAYER := 16
 const FLAME_LAYER := 32
+const CORRIDOR_LAYER := 64
 const LIT_LAYERS := 1 | 8 | VIEW_LAYER
 # Identical primitives share one mesh resource; nothing mutates a mesh after
 # creation (cutaways scale nodes), so sharing is safe and saves uploads.

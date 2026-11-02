@@ -114,6 +114,25 @@ static func metal_material(color: Color, local_space := false, vertex_color := f
 	materials[key] = mat
 	return mat
 
+## Corridor vertices keep their authored UV frame when the streaming origin
+## moves. Reusing the dominant-axis shader avoids any texture jump at a bend.
+static func corridor_material(family: String) -> ShaderMaterial:
+	var key := "corridor:"+family+":"+str(DungeonPBR.resolution())
+	if materials.has(key): return materials[key]
+	var textures := DungeonPBR.maps(family)
+	var mat := ShaderMaterial.new()
+	mat.shader=preload("res://shaders/dungeon_wood.gdshader")
+	mat.set_shader_parameter("local_space",true)
+	mat.set_shader_parameter("tint",Color("ced6dc"))
+	mat.set_shader_parameter("paint",textures.paint)
+	mat.set_shader_parameter("relief_map",textures.normal)
+	mat.set_shader_parameter("orm",textures.orm)
+	mat.set_shader_parameter("uv_aspect",textures.uv_aspect)
+	mat.set_shader_parameter("tile_scale",Vector2(.25,.25))
+	set_relief(mat,.035)
+	materials[key]=mat
+	return mat
+
 static func dress_props(room) -> void:
 	for entry in room.props.values():
 		var brazier: bool = entry.definition.recipe == "brazier"

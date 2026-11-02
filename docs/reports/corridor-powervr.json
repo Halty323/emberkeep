@@ -1,0 +1,173 @@
+[
+  {
+    "draw_calls": 317.0,
+    "eye": [
+      20.1522407531738,
+      1.52999997138977,
+      6.23463296890259
+    ],
+    "floor": 1,
+    "player_id": 182485781907,
+    "room": "0,-2",
+    "seed": 31609250,
+    "ssao": "low",
+    "ssao_samples": 6,
+    "texture_mb": 27.1769552230835,
+    "vertical_kind": "upper",
+    "vertical_rise": 2.8,
+    "video_mb": 34.3833494186401,
+    "view": "upper-room"
+  },
+  {
+    "draw_calls": 316.0,
+    "eye": [
+      20.1522407531738,
+      1.52999997138977,
+      6.23463296890259
+    ],
+    "floor": 1,
+    "player_id": 182485781907,
+    "room": "0,-2",
+    "seed": 31609250,
+    "ssao": "off",
+    "ssao_samples": 6,
+    "texture_mb": 27.1769552230835,
+    "vertical_kind": "upper",
+    "vertical_rise": 2.8,
+    "video_mb": 34.3833494186401,
+    "view": "upper-ssao-off"
+  },
+  {
+    "draw_calls": 317.0,
+    "eye": [
+      20.1522407531738,
+      1.52999997138977,
+      6.23463296890259
+    ],
+    "floor": 1,
+    "player_id": 182485781907,
+    "room": "0,-2",
+    "seed": 31609250,
+    "ssao": "low",
+    "ssao_samples": 6,
+    "texture_mb": 27.1769552230835,
+    "vertical_kind": "upper",
+    "vertical_rise": 2.8,
+    "video_mb": 34.3833494186401,
+    "view": "upper-ssao-on"
+  },
+  {
+    "draw_calls": 359.0,
+    "eye": [
+      22.0,
+      4.32999992370605,
+      -1.62999999523163
+    ],
+    "floor": 1,
+    "player_id": 182485781907,
+    "room": "0,-2",
+    "seed": 31609250,
+    "ssao": "low",
+    "ssao_samples": 6,
+    "texture_mb": 27.1769552230835,
+    "vertical_kind": "upper",
+    "vertical_rise": 2.8,
+    "video_mb": 34.3833494186401,
+    "view": "upper-landing"
+  },
+  {
+    "draw_calls": 599.0,
+    "eye": [
+      -4.0,
+      1.52999997138977,
+      7.0
+    ],
+    "floor": 2,
+    "player_id": 219009781863,
+    "room": "1,-1",
+    "seed": 31609250,
+    "ssao": "low",
+    "ssao_samples": 6,
+    "texture_mb": 27.1695098876953,
+    "vertical_kind": "cellar",
+    "vertical_rise": -2.6,
+    "video_mb": 34.510181427002,
+    "view": "cellar-room"
+  },
+  {
+    "draw_calls": 119.0,
+    "eye": [
+      -7.19999980926514,
+      1.52999997138977,
+      0.0
+    ],
+    "floor": 1,
+    "player_id": 232934869336,
+    "room": "0,0",
+    "seed": 31609250,
+    "ssao": "low",
+    "ssao_samples": 6,
+    "texture_mb": 27.1653890609741,
+    "vertical_kind": "gallery",
+    "vertical_rise": 0,
+    "video_mb": 34.1620397567749,
+    "view": "doorway-preview"
+  },
+  {
+    "draw_calls": 133.0,
+    "eye": [
+      -7.19999980926514,
+      1.52999997138977,
+      0.0
+    ],
+    "floor": 1,
+    "player_id": 232934869336,
+    "room": "0,0",
+    "seed": 31609250,
+    "ssao": "low",
+    "ssao_samples": 6,
+    "texture_mb": 27.1653890609741,
+    "vertical_kind": "gallery",
+    "vertical_rise": 0,
+    "video_mb": 34.6250638961792,
+    "view": "corridor-entry"
+  },
+  {
+    "draw_calls": 5.0,
+    "eye": [
+      -14.9000005722046,
+      1.52999997138977,
+      5.5
+    ],
+    "floor": 1,
+    "player_id": 232934869336,
+    "room": "0,0",
+    "seed": 31609250,
+    "ssao": "low",
+    "ssao_samples": 6,
+    "texture_mb": 27.1653890609741,
+    "vertical_kind": "gallery",
+    "vertical_rise": 0,
+    "video_mb": 34.6128377914429,
+    "view": "handoff-before"
+  },
+  {
+    "draw_calls": 387.0,
+    "eye": [
+      13.899998664856,
+      1.52999997138977,
+      5.5
+    ],
+    "floor": 1,
+    "player_id": 232934869336,
+    "room": "-1,0",
+    "seed": 31609250,
+    "ssao": "low",
+    "ssao_samples": 6,
+    "texture_mb": 27.1695098876953,
+    "vertical_kind": "gallery",
+    "vertical_rise": 0,
+    "video_mb": 34.6277618408203,
+    "view": "handoff-after"
+  }
+]

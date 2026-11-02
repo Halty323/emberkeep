@@ -15,6 +15,10 @@ static func for_device(platform: String, vendor: String, adapter: String, method
 	return {
 		"msaa": not mobile_gles,
 		"post_processing": not conservative,
+		# Contact AO reads depth only. It does not use the color-copy/MSAA
+		# path that failed on PowerVR; keep a smaller finite sampling budget.
+		"ambient_occlusion": true,
+		"ssao_samples": Vector2i(6,8) if conservative else Vector2i(8,12),
 		"glow": not conservative,
 		"reflections": not conservative,
 		"refraction": not conservative,

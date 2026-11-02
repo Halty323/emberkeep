@@ -1,25 +1,46 @@
 class_name FirstPersonArchitecture
 extends RefCounted
-## Dressed stone and timber use the same small painted maps as the dungeon.
-## Three mesh batches per room give eye-level silhouettes a PS2-era economy:
+## Dressed stone and timber share the dungeon's carved materials.
+## Three mesh batches per room give supported eye-level silhouettes:
 ## no extra lights, shadow passes, alpha surfaces or gameplay colliders.
 static func build(room) -> void:
+	var parts := layout(room)
+	var cap = Color(room.look.get("cap", "766e5b")).lerp(Color("a18d69"), .22)
+	batch(room, "VaultRibs", parts.stone, DungeonStyle.wall_material(cap.darkened(.12)))
+	batch(room, "DressedStone", parts.dressed, DungeonStyle.wall_material(cap.lightened(.07), true))
+	batch(room, "CeilingCoffers", parts.timber, DungeonStyle.wood_material(Color("66523a")))
+
+## Keep the authored transforms available before GPU upload. This is also
+## usable by collision/architecture tools on a headless render server.
+static func layout(room) -> Dictionary:
 	var stone: Array[Transform3D] = []
 	var dressed: Array[Transform3D] = []
 	var timber: Array[Transform3D] = []
 	for cell in room.geometry.cells:
 		var center = RoomGeometry.cell_center(cell)
+		var cuts: Array[Rect2]=[]
+		for field in ["stairs","stairwell"]:
+			if room.data.has(field):
+				var point:=FloorGenerator.vec2(room.data[field])
+				cuts.append(Rect2(point-Vector2.ONE*(Staircase.OUTER+.65),Vector2.ONE*(Staircase.OUTER+.65)*2))
 		# Thick segmented ribs frame pools of lantern light. The arch starts
 		# above every walkable head clearance and never narrows a doorway.
-		for depth in [-4.6, 0.0, 4.6]:
-			arch(stone, Vector3(center.x, 3.3, center.y + depth), 8.64, 1.97, 12, .25, .34)
-			box(dressed, Vector3(center.x, 5.27, center.y + depth), Vector3(.5, .25, .49))
+		# A cell boundary inside a larger room has no supporting wall. Never
+		# hang half an arch in that opening. Only complete supported ribs remain.
+		if arch_supported(room.geometry,cell):
+			for depth in [-4.6, 0.0, 4.6]:
+				var band:=Rect2(center+Vector2(-9,depth-.3),Vector2(18,.6))
+				if cuts.any(func(cut): return cut.intersects(band)): continue
+				arch(stone, Vector3(center.x, 3.3, center.y + depth), 8.85, 1.97, 12, .29, .38)
+				for side in [-1,1]:
+					box(dressed,Vector3(center.x+side*8.88,3.29,center.y+depth),Vector3(.65,.42,.58))
+				box(dressed, Vector3(center.x, 5.32, center.y + depth), Vector3(.5, .3, .49))
 		# Ceiling coffers are real low-poly forms, rather than another screen
 		# effect. The gaps and grain catch the existing warm local lights.
 		for depth in [-5.8, -2.9, 0.0, 2.9, 5.8]:
-			box(timber, Vector3(center.x, 5.36, center.y + depth), Vector3(17.5, .13, .17))
+			ceiling_beam(timber,Rect2(center+Vector2(-9,depth-.085),Vector2(18,.17)),cuts)
 		for across in [-5.4, 0.0, 5.4]:
-			box(timber, Vector3(center.x + across, 5.33, center.y), Vector3(.16, .18, 13.75))
+			ceiling_beam(timber,Rect2(center+Vector2(across-.08,-7),Vector2(.16,14)),cuts)
 
 	for segment in room.geometry.wall_segments():
 		if segment.to - segment.from < .4: continue
@@ -59,13 +80,20 @@ static func build(room) -> void:
 		arch(dressed, base + Vector3.UP * 3.01, 1.22, .69, 8, .22, .24, yaw)
 		box(dressed, base + Vector3.UP * 3.73, Vector3(.3, .34, .3), yaw)
 
-	var cap = Color(room.look.get("cap", "766e5b")).lerp(Color("a18d69"), .22)
-	batch(room, "VaultRibs", stone, DungeonStyle.wall_material(cap.darkened(.12)))
-	batch(room, "DressedStone", dressed, DungeonStyle.wall_material(cap.lightened(.07), true))
-	batch(room, "CeilingCoffers", timber, DungeonStyle.wood_material(Color("66523a")))
+	return {"stone":stone,"dressed":dressed,"timber":timber}
 
 static func box(transforms: Array[Transform3D], at: Vector3, size: Vector3, yaw := 0.0) -> void:
 	transforms.append(Transform3D((Basis(Vector3.UP, yaw) * Basis.from_scale(size)), at))
+
+static func arch_supported(geometry: RoomGeometry, cell: Vector2i) -> bool:
+	return not geometry.cell_set.has(cell+Vector2i.LEFT) and not geometry.cell_set.has(cell+Vector2i.RIGHT)
+
+static func ceiling_beam(transforms: Array[Transform3D], area: Rect2, cuts: Array[Rect2]) -> void:
+	var pieces: Array[Rect2]=[area]
+	for cut in cuts: pieces=FirstPersonTerrain.subtract_rects(pieces,cut)
+	for piece in pieces:
+		var at:=piece.get_center()
+		box(transforms,Vector3(at.x,5.39,at.y),Vector3(piece.size.x,.18,piece.size.y))
 
 static func arch(transforms: Array[Transform3D], at: Vector3, radius: float, rise: float, segments: int, thickness: float, depth: float, yaw := 0.0) -> void:
 	var turn = Basis(Vector3.UP, yaw)
@@ -75,7 +103,7 @@ static func arch(transforms: Array[Transform3D], at: Vector3, radius: float, ris
 		var start = Vector3(cos(a) * radius, sin(a) * rise, 0)
 		var end = Vector3(cos(b) * radius, sin(b) * rise, 0)
 		var direction = end - start
-		var basis = turn * Basis(Vector3.BACK, atan2(direction.y, direction.x)) * Basis.from_scale(Vector3(direction.length() - .025, thickness, depth))
+		var basis = turn * Basis(Vector3.BACK, atan2(direction.y, direction.x)) * Basis.from_scale(Vector3(direction.length() + .045, thickness, depth))
 		transforms.append(Transform3D(basis, at + turn * (start + end) / 2.0))
 
 static func batch(room, label: String, transforms: Array[Transform3D], material: Material) -> void:

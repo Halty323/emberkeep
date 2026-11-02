@@ -39,6 +39,7 @@ var _quality_enabled = null
 var gates: Array[Node3D] = []
 var sockets: Dictionary = {}
 var open = true
+var entry_portal := ""
 var time = 0.0
 var ember_mesh: MultiMeshInstance3D
 var ember_origins: Array[Vector3] = []
@@ -856,8 +857,11 @@ func blocked_at(point: Vector2) -> bool:
 func set_open(value: bool) -> void:
 	open = value
 	for gate in gates:
-		gate.get_node("Barrier").visible = not value
-		gate.get_node("Outline").visible = value
+		var opened: bool=value or (not entry_portal.is_empty() and gate.get_meta("portal","")==entry_portal)
+		var barrier:=gate.get_node("Barrier")
+		barrier.visible = not opened
+		barrier.process_mode=Node.PROCESS_MODE_DISABLED if opened else Node.PROCESS_MODE_INHERIT
+		gate.get_node("Outline").visible = opened
 
 func apply_lighting_quality() -> void:
 	var enabled: bool = Settings.values.shadows

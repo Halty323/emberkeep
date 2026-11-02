@@ -153,7 +153,7 @@ func move_player(player, delta: float, move_input: Vector2) -> void:
 	player.move_and_slide()
 	player.velocity -= player.push
 	player.push = player.push.move_toward(Vector3.ZERO, delta * 14)
-	var kept: Vector2 = game.room.geometry.recover(Vector2(player.last_valid.x, player.last_valid.z), Vector2(player.position.x, player.position.z), .34)
+	var kept: Vector2 = game.recover_player(Vector2(player.last_valid.x, player.last_valid.z), Vector2(player.position.x, player.position.z), .34)
 	player.position.x = kept.x
 	player.position.z = kept.y
 	# Repair penetration from an old checkpoint or a changed solid surface.
