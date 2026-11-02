@@ -22,6 +22,25 @@ var probe_only := false
 var skipped_scenes := 0
 var report: Dictionary = {}
 
+## One material batch. Each primitive is appended as whole packed arrays
+## (its vertices once, then its indices), not one engine call per corner.
+class Batch:
+	var vertices := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var colors := PackedColorArray()
+	var indices := PackedInt32Array()
+
+	func commit() -> ArrayMesh:
+		var arrays := []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = vertices
+		arrays[Mesh.ARRAY_NORMAL] = normals
+		arrays[Mesh.ARRAY_COLOR] = colors
+		arrays[Mesh.ARRAY_INDEX] = indices
+		var mesh := ArrayMesh.new()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		return mesh
+
 static func decorate(room) -> Dictionary:
 	var builder = ThemedInteriors.new()
 	var theme: String = Run.theme_id()
@@ -372,17 +391,20 @@ func shape(kind: String, transform: Transform3D, color: Color, finish: String) -
 		piece_count += 1
 		return
 	if vertex_count + count > limit: return
-	if not groups.has(finish):
-		var tool = SurfaceTool.new()
-		tool.begin(Mesh.PRIMITIVE_TRIANGLES)
-		groups[finish] = tool
-	var tool: SurfaceTool = groups[finish]
+	if not groups.has(finish): groups[finish] = Batch.new()
+	var batch: Batch = groups[finish]
+	var base := batch.vertices.size()
 	var normal_basis = transform.basis.inverse().transposed()
-	for index in count:
-		var i = indices[index] if not indices.is_empty() else index
-		tool.set_normal((normal_basis*normals[i]).normalized())
-		tool.set_color(color)
-		tool.add_vertex(transform*vertices[i])
+	batch.vertices.append_array(transform * vertices)
+	for normal in normals: batch.normals.append((normal_basis * normal).normalized())
+	var tint := PackedColorArray()
+	tint.resize(vertices.size())
+	tint.fill(color)
+	batch.colors.append_array(tint)
+	if indices.is_empty():
+		for index in vertices.size(): batch.indices.append(base + index)
+	else:
+		for index in indices: batch.indices.append(base + index)
 	vertex_count += count
 	piece_count += 1
 

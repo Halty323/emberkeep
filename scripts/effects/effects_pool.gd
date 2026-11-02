@@ -88,6 +88,13 @@ static func material() -> StandardMaterial3D:
 		particle_material.vertex_color_use_as_albedo = true
 	return particle_material
 
+## Ends every live particle, ring, beam and mark at once.
+func expire_transients() -> void:
+	count = 0
+	channel_counts = [0, 0, 0]
+	for entry in rings + beams + marks:
+		if entry.has("life"): entry.age = entry.life
+
 func transient_count() -> int:
 	return channel_counts[0] + channel_counts[1]
 

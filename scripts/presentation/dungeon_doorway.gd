@@ -7,6 +7,9 @@ const WIDTH := 2.5
 const HEIGHT := 3.05
 static var finishes: Dictionary = {}
 static var pending: Dictionary = {}
+# Doorways with the same finishes and height are identical: their merged
+# frame and leaf meshes are built once and shared by every doorway.
+static var part_cache: Dictionary = {}
 
 static func stone(tint: Color, bounced := false, family := "masonry") -> StandardMaterial3D:
 	if family in DungeonPBR.THEMES:
@@ -61,6 +64,29 @@ static func flush() -> void:
 		record.parent.add_child(mesh)
 	pending.clear()
 
+## One merged mesh per finish for a part, drawn the first time it is asked for.
+static func parts(key: String, draw: Callable) -> Array:
+	if not part_cache.has(key):
+		if part_cache.size() >= 64: part_cache.clear()
+		pending.clear()
+		draw.call()
+		var merged: Array = []
+		for record in pending.values(): merged.append([record.tool.commit(), record.material])
+		pending.clear()
+		part_cache[key] = merged
+	return part_cache[key]
+
+static func attach(parent: Node3D, merged: Array) -> void:
+	for part in merged:
+		var mesh := MeshInstance3D.new()
+		mesh.mesh = part[0]
+		mesh.material_override = part[1]
+		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		parent.add_child(mesh)
+
+static func key_of(materials: Array) -> String:
+	return ":".join(materials.map(func(material): return str(material.get_instance_id())))
+
 static func build(room, socket: Dictionary) -> Node3D:
 	pending.clear()
 	var direction: Vector2i = socket.dir
@@ -77,17 +103,18 @@ static func build(room, socket: Dictionary) -> Node3D:
 	var frame_finish:=wood if room.look.get("materials",{}).get("structure","")=="wood" else stone_finish
 	var iron := Geo.material(Color("394047"))
 	var brass := Geo.material(Color("98805b"))
-	# Thick jambs, a broad lintel and a recessed arch make the opening read as
-	# a passage through the wall, instead of an emissive rectangular boundary.
-	for side in [-1,1]:
-		box(gate,Vector3(side*1.18,1.54,.06),Vector3(.34,3.08,.66),frame_finish)
-		box(gate,Vector3(side*1.18,.16,.02),Vector3(.49,.3,.79),frame_finish)
-		box(gate,Vector3(side*1.18,2.72,.02),Vector3(.48,.18,.78),frame_finish)
-	box(gate,Vector3(0,3.05,.06),Vector3(2.72,.38,.69),frame_finish)
 	var roof: float=room.ceiling_height()
 	var upper_at:=Vector3(0,(3.15+roof)*.5,.06)
 	var upper_size:=Vector3(2.5,roof-3.15,.46)
-	box(gate,upper_at,upper_size,stone_finish)
+	# Thick jambs, a broad lintel and a recessed arch make the opening read as
+	# a passage through the wall, instead of an emissive rectangular boundary.
+	var frame := parts("frame:%s:%.4f" % [key_of([frame_finish,stone_finish]),roof],func():
+		for side in [-1,1]:
+			box(gate,Vector3(side*1.18,1.54,.06),Vector3(.34,3.08,.66),frame_finish)
+			box(gate,Vector3(side*1.18,.16,.02),Vector3(.49,.3,.79),frame_finish)
+			box(gate,Vector3(side*1.18,2.72,.02),Vector3(.48,.18,.78),frame_finish)
+		box(gate,Vector3(0,3.05,.06),Vector3(2.72,.38,.69),frame_finish)
+		box(gate,upper_at,upper_size,stone_finish))
 	Geo.collider(gate,upper_at,upper_size)
 	var barrier := Node3D.new()
 	barrier.name = "Barrier"
@@ -101,7 +128,7 @@ static func build(room, socket: Dictionary) -> Node3D:
 		door_leaf(barrier,side,false,wood,iron,brass)
 		door_leaf(outline,side,true,wood,iron,brass)
 	Geo.collider(barrier,Vector3(0,1.45,0),Vector3(2.05,2.9,.18))
-	flush()
+	attach(gate,frame)
 	var path: Array[Vector2]=[]
 	if Run.portals.has(socket.portal):
 		var portal: Dictionary=Run.portals[socket.portal]
@@ -124,10 +151,11 @@ static func door_leaf(parent: Node3D, side: int, opened: bool, wood: Material, i
 	parent.add_child(hinge)
 	hinge.position = Vector3(side*1.0,0,.12)
 	hinge.rotation.y = -side*1.43 if opened else 0.0
-	for plank in 4:
-		box(hinge,Vector3(-side*(.13+plank*.245),1.38,0),Vector3(.235,2.65,.13),wood)
-	for y in [.35,1.38,2.4]:
-		box(hinge,Vector3(-side*.5,y,-.083),Vector3(.99,.105,.045),iron)
-		for rivet in [.16,.82]:
-			box(hinge,Vector3(-side*rivet,y,-.115),Vector3(.045,.045,.025),brass)
-	box(hinge,Vector3(-side*.83,1.3,-.14),Vector3(.07,.26,.09),brass)
+	attach(hinge,parts("leaf:%d:%s" % [side,key_of([wood,iron,brass])],func():
+		for plank in 4:
+			box(hinge,Vector3(-side*(.13+plank*.245),1.38,0),Vector3(.235,2.65,.13),wood)
+		for y in [.35,1.38,2.4]:
+			box(hinge,Vector3(-side*.5,y,-.083),Vector3(.99,.105,.045),iron)
+			for rivet in [.16,.82]:
+				box(hinge,Vector3(-side*rivet,y,-.115),Vector3(.045,.045,.025),brass)
+		box(hinge,Vector3(-side*.83,1.3,-.14),Vector3(.07,.26,.09),brass)))

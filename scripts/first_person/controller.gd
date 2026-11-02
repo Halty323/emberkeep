@@ -20,9 +20,18 @@ var hit_time := 0.0
 var damage_time := 0.0
 var damage_angle := 0.0
 var suppress_mouse_fire := false
+# The eye glides between the body's last two fixed ticks. A 90/120 Hz screen,
+# or a frame that lands between ticks, then shows smooth motion instead of the
+# body's 60 Hz steps. Moves outside a tick (placing, rebasing) snap instead.
+const VIEW_JUMP := 2.0
+var view_from := Vector3.ZERO
+var view_to := Vector3.ZERO
+var view_body: Object = null
 
 func setup(owner_game) -> void:
 	game = owner_game
+	# Sample after the game's own tick has moved the body.
+	process_physics_priority = 1000
 	weapon = Node3D.new()
 	game.camera.add_child(weapon)
 	weapon_shape = Node3D.new()
@@ -40,6 +49,29 @@ func _input(event: InputEvent) -> void:
 		look(event.screen_relative * float(Settings.values.mouse_sensitivity))
 	if event.is_action_pressed("jump", false): jump_buffer = .14
 
+func _physics_process(_delta: float) -> void:
+	sample_view()
+
+func sample_view() -> void:
+	var player = game.player if game else null
+	if not is_instance_valid(player):
+		view_body = null
+		return
+	var at: Vector3 = player.global_position
+	view_from = view_to if player == view_body and at.distance_to(view_to) < VIEW_JUMP else at
+	view_to = at
+	view_body = player
+
+## Where the body is drawn this frame: between its last two ticks.
+func view_position(player, snap := false) -> Vector3:
+	var at: Vector3 = player.global_position
+	if snap or player != view_body or not at.is_equal_approx(view_to):
+		view_from = at
+		view_to = at
+		view_body = player
+		return at
+	return view_from.lerp(view_to, clampf(Engine.get_physics_interpolation_fraction(), 0.0, 1.0))
+
 func look(delta: Vector2) -> void:
 	yaw = wrapf(yaw - delta.x, -PI, PI)
 	pitch = clampf(pitch - delta.y * (-1.0 if Settings.values.invert_y else 1.0), deg_to_rad(-85), deg_to_rad(85))
@@ -56,7 +88,7 @@ func reset_input() -> void:
 	game.ui.look_delta = Vector2.ZERO
 	game.ui.fire_touch = -1
 
-func update_view(delta: float) -> void:
+func update_view(delta: float, snap := false) -> void:
 	hit_time = maxf(0, hit_time - delta)
 	damage_time = maxf(0, damage_time - delta)
 	var active: bool = not game.in_menu and is_instance_valid(game.player)
@@ -87,7 +119,11 @@ func update_view(delta: float) -> void:
 	game.camera.far = 95
 	game.camera.h_offset = 0
 	var bob := sin(player.walk_time * 2.0) * .016 if Settings.values.head_bob and player.is_on_floor() else 0.0
-	game.camera.global_position = player.global_position + Vector3(0, EYE + bob, 0)
+	# Touch look turns the view every drawn frame, not only on fixed ticks.
+	if playing:
+		look(game.ui.look_delta * float(Settings.values.touch_sensitivity))
+		game.ui.look_delta = Vector2.ZERO
+	game.camera.global_position = view_position(player, snap) + Vector3(0, EYE + bob, 0)
 	game.camera.rotation = Vector3(pitch, yaw, 0)
 	player.visual.visible = false
 	player.gun.visible = false

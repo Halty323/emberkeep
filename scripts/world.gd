@@ -62,8 +62,30 @@ var interiors_report: Dictionary = {}
 # material. Many fixtures do not allocate a material or mesh per metal bar.
 static var first_person_lantern_model: ArrayMesh
 static var first_person_lantern_flame: QuadMesh
+# A hidden neighbour staged behind a corridor builds a slice per frame instead
+# of in one long frame. Each phase boundary checks the slice's budget; the
+# stager resumes it next frame, or finishes it at once when it is needed now.
+signal build_resumed
+const SLICE_USEC := 2500
+var paced := false
+var building := false
+var slice_start := 0
 
-func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
+func pace() -> void:
+	if not paced or Time.get_ticks_usec() - slice_start < SLICE_USEC: return
+	await build_resumed
+
+## Runs the next slice of a paced build; `hurry` completes it before returning.
+func resume_build(hurry := false) -> void:
+	if not building: return
+	if hurry: paced = false
+	slice_start = Time.get_ticks_usec()
+	build_resumed.emit()
+
+func build(owner_game: Node3D, room: Dictionary, preview := false, staged := false) -> void:
+	building = true
+	paced = staged
+	slice_start = Time.get_ticks_usec()
 	game = owner_game
 	first_person_room = game.get("first_person") == true and not preview
 	data = room
@@ -75,7 +97,9 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 	effects = EffectsPool.new()
 	add_child(effects)
 	geometry = RoomGeometry.new(Run.local_cells(room) if room.has("cells") else [Vector2i.ZERO])
-	geometry.apply_shader_mask()
+	# A staged neighbour must leave the active room's floor mask alone; it
+	# applies its own when it is adopted.
+	if not staged: geometry.apply_shader_mask()
 	if room.has("pedestal"):
 		pedestal = Vector3(float(room.pedestal[0]), 0, float(room.pedestal[1]))
 	collect_sockets(room, preview)
@@ -84,11 +108,14 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 		terrain = FirstPersonTerrain.new()
 		terrain.setup(self,false)
 		geometry.terrain = terrain
+	await pace()
 	build_floor()
-	build_walls()
+	await pace()
+	await build_walls()
 	if first_person_room:
 		terrain.build(self)
 		RoomPartitions.build(self)
+	await pace()
 	var points: Array = room.get("lights", default_lights())
 	var all_points: Array[Vector3]=[]
 	for point in points: all_points.append(Vector3(float(point[0]),0,float(point[1])))
@@ -105,6 +132,7 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 			if i not in burning: burning.append(i)
 	for i in all_points.size(): make_lantern(all_points[i],i in burning)
 	make_fill_lights()
+	await pace()
 	var room_type: String = room.get("type", "combat")
 	if room_type in ["start", "treasure", "rest", "shop", "dark"] or preview:
 		Geo.box(self, pedestal + Vector3(0, -.003, 0), Vector3(6.2, .03, 4.6), {"shop": Color("514450"), "dark": Color("2a1a26")}.get(room_type, Color("5d4c3e")))
@@ -116,8 +144,9 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 		var pillars = FloorGenerator.pillar_points(geometry.cells, int(room.seed), Vector2(pedestal.x, pedestal.z))
 		for i in pillars.size():
 			records.append({"id": "%s:p%d" % [room.get("id", ""), i], "kind": "pillar", "position": [pillars[i].x, pillars[i].y], "rotation": 0, "size": [1.3, 1.3]})
-	build_props(records)
+	await build_props(records)
 	if first_person_room: DungeonStyle.dress_props(self)
+	await pace()
 	# Containers are solid: navigation and spawns route around them.
 	for chest in room.get("chests", []):
 		var at = Vector2(float(chest.position[0]), float(chest.position[1]))
@@ -126,11 +155,22 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 	make_candles()
 	make_embers()
 	add_ambient_emitters()
+	await pace()
 	if first_person_room:
 		interiors_report = ThemedInteriors.decorate(self)
+		await pace()
 		FirstPersonArchitecture.build(self)
 	set_open(true)
 	apply_lighting_quality()
+	# A staged room also prepares what entering it would otherwise build in
+	# that frame: its ledge residue surface and, for a fight still to come,
+	# its foes' route grids (computed on the encounter's first frame before).
+	if staged and first_person_room:
+		await ResidueField.prepare_surface(self)
+	if staged and first_person_room and room.get("type", "") in ["combat", "boss"] and not room.get("cleared", false):
+		await prepare_navigation()
+	building = false
+	paced = false
 
 static func default_lights() -> Array:
 	return Content.record("rooms", "hearth_1x1").lights.map(func(anchor):
@@ -256,6 +296,7 @@ func build_walls() -> void:
 			make_gate(socket)
 		else:
 			make_plug(socket)
+		await pace()
 
 func make_plug(socket: Dictionary) -> void:
 	var direction: Vector2i = socket.dir
@@ -472,6 +513,7 @@ func build_props(records: Array) -> void:
 			built.occluder["id"] = record.id
 			built.occluder["current"] = 1.0
 			occluders.append(built.occluder)
+		await pace()
 	detail_meshes = batch.build(self)
 
 func prop_count(kind := "") -> int:
@@ -840,12 +882,30 @@ func add_obstacle(id: String, at: Vector2, radius: float, height := 0.0) -> void
 func navigation(clearance := .5, level := 0.0) -> RoomNavigation:
 	var key = Vector2(snappedf(clearance,.05),level)
 	if not navigators.has(key):
-		var blockers := {}
-		for i in obstacles.size():
-			if terrain and terrain.loft and absf(float(obstacles[i].get("height",0))-level)>.5: continue
-			blockers[obstacles[i].get("id", "obstacle%d" % i)] = obstacles[i].rect
-		navigators[key] = RoomNavigation.new(geometry, clearance, blockers,level)
+		navigators[key] = RoomNavigation.new(geometry, clearance, navigation_blockers(level),level)
 	return navigators[key]
+
+func navigation_blockers(level: float) -> Dictionary:
+	var blockers := {}
+	for i in obstacles.size():
+		if terrain and terrain.loft and absf(float(obstacles[i].get("height",0))-level)>.5: continue
+		blockers[obstacles[i].get("id", "obstacle%d" % i)] = obstacles[i].rect
+	return blockers
+
+## Fills the grids every foe size will ask for, a strip at a time. A grid is
+## published only once complete, so a lookup never sees a partial one.
+func prepare_navigation() -> void:
+	var levels: Array[float] = [0.0]
+	if terrain and terrain.loft: levels.append(LoftRoom.RISE)
+	for level in levels:
+		for clearance in [.5, 1.0]:
+			var key = Vector2(snappedf(clearance,.05),level)
+			if navigators.has(key): continue
+			var grid := RoomNavigation.new(geometry, clearance, navigation_blockers(level), level, true)
+			for column in grid.columns():
+				grid.fill_column(column)
+				await pace()
+			if not navigators.has(key): navigators[key] = grid
 
 ## A concealed doorway in this room that a Miner's Lantern could point at.
 func hidden_seam() -> Dictionary:
