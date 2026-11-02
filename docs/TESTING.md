@@ -6,6 +6,8 @@ Current first-person work uses **Godot 4.7.2 Standard** on Linux. The headless r
 
 The [proper two-storey update](TWO_STOREY_ROOMS.md) replaces the primary raised annex with an overlapping upstairs floor and usable space below. The new `two_storey` suite passes **113 checks** and follows normal fresh-run corridors, physically traverses both floors, verifies enemy pursuit in both directions and tests separate residue, clouds, saved pickup height and the upstairs reward chest. Native PowerVR-policy screenshots show the actual room from its entrance, beneath the slab and upstairs.
 
+For source `a084650`, Android, Windows and AppImage CI each passed **33 suites / 167,356 checks with zero failures**. All downloaded artifacts passed digest/CRC and binary hash checks. Both APKs passed their catalog/240-frame packaged checks and retain the existing signing certificate; version **0.5.0-android.100014**. [Current downloads and screenshots](TWO_STOREY_ROOMS.md#verified-builds), [artifact hashes](reports/two-storey-builds.json). Seed **31609250** reaches the gallery in the first combat room of a fresh run.
+
 The stair-assembly control fix removes the boss-exit animation's gameplay lock. The stair suite now passes **44 checks**, including real capsule movement, firing, normal commands, camera follow, advancing run/cooldown/fuse clocks, explicit pause and safe collision when a player enters the footprint on the final build tick. The original climb/arrival cinematic checks still pass. The dungeon suite retains **2,602 checks**, with its old forced-pause expectation replaced by the new background-assembly behavior.
 
 Android, Windows and AppImage CI each passed **32 suites / 168,165 checks with zero failures** for source `775dbaae7f2a4d74e15e5b6b4442711d80aae93c`. All downloaded archives passed GitHub digest/CRC checks and the extracted binaries matched their recorded hashes. Both APKs passed their catalog/240-frame packaged checks and retain the existing signing certificate. APK version: **0.5.0-android.100013**, code **100013**. The fix applies to existing saves. [Artifact hashes and build metadata](reports/stair-assembly-builds.json).
@@ -53,7 +55,7 @@ The [0.2.1 update report](PS2_UPDATE.md) describes the ramp reproduction, correc
 
 ## Headless suites
 
-`./tools/test.sh` imports the project, runs every suite with disposable user storage, and fails on any script error even if Godot exits successfully. The runner now includes 32 suites; results are recorded above. The earlier pre-first-person run passed **133,076 checks** plus the painting importer's offline test.
+`./tools/test.sh` imports the project, runs every suite with disposable user storage, and fails on any script error even if Godot exits successfully. The runner now includes 33 suites; results are recorded above. The earlier pre-first-person run passed **133,076 checks** plus the painting importer's offline test.
 
 The 2026-10-31 PowerVR safeguard run passed **133,052 checks** across all suites plus the importer test; the subsequently expanded policy suite passed **63 checks** (five additional checks). Android, Linux and iOS resource packs each passed their catalog check and 240 quickstart frames. A native desktop OpenGL smoke also rendered the full High post/glow/water-reflection path without shader errors.
 
@@ -82,7 +84,7 @@ The 2026-10-31 PowerVR safeguard run passed **133,052 checks** across all suites
 | `secret_codes` | 333 | ALLRELICS behaviour and its hidden entry; PAINTSPRAYER equips and permanently unlocks the weapon from the keyboard and the hidden entry, saves both, and discovers no paintings. |
 | `presentation` | 198 | Camera zoom and follow, wall cutaways and shadow occluders, contrast. |
 | `ui_presentation` | ~790 | Native controls in bounds, readable and non-overlapping on every screen; room-light propagation; scaled touch and mouse routing; a run opening with its floor's name spelled across the screen; a 21:9 window widening the canvas with no bars, the slab on the left edge, pause, dash and the aiming stick following the right edge, the interaction prompt in the middle, other screens centred, and 16:9 restored. The count varies with whether a resumable save exists. |
-| `room_layouts` | 24,423 | Compact v3 floors, optional roles, saved partitions, density, normal/boss routes, vertical reservations and a bounded fallback; v2 continuation stays unchanged. |
+| `room_layouts` | 24,572 | Compact v3 floors, optional roles, saved partitions, density, normal/boss routes, vertical reservations and a bounded fallback; v2 economy continuation stays unchanged. |
 | `vertical_rooms` | 359 | Actual player/enemy ascents and descents, jumps, collision, saved bounds, negative cellar cutouts and height-isolated residue/clouds. |
 | `expedition_rewards` | 181 | Versioned scarcity, source-separated active equipment, actual offers, gilded credit, attack tempo, chest idempotency, legacy carried gear/cooldowns and 3D pickup reach. |
 | `expedition_integration` | 23 | Real main-scene challenge clear, chest position/interaction height, save/reload/opening, stale offer migration, passive cap and v2 continuation. |

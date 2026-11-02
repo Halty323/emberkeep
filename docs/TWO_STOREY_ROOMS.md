@@ -33,3 +33,14 @@ XDG_DATA_HOME="$(mktemp -d)" godot --headless --path . --script res://tests/two_
 ```
 
 For the three native screenshots, run the same script on an OpenGL display and set `EMBERKEEP_STOREY_CAPTURE` to an absolute output directory. Three-dimensional drawing is enabled for each captured view and disabled during intervening physics traversal to keep software rendering from slowing the test. The full runner is `GODOT_BIN=/path/to/godot bash tools/test.sh`.
+
+## Verified builds
+
+Android, Windows and AppImage CI each passed **33 suites / 167,356 checks with zero failures** for source `a08465090fa4777ad130c7fb3ab1138e6f7a7032`. Both APKs passed catalog validation and 240 packaged quickstart frames. All four downloaded archives passed GitHub digest and ZIP CRC verification; extracted binaries matched their recorded hashes. Android version **0.5.0-android.100014**, code **100014**, retains the existing development signing certificate. [Hashes and build metadata](reports/two-storey-builds.json).
+
+- [Android APK](https://github.com/Halty323/emberkeep/actions/runs/41469743723/artifacts/13155561515)
+- [Separately installable Android Preview](https://github.com/Halty323/emberkeep/actions/runs/41469743723/artifacts/13155526763)
+- [Windows executable](https://github.com/Halty323/emberkeep/actions/runs/41469767153/artifacts/13154388928)
+- [Linux AppImage](https://github.com/Halty323/emberkeep/actions/runs/41469787137/artifacts/13154193201)
+
+GitHub artifacts have seven-day retention. To see the chamber immediately in this build, start a new run with seed **31609250**: its first combat room has the two-storey gallery. The arrival view above is taken after walking there through the normal corridor.

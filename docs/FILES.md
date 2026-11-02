@@ -222,6 +222,7 @@ docs/reports/stair-assembly-builds.json
 docs/reports/stylized-desktop.json
 docs/reports/stylized-mobile-safe.json
 docs/reports/stylized-reflection.json
+docs/reports/two-storey-builds.json
 docs/reports/two-storey-native.json
 export_presets.cfg
 project.godot
