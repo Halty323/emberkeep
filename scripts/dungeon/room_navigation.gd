@@ -10,11 +10,13 @@ var clearance := .5
 var grid := AStarGrid2D.new()
 var origin := Vector2.ZERO
 var blockers: Dictionary = {}
+var level := 0.0
 
-func _init(room_geometry: RoomGeometry, actor_clearance := .5, initial_blockers: Dictionary = {}) -> void:
+func _init(room_geometry: RoomGeometry, actor_clearance := .5, initial_blockers: Dictionary = {}, elevation := 0.0) -> void:
 	geometry = room_geometry
 	clearance = actor_clearance
 	blockers = initial_blockers.duplicate()
+	level=elevation
 	var area = geometry.bounds()
 	origin = area.position
 	grid.region = Rect2i(0, 0, ceili(area.size.x / STEP), ceili(area.size.y / STEP))
@@ -35,7 +37,10 @@ func to_world(cell: Vector2i) -> Vector2:
 func walkable(point: Vector2) -> bool:
 	if not geometry.contains(point, clearance):
 		return false
-	if geometry.terrain and not geometry.terrain.traversable(point, clearance): return false
+	if geometry.terrain:
+		if geometry.terrain.loft:
+			if not geometry.terrain.loft.walkable(point,clearance,level): return false
+		elif not geometry.terrain.traversable(point, clearance): return false
 	for id in blockers:
 		if blockers[id].grow(clearance).has_point(point):
 			return false

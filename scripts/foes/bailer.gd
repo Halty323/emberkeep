@@ -31,7 +31,7 @@ func behave(delta: float, distance: float, direction: Vector3) -> Vector3:
 		if timer <= 0 and lob.is_empty():
 			timer = 3.6
 			var at: Vector3 = game.player.global_position
-			at.y = 0
+			if not game.first_person: at.y = 0
 			lob = {"at": at, "time": FLIGHT, "mark": Geo.ring(game.scene_root, at + Vector3(0, .05, 0), SPLASH, Color("9fd8e0"), .05)}
 			visual.scale = Vector3(1.2, .8, 1.2)
 	pail.visible = lob.is_empty()
@@ -48,7 +48,7 @@ func splash() -> void:
 	if game.player.global_position.distance_to(at) < SPLASH: game.player.hurt(1.0, at)
 	for i in game.room.burning_indices():
 		var lantern: Vector3 = game.room.lanterns[i].at
-		if Vector2(lantern.x - at.x, lantern.z - at.z).length() < DOUSE: game.snuff(i)
+		if lantern.distance_to(at) < DOUSE: game.snuff(i)
 
 func on_death() -> void:
 	if not lob.is_empty() and is_instance_valid(lob.mark): lob.mark.queue_free()

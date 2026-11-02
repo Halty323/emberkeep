@@ -78,8 +78,11 @@ static func build(room, socket: Dictionary) -> Node3D:
 		box(gate,Vector3(side*1.18,.16,.02),Vector3(.49,.3,.79),stone_finish)
 		box(gate,Vector3(side*1.18,2.72,.02),Vector3(.48,.18,.78),stone_finish)
 	box(gate,Vector3(0,3.05,.06),Vector3(2.72,.38,.69),stone_finish)
-	box(gate,Vector3(0,4.3,.06),Vector3(2.5,2.3,.46),stone_finish)
-	Geo.collider(gate,Vector3(0,4.3,.06),Vector3(2.5,2.3,.46))
+	var roof: float=room.ceiling_height()
+	var upper_at:=Vector3(0,(3.15+roof)*.5,.06)
+	var upper_size:=Vector3(2.5,roof-3.15,.46)
+	box(gate,upper_at,upper_size,stone_finish)
+	Geo.collider(gate,upper_at,upper_size)
 	var barrier := Node3D.new()
 	barrier.name = "Barrier"
 	gate.add_child(barrier)

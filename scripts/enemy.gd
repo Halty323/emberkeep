@@ -51,6 +51,7 @@ var slow_time = 0.0
 var slow_factor = 0.0
 var last_valid = Vector3.ZERO
 var path := PackedVector2Array()
+var storey_path := PackedVector3Array()
 var path_timer = 0.0
 var path_initialized := false
 var path_queries := 0
@@ -187,6 +188,7 @@ func place(at: Vector3) -> void:
 	last_valid = at
 	if game.first_person:
 		path = PackedVector2Array()
+		storey_path=PackedVector3Array()
 		path_initialized = false
 		path_timer = 0.0
 		sight_timer = 0.0
@@ -200,6 +202,21 @@ func steer_toward(target: Vector3, delta: float) -> Vector3:
 	var direct = Vector3(target.x - position.x, 0, target.z - position.z).normalized()
 	if not is_instance_valid(game.room) or not game.room.geometry:
 		return direct
+	if game.first_person and game.room.terrain and game.room.terrain.loft:
+		sight_timer-=delta
+		if sight_timer<=0:
+			sight_timer=.2
+			has_sight=absf(target.y-position.y)<.75 and get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(position+Vector3.UP,target+Vector3.UP,1|PropVisuals.FURNITURE_LAYER)).is_empty()
+		path_timer-=delta
+		if path_timer<=0 or not path_initialized:
+			storey_path=game.room.terrain.loft.route(game.room,position,target,clearance())
+			path_initialized=true
+			path_queries+=1
+			path_timer=.45+float(entity_id%7)*.06
+		while storey_path.size()>1 and Vector2(position.x-storey_path[0].x,position.z-storey_path[0].z).length()<.45 and absf(position.y-storey_path[0].y)<.6:
+			storey_path.remove_at(0)
+		if storey_path.is_empty(): return Vector3.ZERO
+		return Vector3(storey_path[0].x-position.x,0,storey_path[0].z-position.z).normalized()
 	var nav: RoomNavigation = game.room.navigation(clearance())
 	var from = Vector2(position.x, position.z)
 	var to = Vector2(target.x, target.z)
@@ -267,7 +284,18 @@ func update_sim(delta: float) -> void:
 	to_player.y = 0
 	var distance = to_player.length()
 	var direction = to_player.normalized()
-	var move_direction = behave(delta, distance, direction)
+	# All mobile kinds must use the staircase before their individual attack
+	# rules take over. Several subclasses otherwise lunge at the player below
+	# the slab or orbit the same horizontal position on the wrong floor.
+	var changing_storey: bool = game.first_person and game.room.terrain and game.room.terrain.loft and moves() and (absf(game.player.position.y-position.y)>.75 or game.room.terrain.loft.stairs.has_point(Vector2(position.x,position.z)))
+	var move_direction: Vector3
+	if changing_storey:
+		move_direction=steer_toward(game.player.global_position,delta)
+		charge_time=0
+		windup=0
+		if is_instance_valid(warning): warning.queue_free()
+	else:
+		move_direction=behave(delta,distance,direction)
 	# A gilded foe hurt past half runs from the player with its coins.
 	if elite == "gilded" and hp < max_hp * .5 and charge_time <= 0:
 		move_direction = -direction
@@ -293,6 +321,7 @@ func update_sim(delta: float) -> void:
 		# Local separation keeps a crowd from stacking into one blob.
 		for other in game.enemies:
 			if other == self or not is_instance_valid(other) or not other.alive or other.inert: continue
+			if game.first_person and absf(other.global_position.y-global_position.y)>.8: continue
 			var apart: Vector3 = global_position - other.global_position
 			apart.y = 0
 			var gap = apart.length()
@@ -323,7 +352,7 @@ func update_sim(delta: float) -> void:
 			if get_slide_collision(i).get_collider() is StaticBody3D: walled = true
 		var floor_y: float = game.room.floor_height(Vector3(kept.x,0,kept.y)) if game.first_person else 0.0
 		if game.first_person and game.room.terrain:
-			floor_y = game.room.terrain.standing_height(kept,radius)
+			floor_y = game.room.terrain.standing_height(kept,radius,position.y)
 		position = Vector3(kept.x,floor_y,kept.y)
 		if charge_time > 0 and walled: hit_wall()
 	if windup <= 0:
@@ -340,6 +369,7 @@ func update_sim(delta: float) -> void:
 ## The kind's intent this tick: where to move (the original kinds' rules).
 func behave(delta: float, distance: float, direction: Vector3) -> Vector3:
 	var move_direction = steer_toward(game.player.global_position, delta)
+	if game.first_person and game.room.terrain and game.room.terrain.loft and absf(game.player.position.y-position.y)>.75: return move_direction
 	match kind:
 		"spitter":
 			if has_sight:
@@ -612,7 +642,7 @@ func throw_mote(direction: Vector3, distance: float) -> void:
 		if other.global_position.distance_to(global_position) > 3.0: continue
 		var land: Vector3 = game.player.global_position - direction * minf(1.2, distance * .2)
 		var safe = game.room.geometry.safe_point(Vector2(land.x, land.z), .5, game.room.blocked_at)
-		var height: float = game.room.floor_height(Vector3(safe.x, 0, safe.y)) if game.first_person else 0.0
+		var height: float = game.room.floor_height(Vector3(safe.x, game.player.position.y, safe.y)) if game.first_person else 0.0
 		other.thrown = {"from": other.global_position, "to": Vector3(safe.x, height, safe.y), "time": 0.0, "length": .9,
 			"mark": Geo.ring(game.scene_root, Vector3(safe.x, height + .05, safe.y), 1.1, Color("ed9b77"), .06)}
 		visual.scale = Vector3(1.2, .8, 1.2)

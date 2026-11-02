@@ -14,6 +14,7 @@ const APPROACH_DEPTH := 4.8
 var rise := RISE
 var kind := "gallery"
 var built := false
+var loft: LoftRoom
 
 func setup(room, build_geometry := true) -> void:
 	if room.data.has("fps_terrain"):
@@ -24,6 +25,7 @@ func setup(room, build_geometry := true) -> void:
 			ramp = decode_rect(saved.ramp)
 			rise = float(saved.get("rise", RISE))
 			kind = str(saved.get("kind", "gallery"))
+			if int(saved.get("version",0))==3: loft=LoftRoom.new(saved)
 			if build_geometry: build(room)
 		else:
 			room.data["fps_terrain"] = {}
@@ -129,12 +131,14 @@ static func area_inside(geometry: RoomGeometry, rect: Rect2, margin: float) -> b
 
 static func reserved_zones(data: Dictionary, _geometry: RoomGeometry = null) -> Array:
 	var blueprint = data.get("fps_terrain", {})
+	if blueprint is Dictionary and blueprint.get("version",0)==3:
+		return [{"kind":"vertical","rect":LoftRoom.rect(blueprint.ledge).grow(.65)},{"kind":"vertical","rect":LoftRoom.rect(blueprint.ramp).grow(.65)}]
 	if not blueprint is Dictionary or blueprint.get("version",0) != 2: return []
 	if not valid_rect(blueprint.get("ledge")) or not valid_rect(blueprint.get("ramp")): return []
 	return [{"kind":"vertical","rect":decode_rect(blueprint.ledge).merge(decode_rect(blueprint.ramp)).grow(.65)}]
 
 func challenge() -> bool:
-	return kind in ["upper","cellar"] and ledge.has_area()
+	return kind in ["upper","cellar","loft"] and ledge.has_area()
 
 func reward_point() -> Vector3:
 	var center := ledge.get_center()
@@ -167,6 +171,7 @@ static func valid_rect(value: Variant) -> bool:
 	return value is Array and value.size() == 4 and value.all(func(number): return (number is int or number is float) and is_finite(float(number))) and float(value[2]) >= 1.2 and float(value[3]) >= 1.2 and float(value[2]) <= 8.0 and float(value[3]) <= 8.0
 
 static func valid_blueprint(value: Variant, geometry: RoomGeometry, sockets: Dictionary = {}) -> bool:
+	if value is Dictionary and value.get("version",0)==3: return LoftRoom.valid(value,geometry,sockets)
 	if not value is Dictionary or value.get("version",-1) not in [1,2]: return false
 	if not valid_rect(value.get("ledge")) or not valid_rect(value.get("ramp")): return false
 	var deck := decode_rect(value.ledge)
@@ -191,6 +196,7 @@ static func valid_blueprint(value: Variant, geometry: RoomGeometry, sockets: Dic
 	return area_inside(geometry,deck,.3) and area_inside(geometry,slope,.3)
 
 func height(point: Vector2) -> float:
+	if loft: return loft.height_at(Vector3(point.x,0,point.y))
 	if ledge.has_area() and ledge.has_point(point): return rise
 	if ramp.has_area() and ramp.has_point(point): return rise * (1.0 - (point.y - ramp.position.y) / ramp.size.y)
 	return 0.0
@@ -198,14 +204,24 @@ func height(point: Vector2) -> float:
 ## A capsule touching an incline needs its feet slightly above the height
 ## directly below its centre. Snapping AI feet to the centreline alone embeds
 ## the leading hemisphere in a steep ramp and stalls horizontal movement.
-func standing_height(point: Vector2, radius: float) -> float:
-	var surface := height(point)
-	if ramp.has_area() and ramp.has_point(point):
+func height_at(at: Vector3) -> float:
+	return loft.height_at(at) if loft else height(Vector2(at.x,at.z))
+
+func standing_height(point: Vector2, radius: float, reference_y := 0.0) -> float:
+	var surface := height_at(Vector3(point.x,reference_y,point.y))
+	if loft and point.x>=ramp.position.x and point.x<=ramp.end.x and point.y>ramp.end.y and point.y<ramp.end.y+radius:
+		# A slow capsule meets the incline before its centre enters the ramp.
+		# Extend the analytic support height through that short approach so its
+		# leading hemisphere cannot snag at the foot of the stairs.
+		var slope:=rise/ramp.size.y
+		return maxf(surface,rise*(1.0-(point.y-ramp.position.y)/ramp.size.y)+radius*(sqrt(1.0+slope*slope)-1.0))
+	if ramp.has_area() and ramp.has_point(point) and (not loft or loft.upper(Vector3(point.x,reference_y,point.y))):
 		var slope := rise / ramp.size.y
 		surface += maxf(0,radius) * (sqrt(1.0+slope*slope)-1.0)
 	return surface
 
 func traversable(point: Vector2, clearance: float) -> bool:
+	if loft: return loft.walkable(point,clearance,0)
 	var here = height(point)
 	for direction in [Vector2.LEFT, Vector2.RIGHT, Vector2.UP, Vector2.DOWN]:
 		if absf(height(point + direction * clearance) - here) > .65: return false
@@ -214,6 +230,9 @@ func traversable(point: Vector2, clearance: float) -> bool:
 func build(room) -> void:
 	if built or not ledge.has_area(): return
 	built = true
+	if loft:
+		loft.build(room)
+		return
 	var at := ledge.get_center()
 	var bottom := minf(-.08,rise-.18)
 	var thickness := rise+.08 if rise > 0 else .22

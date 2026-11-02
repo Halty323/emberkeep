@@ -198,12 +198,13 @@ func grant_weapon(id: String) -> bool:
 	return granted
 
 ## Adds a stable drop record to any room, on screen or not.
-func add_drop(room_id: String, pickup_id: String, at: Vector2, value := -1.0) -> String:
+func add_drop(room_id: String, pickup_id: String, at: Vector2, value := -1.0, height := 0.0) -> String:
 	var room: Dictionary = rooms[room_id]
 	if not room.has("pickups"): room.pickups = []
 	var id = next_instance("d")
 	room.pickups.append({"id": id, "def": pickup_id, "value": value if value > 0 else float(Content.record("pickups", pickup_id).value),
 		"position": [snappedf(at.x, .001), snappedf(at.y, .001)]})
+	if absf(height)>.05: room.pickups.back()["height"]=height
 	return id
 
 func next_instance(prefix: String) -> String:
@@ -408,6 +409,14 @@ func generate_floor() -> void:
 		floor_data = FloorGenerator.generate_v2(seed_value, floor_number)
 	else:
 		floor_data = FloorGenerator.generate_version(seed_value, floor_number, FloorGenerator.VERSION)
+	# Presentation architecture upgrades independently of the saved economy.
+	# Old runs keep their loot rules and receive real storeys on future floors.
+	if OS.get_environment("EMBERKEEP_LEGACY_TEST")!="1" and not "--isometric" in OS.get_cmdline_user_args():
+		if VerticalPlans.upgrade_unvisited(floor_data.rooms,floor_data.portals,floor_number):
+			for record in floor_data.rooms.values():
+				if record.get("fps_terrain",{}).get("kind","")=="loft":
+					VerticalPlans.make_mandatory(floor_data,record.id)
+					break
 	rooms = floor_data.rooms
 	portals = floor_data.portals
 	current_room = FloorGenerator.START_ID

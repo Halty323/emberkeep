@@ -90,13 +90,20 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 		terrain.build(self)
 		RoomPartitions.build(self)
 	var points: Array = room.get("lights", default_lights())
-	var burning: Array = FloorLight.lit_lanterns(points.size(), light, int(room.get("seed", 53)))
+	var all_points: Array[Vector3]=[]
+	for point in points: all_points.append(Vector3(float(point[0]),0,float(point[1])))
+	if terrain and terrain.loft:
+		var deck: Rect2=terrain.loft.deck
+		for x in [deck.position.x+.8,deck.end.x-.8]: all_points.append(Vector3(x,LoftRoom.RISE,deck.position.y+.8))
+	var burning: Array = FloorLight.lit_lanterns(all_points.size(), light, int(room.get("seed", 53)))
 	# A room remembers lanterns relit or put out once its fight was over.
 	if room.has("lit") and not preview: burning = room.lit.map(func(i): return int(i))
 	# The dark store keeps its lanterns dead: only the altar's flame burns.
 	elif room.get("type", "") == "dark": burning = []
-	for i in points.size():
-		make_lantern(Vector3(float(points[i][0]), 0, float(points[i][1])), i in burning)
+	if terrain and terrain.loft and not room.has("lit"):
+		for i in range(points.size(),all_points.size()):
+			if i not in burning: burning.append(i)
+	for i in all_points.size(): make_lantern(all_points[i],i in burning)
 	make_fill_lights()
 	var room_type: String = room.get("type", "combat")
 	if room_type in ["start", "treasure", "rest", "shop", "dark"] or preview:
@@ -114,7 +121,7 @@ func build(owner_game: Node3D, room: Dictionary, preview := false) -> void:
 	# Containers are solid: navigation and spawns route around them.
 	for chest in room.get("chests", []):
 		var at = Vector2(float(chest.position[0]), float(chest.position[1]))
-		obstacles.append({"position": Vector3(at.x, 0, at.y), "radius": .7, "rect": Rect2(at - Vector2(.5, .33), Vector2(1.0, .66))})
+		obstacles.append({"position": Vector3(at.x, 0, at.y), "radius": .7, "height":float(chest.get("height",0)), "rect": Rect2(at - Vector2(.5, .33), Vector2(1.0, .66))})
 	build_paintings()
 	make_candles()
 	make_embers()
@@ -185,7 +192,7 @@ func build_floor() -> void:
 				roof_sections = FirstPersonTerrain.subtract_rects(roof_sections,Rect2(at-Vector2.ONE*radius,Vector2.ONE*radius*2.0))
 			for roof in roof_sections:
 				var at := roof.get_center()
-				var ceiling = Geo.box(self,Vector3(at.x,5.6,at.y),Vector3(roof.size.x,.3,roof.size.y),Color("454847"))
+				var ceiling = Geo.box(self,Vector3(at.x,ceiling_height()+.15,at.y),Vector3(roof.size.x,.3,roof.size.y),Color("454847"))
 				ceiling.material_override = DungeonStyle.wall_material(Color("454847"),false,"masonry")
 				Geo.collider(self,ceiling.position,Vector3(roof.size.x,.3,roof.size.y))
 			for beam in [-1,1]:
@@ -197,7 +204,7 @@ func build_floor() -> void:
 					beams = FirstPersonTerrain.subtract_rects(beams,Rect2(at-Vector2.ONE*2.2,Vector2.ONE*4.4))
 				for beam_part in beams:
 					var at := beam_part.get_center()
-					var joist = Geo.box(self,Vector3(at.x,5.15,at.y),Vector3(beam_part.size.x,.5,beam_part.size.y),Color("514839"))
+					var joist = Geo.box(self,Vector3(at.x,ceiling_height()-.3,at.y),Vector3(beam_part.size.x,.5,beam_part.size.y),Color("514839"))
 					joist.material_override = DungeonStyle.wood_material(Color("514839"))
 		else:
 			var sheet := MeshInstance3D.new()
@@ -239,7 +246,7 @@ func build_walls() -> void:
 	for segment in geometry.wall_segments():
 		var box = RoomGeometry.segment_box(segment)
 		var front = RoomGeometry.is_front(segment.dir)
-		var height = 5.4 if first_person_room else (WALL_FRONT_HEIGHT if front else WALL_BACK_HEIGHT)
+		var height = ceiling_height()-.05 if first_person_room else (WALL_FRONT_HEIGHT if front else WALL_BACK_HEIGHT)
 		make_wall(Vector3(box.center.x, height / 2, box.center.y), Vector3(box.size.x, height, box.size.y),
 			segment.dir if front and not first_person_room else Vector2i.ZERO, segment.line, segment.from, segment.to)
 	for key in sockets:
@@ -254,7 +261,7 @@ func make_plug(socket: Dictionary) -> void:
 	if socket.state == "concealed":
 		make_seam_hints(socket)
 	var front = RoomGeometry.is_front(direction)
-	var height = 5.4 if first_person_room else (WALL_FRONT_HEIGHT if front else WALL_BACK_HEIGHT)
+	var height = ceiling_height()-.05 if first_person_room else (WALL_FRONT_HEIGHT if front else WALL_BACK_HEIGHT)
 	var point = RoomGeometry.socket_point(socket.cell, direction)
 	var at = point + Vector2(direction) * .15
 	var line = point.dot(Vector2(direction).abs())
@@ -381,7 +388,10 @@ func wall_obstructs(wall: Dictionary, point: Vector3) -> bool:
 	return inward > -1.0 and inward < CUTAWAY_REACH and along > wall.from - CUTAWAY_REACH and along < wall.to + CUTAWAY_REACH
 
 func floor_height(at: Vector3) -> float:
-	return terrain.height(Vector2(at.x, at.z)) if terrain else 0.0
+	return terrain.height_at(at) if terrain else 0.0
+
+func ceiling_height() -> float:
+	return LoftRoom.CEILING if terrain and terrain.loft else 5.45
 
 func update_wall_visibility(focus: Vector3, delta: float, others: Array = []) -> void:
 	if first_person_room: return
@@ -674,15 +684,15 @@ func make_fill_light(at: Vector3) -> OmniLight3D:
 		lamp.light_specular = .7
 	return lamp
 
-func lantern_distance(index: int, flat: Vector2) -> float:
-	return Vector2(lantern_points[index].x, lantern_points[index].z).distance_to(flat)
+func lantern_distance(index: int, focus: Vector3) -> float:
+	return lantern_points[index].distance_to(focus)
 
 ## Chooses the lanterns nearest the view. A lantern replaces a selected one
 ## only when it is clearly closer, so lights do not flap at the boundary.
 func update_light_selection(focus: Vector3) -> bool:
 	if lantern_points.size() <= lamps.size():
 		return false
-	var flat = Vector2(focus.x, focus.z)
+	var flat = focus
 	var changed = false
 	for candidate in lantern_points.size():
 		if candidate in lamp_assignment: continue
@@ -820,18 +830,19 @@ func add_ambient_emitters() -> void:
 ## Lazily built navigation per actor clearance class.
 ## Something solid placed after the room was built (the stair, a stairwell):
 ## spawn points and paths respect it from now on.
-func add_obstacle(id: String, at: Vector2, radius: float) -> void:
+func add_obstacle(id: String, at: Vector2, radius: float, height := 0.0) -> void:
 	obstacles.append({"id": id, "position": Vector3(at.x, 0, at.y), "radius": radius,
-		"rect": Rect2(at - Vector2.ONE * radius, Vector2.ONE * radius * 2.0)})
+		"rect": Rect2(at - Vector2.ONE * radius, Vector2.ONE * radius * 2.0),"height":height})
 	navigators.clear()
 
-func navigation(clearance := .5) -> RoomNavigation:
-	var key = snappedf(clearance, .05)
+func navigation(clearance := .5, level := 0.0) -> RoomNavigation:
+	var key = Vector2(snappedf(clearance,.05),level)
 	if not navigators.has(key):
 		var blockers := {}
 		for i in obstacles.size():
+			if terrain and terrain.loft and absf(float(obstacles[i].get("height",0))-level)>.5: continue
 			blockers[obstacles[i].get("id", "obstacle%d" % i)] = obstacles[i].rect
-		navigators[key] = RoomNavigation.new(geometry, clearance, blockers)
+		navigators[key] = RoomNavigation.new(geometry, clearance, blockers,level)
 	return navigators[key]
 
 ## A concealed doorway in this room that a Miner's Lantern could point at.

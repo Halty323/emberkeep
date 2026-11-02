@@ -6,7 +6,7 @@ extends RefCounted
 
 static func prepare(floor_data: Dictionary, floor_number: int) -> Dictionary:
 	var plans := {}
-	var candidates: Array = floor_data.rooms.values().filter(func(room): return room.type=="combat" and room.cells.size()>1)
+	var candidates: Array = floor_data.rooms.values().filter(func(room): return room.type=="combat")
 	var route := boss_route(floor_data)
 	candidates.sort_custom(func(a,b):
 		var ar: bool = a.id in route
@@ -18,12 +18,11 @@ static func prepare(floor_data: Dictionary, floor_number: int) -> Dictionary:
 		if room.id not in route: continue
 		var geometry := RoomGeometry.new(FloorGenerator.room_cells(room).map(func(cell): return cell-FloorGenerator.vec(room.anchor)))
 		var zones := essential_zones(FloorGenerator.reserved_zones(floor_data,room))
-		var plan := FirstPersonTerrain.plan_generation(room,geometry,zones,true)
+		var plan := LoftRoom.plan(room,geometry,zones)
 		if plan.is_empty() or not legal(plan,geometry,room,floor_data): continue
-		plan.kind = "upper" if floor_number%2==1 else "cellar"
-		plan.rise = FirstPersonTerrain.UPPER_RISE if plan.kind=="upper" else FirstPersonTerrain.CELLAR_RISE
 		plans[room.id] = plan
 		room["vertical_primary"] = true
+		make_mandatory(floor_data,room.id)
 		break
 	for room in candidates:
 		if plans.has(room.id): continue
@@ -106,18 +105,19 @@ static func upgrade_unvisited(rooms: Dictionary, portals: Dictionary, floor_numb
 	var data := {"rooms":rooms,"portals":portals}
 	for room in rooms.values():
 		var blueprint=room.get("fps_terrain",{})
-		if not blueprint is Dictionary or blueprint.get("version",0)!=2: continue
+		if not blueprint is Dictionary or blueprint.get("version",0)!=3: continue
 		var geometry:=RoomGeometry.new(FloorGenerator.room_cells(room).map(func(cell): return cell-FloorGenerator.vec(room.anchor)))
 		if legal(blueprint,geometry,room,data): return false
 	var candidates: Array=rooms.values().filter(func(room):
-		return int(room.get("generation",2))>=3 and room.type=="combat" and room.cells.size()>1 and not room.get("visited",false) and not room.get("cleared",false) and room.get("items",[]).is_empty() and not room.get("chests",[]).any(func(chest): return chest.get("opened",false)))
-	candidates.sort_custom(func(a,b): return int(a.depth)<int(b.depth) if int(a.depth)!=int(b.depth) else str(a.id)<str(b.id))
+		return room.type=="combat" and not room.get("visited",false) and not room.get("cleared",false) and room.get("items",[]).is_empty() and not room.get("chests",[]).any(func(chest): return chest.get("opened",false)))
+	var route:=boss_route(data)
+	candidates.sort_custom(func(a,b):
+		if (a.id in route)!=(b.id in route): return a.id in route
+		return int(a.depth)<int(b.depth) if int(a.depth)!=int(b.depth) else str(a.id)<str(b.id))
 	for room in candidates:
 		var geometry:=RoomGeometry.new(FloorGenerator.room_cells(room).map(func(cell): return cell-FloorGenerator.vec(room.anchor)))
-		var plan:=FirstPersonTerrain.plan_generation(room,geometry,essential_zones(FloorGenerator.reserved_zones(data,room)),true)
+		var plan:=LoftRoom.plan(room,geometry,essential_zones(FloorGenerator.reserved_zones(data,room)))
 		if plan.is_empty() or not legal(plan,geometry,room,data): continue
-		plan.kind="upper" if floor_number%2==1 else "cellar"
-		plan.rise=FirstPersonTerrain.UPPER_RISE if plan.kind=="upper" else FirstPersonTerrain.CELLAR_RISE
 		room["fps_terrain"]=plan
 		room["vertical_primary"]=true
 		var area:=FirstPersonTerrain.decode_rect(plan.ledge).merge(FirstPersonTerrain.decode_rect(plan.ramp)).grow(.7)
@@ -133,3 +133,36 @@ static func upgrade_unvisited(rooms: Dictionary, portals: Dictionary, floor_numb
 			chest.position=FloorGenerator.point_array(point)
 		return true
 	return false
+
+## Remove only cycle edges that bypass this chamber. The complete floor
+## remains connected, including optional branches and concealed secrets.
+static func make_mandatory(data: Dictionary, primary: String) -> void:
+	var normal:=route_portals(data,"")
+	for attempt in data.portals.size():
+		var bypass:=route_portals(data,primary)
+		if bypass.is_empty(): return
+		var removable:=bypass.filter(func(id): return id not in normal)
+		if removable.is_empty(): return
+		var id: String=removable.back()
+		var portal: Dictionary=data.portals[id]
+		for side in [portal.a,portal.b]: data.rooms[side.room].portals.erase(id)
+		data.portals.erase(id)
+
+static func route_portals(data: Dictionary, excluded: String) -> Array:
+	var parents: Dictionary={FloorGenerator.START_ID:{"room":"","portal":""}}
+	var queue: Array=[FloorGenerator.START_ID]
+	while not queue.is_empty():
+		var id: String=queue.pop_front()
+		if data.rooms[id].type=="boss":
+			var result: Array=[]
+			while not parents[id].room.is_empty():
+				result.push_front(parents[id].portal)
+				id=parents[id].room
+			return result
+		for key in data.rooms[id].portals:
+			var portal: Dictionary=data.portals[key]
+			if portal.state=="concealed": continue
+			var other: String=portal.b.room if portal.a.room==id else portal.a.room
+			if other==excluded or parents.has(other): continue
+			parents[other]={"room":id,"portal":key};queue.append(other)
+	return []

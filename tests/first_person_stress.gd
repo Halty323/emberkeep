@@ -85,7 +85,7 @@ func test_search_throttle() -> void:
 	# A target with no admissible endpoint used to trigger a full search on
 	# every tick because an empty path bypassed the enemy's cooldown.
 	var navigation = nav_script.new(geometry, .5, {"sealed": Rect2(-10, -8, 20, 16)})
-	game.room.navigators[.5] = navigation
+	game.room.navigators[Vector2(.5,0)] = navigation
 	var enemy = game.spawn_enemy(Vector3(-3, 0, 0), "mote")
 	game.player.place(Vector3(3, 0, 0))
 	for i in 180: enemy.steer_toward(game.player.position, 1.0 / 60.0)
@@ -212,7 +212,9 @@ func test_elevated_effects() -> void:
 	# This regression fixture tests the original 1.2m gallery. The v3
 	# optional upper/cellar spaces have their own physical coverage.
 	run.generator_version = 2
-	run.generate_floor()
+	var legacy_layout: Dictionary=load("res://scripts/dungeon/floor_generator.gd").generate_v2(18523427,run.floor_number)
+	run.rooms=legacy_layout.rooms
+	run.portals=legacy_layout.portals
 	game.paused = true
 	var gallery = false
 	for id in run.rooms:

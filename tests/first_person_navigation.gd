@@ -42,7 +42,10 @@ func exercise() -> void:
 	for seed_value in [18523427, 64217, 81031]:
 		game.start_run("candle", seed_value, false)
 		run.generator_version = 2
-		run.generate_floor()
+		# Pin this original-gallery fixture before automatic architecture upgrades.
+		var legacy_layout: Dictionary=load("res://scripts/dungeon/floor_generator.gd").generate_v2(seed_value,run.floor_number)
+		run.rooms=legacy_layout.rooms
+		run.portals=legacy_layout.portals
 		for id in run.rooms:
 			if run.rooms[id].type != "combat" or run.rooms[id].cells.size() < 2: continue
 			run.current_room = id
@@ -166,7 +169,10 @@ func check_more_seeded_rooms() -> void:
 	for seed_value in [99, 421, 9001, 26018, 73021, 109321, 468103, 992301]:
 		game.start_run("candle", seed_value, false)
 		run.generator_version = 2
-		run.generate_floor()
+		# Pin this original-gallery fixture before automatic architecture upgrades.
+		var legacy_layout: Dictionary=load("res://scripts/dungeon/floor_generator.gd").generate_v2(seed_value,run.floor_number)
+		run.rooms=legacy_layout.rooms
+		run.portals=legacy_layout.portals
 		for id in run.rooms:
 			if run.rooms[id].type != "combat" or run.rooms[id].cells.size() < 2: continue
 			run.current_room = id

@@ -199,6 +199,7 @@ docs/PRESENTATION_OVERHAUL.md
 docs/PS2_UPDATE.md
 docs/STYLIZED_EXPERIMENT.md
 docs/TESTING.md
+docs/TWO_STOREY_ROOMS.md
 docs/images/.gdignore
 docs/images/corridor-cellar-room.png
 docs/images/corridor-doorway.png
@@ -212,12 +213,16 @@ docs/images/stylized-cellar.png
 docs/images/stylized-hall.png
 docs/images/stylized-hearth.png
 docs/images/stylized-water.png
+docs/images/two-storey-arrival.png
+docs/images/two-storey-beneath.png
+docs/images/two-storey-upstairs.png
 docs/reports/corridor-builds.json
 docs/reports/corridor-powervr.json
 docs/reports/stair-assembly-builds.json
 docs/reports/stylized-desktop.json
 docs/reports/stylized-mobile-safe.json
 docs/reports/stylized-reflection.json
+docs/reports/two-storey-native.json
 export_presets.cfg
 project.godot
 scenes/main.tscn
@@ -267,6 +272,8 @@ scripts/first_person/corridor_segment.gd
 scripts/first_person/corridor_segment.gd.uid
 scripts/first_person/corridor_transit.gd
 scripts/first_person/corridor_transit.gd.uid
+scripts/first_person/loft_room.gd
+scripts/first_person/loft_room.gd.uid
 scripts/first_person/room_terrain.gd
 scripts/first_person/room_terrain.gd.uid
 scripts/first_person/weapon_view.gd
@@ -553,6 +560,8 @@ tests/title_presentation.gd
 tests/title_presentation.gd.uid
 tests/tower.gd
 tests/tower.gd.uid
+tests/two_storey.gd
+tests/two_storey.gd.uid
 tests/ui_presentation.gd
 tests/ui_presentation.gd.uid
 tests/vertical_rooms.gd

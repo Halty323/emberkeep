@@ -1360,6 +1360,12 @@ func draw_floor_map(area: Rect2, focus: Vector2, cell_size: float) -> void:
 					var edge = ghost_edge(rect, direction)
 					if area.has_point(edge[0]) and area.has_point(edge[1]):
 						draw_dashed_line(edge[0], edge[1], Color(color, .5), maxf(1.0, cell_size * .05), maxf(2.5, cell_size * .12), true, true)
+		if data.get("fps_terrain",{}).get("kind","")=="loft":
+			var mark: Vector2=origin+Vector2(FloorGenerator.vec(data.anchor))*cell_size+Vector2(2,-2)
+			if area.grow(-5).has_point(mark):
+				draw_rect(Rect2(mark-Vector2(4,4),Vector2(8,8)),Color("202724"))
+				for y in [-2,2]: draw_line(mark+Vector2(-3,y),mark+Vector2(3,y),GOLD,1.0,true)
+				draw_line(mark+Vector2(-2,2),mark+Vector2(2,-2),GOLD,1.0,true)
 		if id == Run.current_room:
 			# One outline around the whole footprint, drawn on exposed edges only.
 			var reach = cell_size * .5 - inset + 2.5

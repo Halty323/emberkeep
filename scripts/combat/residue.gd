@@ -53,8 +53,11 @@ var grid_size := Vector2i.ONE
 var dirty := {}
 var tick = 0.0
 var elevated_surface: ArrayMesh
+var surface_level := 0.0
+var upper_field: ResidueField
 
-func setup(owner_game: Node3D, room_geometry: RoomGeometry) -> void:
+func setup(owner_game: Node3D, room_geometry: RoomGeometry, elevation := 0.0) -> void:
+	surface_level=elevation
 	game = owner_game
 	first_person = game.get("first_person") == true
 	geometry = room_geometry
@@ -177,6 +180,8 @@ func refresh_cloud_surface() -> void:
 
 ## Rings spreading on water from a point (a shot landing, a foot wading).
 func ripple(at: Vector3, strength := 1.0) -> void:
+	var field:=layer_at(at)
+	if field!=self: field.ripple(at,strength);return
 	if kind_at(at) != "water": return
 	if ripples.size() >= MAX_RIPPLES: ripples.pop_front()
 	ripples.append(Vector4(at.x, at.z, clock, strength))
@@ -190,12 +195,14 @@ func reflective() -> bool:
 
 ## Water and ice show the mirror only while it runs.
 func set_mirror(active: bool) -> void:
+	if is_instance_valid(upper_field): upper_field.set_mirror(active)
 	if not RenderPolicy.current().refraction: return
 	for kind in WATERY:
 		views[kind].material.set_shader_parameter("reflect_strength", .65 if active else 0.0)
 
 ## Visual only: rain on the cistern's pools, wading rings, the ripple clock.
 func animate(delta: float) -> void:
+	if is_instance_valid(upper_field): upper_field.animate(delta)
 	clock += delta
 	if not RenderPolicy.current().refraction: return
 	if views.water.count == 0: return
@@ -213,7 +220,7 @@ func animate(delta: float) -> void:
 			var wet: Array = tiles.keys()
 			if not wet.is_empty():
 				var tile: Vector2i = wet[drizzle.randi_range(0, wet.size() - 1)]
-				var at = center(tile) + Vector3(drizzle.randf_range(-.4, .4), 0, drizzle.randf_range(-.4, .4))
+				var at = cell_center(tile) + Vector3(drizzle.randf_range(-.4, .4), 0, drizzle.randf_range(-.4, .4))
 				ripple(at, .35)
 	var packed = PackedVector4Array(ripples)
 	while packed.size() < MAX_RIPPLES: packed.append(Vector4.ZERO)
@@ -226,13 +233,32 @@ static func key(at: Vector3) -> Vector2i:
 static func center(tile: Vector2i) -> Vector3:
 	return Vector3((tile.x + .5) * TILE, 0, (tile.y + .5) * TILE)
 
+func layer_at(at: Vector3) -> ResidueField:
+	if surface_level<1 and first_person and geometry.terrain and geometry.terrain.loft and geometry.terrain.loft.upper(at):
+		if not is_instance_valid(upper_field):
+			upper_field=ResidueField.new()
+			upper_field.name="UpstairsResidue"
+			add_child(upper_field)
+			upper_field.setup(game,geometry,LoftRoom.RISE)
+		return upper_field
+	return self
+
+func cell_center(tile: Vector2i) -> Vector3:
+	var at:=center(tile)
+	at.y=ground_height(at)
+	return at
+
 func ground_height(at: Vector3) -> float:
-	return geometry.terrain.height(Vector2(at.x,at.z)) if first_person and geometry.terrain else 0.0
+	if first_person and geometry.terrain:
+		return geometry.terrain.height_at(Vector3(at.x,surface_level,at.z)) if geometry.terrain.loft else geometry.terrain.height_at(at)
+	return 0.0
 
 func touches_floor(at: Vector3, tolerance := .35) -> bool:
 	return not first_person or absf(at.y-ground_height(at)) <= tolerance
 
 func kind_at(at: Vector3) -> String:
+	var field:=layer_at(at)
+	if field!=self: return field.kind_at(at)
 	return tiles.get(key(at), {}).get("kind", "") if touches_floor(at) else ""
 
 ## One shared mesh follows the room's physical floor, including cellar ramps.
@@ -259,13 +285,19 @@ func build_elevated_surface() -> ArrayMesh:
 
 ## Tiles inside the floor within a radius of a point.
 func tiles_in(at: Vector3, radius: float) -> Array:
+	var field:=layer_at(at)
+	if field!=self: return field.tiles_in(at,radius)
 	var result: Array = []
 	var low = key(at - Vector3(radius, 0, radius))
 	var high = key(at + Vector3(radius, 0, radius))
 	for x in range(low.x, high.x + 1):
 		for y in range(low.y, high.y + 1):
 			var tile = Vector2i(x, y)
-			var c = center(tile)
+			var c = cell_center(tile)
+			if first_person and geometry.terrain and geometry.terrain.loft:
+				var loft=geometry.terrain.loft
+				if surface_level>1 and not loft.upper(Vector3(c.x,surface_level,c.z)): continue
+				if surface_level<1 and loft.stairs.has_point(Vector2(c.x,c.z)): continue
 			if first_person and absf(at.y-ground_height(c)) > maxf(.9,radius*.7): continue
 			if Vector2(c.x - at.x, c.z - at.z).length() <= radius and geometry.contains(Vector2(c.x, c.z), .2):
 				result.append(tile)
@@ -276,13 +308,15 @@ func floor_tiles() -> Array:
 	var result: Array = []
 	for x in range(grid_origin.x, grid_origin.x + grid_size.x):
 		for y in range(grid_origin.y, grid_origin.y + grid_size.y):
-			var c = center(Vector2i(x, y))
+			var c = cell_center(Vector2i(x, y))
 			if geometry.contains(Vector2(c.x, c.z), .2): result.append(Vector2i(x, y))
 	return result
 
 ## Lays a kind over a patch. Fire only takes where something can burn. A
 ## lasting patch (a floor's own hazard) never melts or burns out by itself.
 func add(kind: String, at: Vector3, radius: float, lasting := false) -> void:
+	var field:=layer_at(at)
+	if field!=self: field.add(kind,at,radius,lasting);return
 	for tile in tiles_in(at, radius):
 		var current: String = tiles.get(tile, {}).get("kind", "")
 		if kind == "fire" and current not in ["wax", "moss"]: continue
@@ -291,6 +325,8 @@ func add(kind: String, at: Vector3, radius: float, lasting := false) -> void:
 
 ## Fire that takes on bare stone too, for a little while: a vent's breath.
 func scorch(at: Vector3, radius: float) -> void:
+	var field:=layer_at(at)
+	if field!=self: field.scorch(at,radius);return
 	for tile in tiles_in(at, radius):
 		if tiles.get(tile, {}).get("kind", "") == "water": continue
 		set_tile(tile, "fire")
@@ -307,6 +343,8 @@ func set_tile(tile: Vector2i, kind: String, lasting := false) -> void:
 
 ## Burn, chill and poison meeting what lies here.
 func react(at: Vector3, radius: float, stats: Dictionary) -> void:
+	var field:=layer_at(at)
+	if field!=self: field.react(at,radius,stats);return
 	if float(stats.get("burn", 0)) > 0 or float(stats.get("explosion", 0)) > 0:
 		ignite(at, radius)
 	if float(stats.get("chill", 0)) > 0:
@@ -316,6 +354,8 @@ func react(at: Vector3, radius: float, stats: Dictionary) -> void:
 		if cloud >= 0: poison_cloud(cloud)
 
 func ignite(at: Vector3, radius: float) -> void:
+	var field:=layer_at(at)
+	if field!=self: field.ignite(at,radius);return
 	var boiled = false
 	for tile in tiles_in(at, radius):
 		var current: String = tiles.get(tile, {}).get("kind", "")
@@ -330,12 +370,16 @@ func ignite(at: Vector3, radius: float) -> void:
 			explode_cloud(i)
 
 func freeze(at: Vector3, radius: float) -> void:
+	var field:=layer_at(at)
+	if field!=self: field.freeze(at,radius);return
 	for tile in tiles_in(at, radius):
 		var current: String = tiles.get(tile, {}).get("kind", "")
 		if current in ["wax", "water"]: set_tile(tile, "ice")
 		elif current == "fire": set_tile(tile, "wax" if tiles[tile].under == "wax" else "")
 
 func slows(at: Vector3) -> float:
+	var field:=layer_at(at)
+	if field!=self: return field.slows(at)
 	if not touches_floor(at,.35): return 1.0
 	var factor: float = DRAG.get(kind_at(at), 1.0)
 	var cloud = cloud_at(at)
@@ -345,6 +389,8 @@ func slows(at: Vector3) -> float:
 ## Lightning striking a foe in water runs through the whole pool: every foe
 ## standing in the same water takes a share. Returns how many it reached.
 func shock(at: Vector3, damage: float, struck: Dictionary = {}) -> int:
+	var field:=layer_at(at)
+	if field!=self: return field.shock(at,damage,struck)
 	if not touches_floor(at,.5): return 0
 	if kind_at(at) != "water": return 0
 	var pool := {}
@@ -360,6 +406,8 @@ func shock(at: Vector3, damage: float, struck: Dictionary = {}) -> int:
 
 ## Whether a segment crosses glass; the first crossing splits a shot.
 func crosses_glass(from: Vector3, to: Vector3) -> bool:
+	var field:=layer_at(from)
+	if field!=self: return field.crosses_glass(from,to)
 	if first_person and not touches_floor(from,.9) and not touches_floor(to,.9): return false
 	var steps = maxi(1, ceili(from.distance_to(to) / (TILE * .5)))
 	for i in steps + 1:
@@ -368,6 +416,8 @@ func crosses_glass(from: Vector3, to: Vector3) -> bool:
 
 ## Moss tiles linked to a point through touching moss, from those within reach.
 func moss_linked(at: Vector3, reach: float, kinds := ["moss"]) -> Array:
+	var field:=layer_at(at)
+	if field!=self: return field.moss_linked(at,reach,kinds)
 	var queue: Array = tiles_in(at, reach).filter(func(tile): return tiles.has(tile) and tiles[tile].kind in kinds)
 	var seen := {}
 	for tile in queue: seen[tile] = true
@@ -378,7 +428,7 @@ func moss_linked(at: Vector3, reach: float, kinds := ["moss"]) -> Array:
 		for step in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
 			var next: Vector2i = tile + step
 			if seen.has(next) or not tiles.has(next) or tiles[next].kind not in kinds: continue
-			if first_person and absf(ground_height(center(tile))-ground_height(center(next))) > .65: continue
+			if first_person and absf(ground_height(cell_center(tile))-ground_height(cell_center(next))) > .65: continue
 			seen[next] = true
 			queue.append(next)
 	return queue
@@ -386,6 +436,8 @@ func moss_linked(at: Vector3, reach: float, kinds := ["moss"]) -> Array:
 ## A cloud of spores (poison spreads through it, fire sets it off) or of
 ## steam. A shared softly feathered surface carries their visual density.
 func add_cloud(at: Vector3, radius: float, kind := "spores") -> void:
+	var field:=layer_at(at)
+	if field!=self: field.add_cloud(at,radius,kind);return
 	if clouds.size() >= MAX_CLOUDS: remove_cloud(0)
 	var view = Node3D.new()
 	add_child(view)
@@ -396,17 +448,27 @@ func add_cloud(at: Vector3, radius: float, kind := "spores") -> void:
 	refresh_cloud_surface()
 
 func cloud_at(at: Vector3) -> int:
+	var field:=layer_at(at)
+	if field!=self:
+		var found:=field.cloud_at(at)
+		return found+MAX_CLOUDS if found>=0 else -1
 	for i in clouds.size():
 		if first_person and absf(at.y-clouds[i].at.y) > 1.8: continue
 		if Vector2(clouds[i].at.x - at.x, clouds[i].at.z - at.z).length() < clouds[i].radius: return i
 	return -1
 
 func remove_cloud(index: int) -> void:
+	if index>=MAX_CLOUDS and is_instance_valid(upper_field):
+		upper_field.remove_cloud(index-MAX_CLOUDS)
+		return
 	if is_instance_valid(clouds[index].view): clouds[index].view.queue_free()
 	clouds.remove_at(index)
 	refresh_cloud_surface()
 
 func poison_cloud(index: int) -> void:
+	if index>=MAX_CLOUDS and is_instance_valid(upper_field):
+		upper_field.poison_cloud(index-MAX_CLOUDS)
+		return
 	var cloud: Dictionary = clouds[index]
 	if cloud.kind == "spores" and not cloud.poisoned:
 		cloud.poisoned = true
@@ -416,6 +478,9 @@ func poison_cloud(index: int) -> void:
 ## Fire sets spores off: everything inside is struck, and the blast lights
 ## what lies beneath.
 func explode_cloud(index: int) -> void:
+	if index>=MAX_CLOUDS and is_instance_valid(upper_field):
+		upper_field.explode_cloud(index-MAX_CLOUDS)
+		return
 	var cloud: Dictionary = clouds[index]
 	remove_cloud(index)
 	Effects.ring_burst(game.scene_root, cloud.at, Color("c9d47a"), cloud.radius)
@@ -432,6 +497,7 @@ func explode_cloud(index: int) -> void:
 	ignite(cloud.at, cloud.radius * .8)
 
 func update_sim(delta: float) -> void:
+	if is_instance_valid(upper_field): upper_field.update_sim(delta)
 	tick -= delta
 	var touch = tick <= 0
 	if touch: tick = .25
@@ -469,11 +535,12 @@ func update_sim(delta: float) -> void:
 	if touch:
 		for enemy in game.enemies:
 			if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable: continue
+			if first_person and not touches_floor(enemy.global_position): continue
 			var under = kind_at(enemy.global_position)
 			if under == "fire": enemy.apply_status({"burn": 1.2})
 			# Water puts a burning foe out.
 			elif under == "water": enemy.burn_time = 0.0
-		if kind_at(game.player.global_position) == "fire":
+		if (not first_person or touches_floor(game.player.global_position)) and kind_at(game.player.global_position) == "fire":
 			game.player.hurt(1.0, game.player.global_position)
 	for kind in dirty.keys():
 		if views.has(kind): rebuild(kind)

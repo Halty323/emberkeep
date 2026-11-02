@@ -71,7 +71,7 @@ func exercise() -> void:
 					var local = Generator.vec(side.cell)-Generator.vec(room.anchor)
 					var direction = Generator.vec(side.dir)
 					sockets[str(local)+":"+str(direction)] = {"cell":local,"dir":direction,"state":portal.state}
-				if room.get("fps_terrain",{}).get("version",0)==2:
+				if room.get("fps_terrain",{}).get("version",0) in [2,3]:
 					check(Terrain.valid_blueprint(room.fps_terrain,geometry,sockets),"planned vertical blueprint remains valid with runtime door and closed-wall sockets")
 				var blockers: Dictionary = {}
 				var rects: Array[Rect2] = []
@@ -104,7 +104,7 @@ func exercise() -> void:
 					if boss_nav: check(boss_nav.reachable(hub,goal),"boss navigation remains connected with dense furnishings")
 				for chest in room.chests: check(nav.reachable(hub,Generator.vec2(chest.position)+Vector2(0,1)),"every chest remains reachable")
 				for mount in room.mounts: check(nav.reachable(hub,Generator.vec2(mount.view)),"every painting remains reachable")
-				if room.get("fps_terrain",{}).get("version",0)==2: annexes+=1
+				if room.get("fps_terrain",{}).get("version",0) in [2,3]: annexes+=1
 				if room.type in ["start","combat","rest","shop"]:
 					if room.props.size()>=5: furnished+=1
 					check(not room.props.is_empty(),"ordinary rooms contain actual furnishings")

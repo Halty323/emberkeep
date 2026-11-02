@@ -62,7 +62,8 @@ func generation() -> void:
 			check(vertical.size()==1,"each floor guarantees a primary two-level combat room")
 			if not vertical.is_empty():
 				primary_count+=1
-				check(vertical[0].fps_terrain.kind==("upper" if floor_number%2==1 else "cellar"),"first floor shows an upper level; later floors vary the primary level")
+				check(vertical[0].fps_terrain.kind=="loft" and vertical[0].fps_terrain.version==3,"the primary is an actual two-storey room rather than a height-field annex")
+				check(load("res://scripts/dungeon/vertical_plans.gd").route_portals(data,vertical[0].id).is_empty(),"all routes to the boss pass through the two-storey room")
 				var verticals=load("res://scripts/dungeon/vertical_plans.gd")
 				check(vertical[0].id in verticals.boss_route(data),"the guaranteed two-level chamber appears on the normal boss route")
 			for portal in data.portals.values():

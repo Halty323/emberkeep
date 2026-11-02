@@ -780,6 +780,7 @@ func saved_entry() -> Vector3:
 func enter_room(spawn: Vector3, keep_view := false, walking_state: Dictionary = {}) -> void:
 	clean_room(keep_view,not walking_state.is_empty())
 	var data: Dictionary = Run.rooms[Run.current_room]
+	var first_visit: bool=not data.get("visited",false)
 	data.visited = true
 	if walking_state.get("room")!=null:
 		room=walking_state.room
@@ -846,7 +847,7 @@ func enter_room(spawn: Vector3, keep_view := false, walking_state: Dictionary = 
 			raise_stairs(false)
 		Run.save_run()
 	for drop in data.get("pickups", []):
-		spawn_pickup(Vector3(float(drop.position[0]), 0, float(drop.position[1])), drop.def, float(drop.get("value", -1)), str(drop.id))
+		spawn_pickup(Vector3(float(drop.position[0]), float(drop.get("height",0)), float(drop.position[1])), drop.def, float(drop.get("value", -1)), str(drop.id))
 	if data.type == "start" and Run.floor_number > 1:
 		var spot = stair_spot(data, "stairwell")
 		well_spot = Vector3(spot.x, 0, spot.y)
@@ -875,6 +876,8 @@ func enter_room(spawn: Vector3, keep_view := false, walking_state: Dictionary = 
 		ui.notify(line[0], line[1], Color("e0a18b"))
 	apply_floor_light()
 	update_camera(0.0, true)
+	if first_visit and room.terrain and room.terrain.loft:
+		ui.notify("A chamber on two floors", "Follow the stairs to the upper gallery.",Color("e8ca8b"))
 
 func spawn_room_encounter(data: Dictionary, spawn: Vector3) -> void:
 	var gen:=RandomNumberGenerator.new()
@@ -904,6 +907,10 @@ func spawn_room_encounter(data: Dictionary, spawn: Vector3) -> void:
 				if p.distance_to(obstacle.position) < 1.6: p.z = center.y
 			if p.distance_to(spawn) < 3.0:
 				p = spawn + (p - spawn).normalized() * 3.5 if not p.is_equal_approx(spawn) else spawn + Vector3(3.5, 0, 0)
+			if first_person and room.terrain and room.terrain.loft and i in [1,count-1]:
+				var deck: Rect2=room.terrain.loft.deck
+				var at:=deck.get_center()+Vector2(-1.8 if i==1 else 1.8,.6)
+				p=Vector3(at.x,LoftRoom.RISE,at.y)
 			spawned.append(spawn_enemy(p, plan[i].kind, "%s:e%d" % [data.id, i]))
 		for i in plan.size():
 			if plan[i].partner > i: spawned[i].bind_partner(spawned[plan[i].partner])
@@ -939,11 +946,14 @@ func heat_sources(limit: int) -> Array:
 		if enemy.kind == "kilnmother": sources.append({"at": enemy.global_position + Vector3.UP * 1.5, "reach": 3.5, "power": 1.0})
 		elif enemy.kind == "clinker" and enemy.burn_time > 0: sources.append({"at": enemy.global_position + Vector3.UP * .6, "reach": 1.4, "power": .7})
 	if residue:
-		var fires: Array = residue.tiles.keys().filter(func(tile): return residue.tiles[tile].kind == "fire")
-		var stride = maxi(1, fires.size() / maxi(1, limit - sources.size()))
-		for i in range(0, fires.size(), stride):
-			if sources.size() >= limit: break
-			sources.append({"at": ResidueField.center(fires[i]) + Vector3.UP * .4, "reach": 1.6, "power": .8})
+		var fields: Array=[residue]
+		if is_instance_valid(residue.upper_field): fields.append(residue.upper_field)
+		for field in fields:
+			var fires: Array = field.tiles.keys().filter(func(tile): return field.tiles[tile].kind == "fire")
+			var stride = maxi(1, fires.size() / maxi(1, limit - sources.size()))
+			for i in range(0, fires.size(), stride):
+				if sources.size() >= limit: break
+				sources.append({"at": field.cell_center(fires[i]) + Vector3.UP * .4, "reach": 1.6, "power": .8})
 	return sources
 
 ## Each doorway trigger names one specific portal; the transition itself is
@@ -1032,7 +1042,7 @@ func spawn_enemy(at: Vector3, kind: String, source := "") -> DungeonEnemy:
 	enemy.setup(self, kind, entity_counter)
 	enemy.source = source
 	var safe = room.geometry.safe_point(Vector2(at.x, at.z), .5 + enemy.radius * .5, room.blocked_at)
-	enemy.place(Vector3(safe.x, room.floor_height(Vector3(safe.x, 0, safe.y)) if first_person else 0, safe.y))
+	enemy.place(Vector3(safe.x, room.floor_height(Vector3(safe.x, at.y, safe.y)) if first_person else 0, safe.y))
 	enemies.append(enemy)
 	return enemy
 
@@ -1106,9 +1116,9 @@ func spawn_pickup(at: Vector3, pickup_id: String, amount := -1.0, restored_id :=
 	var safe = room.geometry.safe_point(Vector2(at.x, at.z), .3)
 	var pickup = DungeonPickup.new()
 	scene_root.add_child(pickup)
-	pickup.setup(self, Vector3(safe.x, room.floor_height(Vector3(safe.x, 0, safe.y)) if first_person else 0.0, safe.y), pickup_id, amount)
+	pickup.setup(self, Vector3(safe.x, room.floor_height(Vector3(safe.x, at.y, safe.y)) if first_person else 0.0, safe.y), pickup_id, amount)
 	if restored_id.is_empty():
-		pickup.drop_id = Run.add_drop(Run.current_room, pickup_id, safe, pickup.value)
+		pickup.drop_id = Run.add_drop(Run.current_room, pickup_id, safe, pickup.value,pickup.position.y)
 	else:
 		pickup.drop_id = restored_id
 	pickups.append(pickup)
@@ -1230,7 +1240,7 @@ func resolve_expedition_clear(data: Dictionary) -> void:
 			var chest: Dictionary = actions.award_clear_chest(data,at)
 			if not chest.is_empty():
 				make_chest_view(chest)
-				room.add_obstacle(str(chest.id),Vector2(at.x,at.z),.55)
+				room.add_obstacle(str(chest.id),Vector2(at.x,at.z),.55,at.y)
 				refresh_items()
 				ui.notify("A chest earned", "The chamber's supplies are yours.")
 			data.claimed=true

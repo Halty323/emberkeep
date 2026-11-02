@@ -55,7 +55,7 @@ func capture() -> void:
 		if point==null:
 			push_error("No valid camera for generated primary level");quit(1);return
 		set_view(point,target)
-		await save_view("upper-room" if floor_number==1 else "cellar-room")
+		await save_view("upper-room" if floor_number==1 else "upper-room-floor-2")
 		if floor_number==1:
 			settings.set_value("ssao","off")
 			await save_view("upper-ssao-off")

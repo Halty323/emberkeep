@@ -13,6 +13,8 @@ static func build(room) -> void:
 ## Keep the authored transforms available before GPU upload. This is also
 ## usable by collision/architecture tools on a headless render server.
 static func layout(room) -> Dictionary:
+	var high:=LoftRoom.CEILING if room.data.get("fps_terrain",{}).get("version",0)==3 else 5.45
+	var lift:=high-5.45
 	var stone: Array[Transform3D] = []
 	var dressed: Array[Transform3D] = []
 	var timber: Array[Transform3D] = []
@@ -31,16 +33,16 @@ static func layout(room) -> Dictionary:
 			for depth in [-4.6, 0.0, 4.6]:
 				var band:=Rect2(center+Vector2(-9,depth-.3),Vector2(18,.6))
 				if cuts.any(func(cut): return cut.intersects(band)): continue
-				arch(stone, Vector3(center.x, 3.3, center.y + depth), 8.85, 1.97, 12, .29, .38)
+				arch(stone, Vector3(center.x, 3.3+lift, center.y + depth), 8.85, 1.97, 12, .29, .38)
 				for side in [-1,1]:
-					box(dressed,Vector3(center.x+side*8.88,3.29,center.y+depth),Vector3(.65,.42,.58))
-				box(dressed, Vector3(center.x, 5.32, center.y + depth), Vector3(.5, .3, .49))
+					box(dressed,Vector3(center.x+side*8.88,3.29+lift,center.y+depth),Vector3(.65,.42,.58))
+				box(dressed, Vector3(center.x, 5.32+lift, center.y + depth), Vector3(.5, .3, .49))
 		# Ceiling coffers are real low-poly forms, rather than another screen
 		# effect. The gaps and grain catch the existing warm local lights.
 		for depth in [-5.8, -2.9, 0.0, 2.9, 5.8]:
-			ceiling_beam(timber,Rect2(center+Vector2(-9,depth-.085),Vector2(18,.17)),cuts)
+			ceiling_beam(timber,Rect2(center+Vector2(-9,depth-.085),Vector2(18,.17)),cuts,lift)
 		for across in [-5.4, 0.0, 5.4]:
-			ceiling_beam(timber,Rect2(center+Vector2(across-.08,-7),Vector2(.16,14)),cuts)
+			ceiling_beam(timber,Rect2(center+Vector2(across-.08,-7),Vector2(.16,14)),cuts,lift)
 
 	for segment in room.geometry.wall_segments():
 		if segment.to - segment.from < .4: continue
@@ -52,7 +54,7 @@ static func layout(room) -> Dictionary:
 		# Continuous skirting and an upper cornice ground the wall's large
 		# flat faces. Their depth stays within the wall contact margin.
 		box(dressed, at, Vector3(length, .28, .16), yaw)
-		box(dressed, at + Vector3.UP * 4.58, Vector3(length, .16, .13), yaw)
+		box(dressed, at + Vector3.UP * (4.58+lift), Vector3(length, .16, .13), yaw)
 		var count = maxi(1, floori(length / 4.3))
 		for column in count:
 			var offset = (float(column) + .5) / count * length - length * .5
@@ -60,7 +62,7 @@ static func layout(room) -> Dictionary:
 			# Wall mechanisms and memorials occupy authored niches. Leave the
 			# supporting mouldings, but do not put a pilaster through their face.
 			if niche_reserved(room, Vector2(p.x,p.z), segment.dir): continue
-			box(stone, p + Vector3.UP * 2.51, Vector3(.28, 4.7, .13), yaw)
+			box(stone, p + Vector3.UP * (2.51+lift*.5), Vector3(.28, 4.7+lift, .13), yaw)
 			box(dressed, p + Vector3.UP * .38, Vector3(.49, .16, .19), yaw)
 			box(dressed, p + Vector3.UP * 3.18, Vector3(.47, .2, .2), yaw)
 
@@ -88,12 +90,12 @@ static func box(transforms: Array[Transform3D], at: Vector3, size: Vector3, yaw 
 static func arch_supported(geometry: RoomGeometry, cell: Vector2i) -> bool:
 	return not geometry.cell_set.has(cell+Vector2i.LEFT) and not geometry.cell_set.has(cell+Vector2i.RIGHT)
 
-static func ceiling_beam(transforms: Array[Transform3D], area: Rect2, cuts: Array[Rect2]) -> void:
+static func ceiling_beam(transforms: Array[Transform3D], area: Rect2, cuts: Array[Rect2], lift := 0.0) -> void:
 	var pieces: Array[Rect2]=[area]
 	for cut in cuts: pieces=FirstPersonTerrain.subtract_rects(pieces,cut)
 	for piece in pieces:
 		var at:=piece.get_center()
-		box(transforms,Vector3(at.x,5.39,at.y),Vector3(piece.size.x,.18,piece.size.y))
+		box(transforms,Vector3(at.x,5.39+lift,at.y),Vector3(piece.size.x,.18,piece.size.y))
 
 static func arch(transforms: Array[Transform3D], at: Vector3, radius: float, rise: float, segments: int, thickness: float, depth: float, yaw := 0.0) -> void:
 	var turn = Basis(Vector3.UP, yaw)
