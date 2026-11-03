@@ -354,6 +354,7 @@ docs/IOS.md
 docs/LIGHTING_UPDATE.md
 docs/LINUX.md
 docs/LORE.md
+docs/MAGIC_UPDATE.md
 docs/ONLINE.md
 docs/PAINTING_COLLECTION_PLAN.md
 docs/PAINTING_CREDITS.md
@@ -372,6 +373,9 @@ docs/images/expedition-door.png
 docs/images/expedition-stairs.png
 docs/images/lighting-gameplay.png
 docs/images/lighting-hearth.png
+docs/images/magic-reliquary.png
+docs/images/magic-spellbook.png
+docs/images/magic-spells.png
 docs/images/stylized-cellar.png
 docs/images/stylized-hall.png
 docs/images/stylized-hearth.png
@@ -448,10 +452,12 @@ scripts/first_person/corridor_transit.gd
 scripts/first_person/corridor_transit.gd.uid
 scripts/first_person/loft_room.gd
 scripts/first_person/loft_room.gd.uid
+scripts/first_person/node_reaper.gd
+scripts/first_person/node_reaper.gd.uid
 scripts/first_person/room_terrain.gd
 scripts/first_person/room_terrain.gd.uid
-scripts/first_person/weapon_view.gd
-scripts/first_person/weapon_view.gd.uid
+scripts/first_person/spellbook_view.gd
+scripts/first_person/spellbook_view.gd.uid
 scripts/foes/archivist.gd
 scripts/foes/archivist.gd.uid
 scripts/foes/bailer.gd
@@ -526,6 +532,8 @@ scripts/graphics/dungeon_style.gd
 scripts/graphics/dungeon_style.gd.uid
 scripts/graphics/dungeon_textures.gd
 scripts/graphics/dungeon_textures.gd.uid
+scripts/graphics/frame_watch.gd
+scripts/graphics/frame_watch.gd.uid
 scripts/graphics/look.gd
 scripts/graphics/look.gd.uid
 scripts/graphics/pbr_materials.gd
@@ -558,6 +566,10 @@ scripts/items/moth_companion.gd
 scripts/items/moth_companion.gd.uid
 scripts/items/pickup_rules.gd
 scripts/items/pickup_rules.gd.uid
+scripts/items/reliquary.gd
+scripts/items/reliquary.gd.uid
+scripts/items/spellbook_looks.gd
+scripts/items/spellbook_looks.gd.uid
 scripts/main.gd
 scripts/main.gd.uid
 scripts/pickup.gd
@@ -638,6 +650,8 @@ shaders/shot_splat.gdshader
 shaders/shot_splat.gdshader.uid
 shaders/shot_streak.gdshader
 shaders/shot_streak.gdshader.uid
+shaders/spell_page.gdshader
+shaders/spell_page.gdshader.uid
 shaders/ui_stone.gdshader
 shaders/ui_stone.gdshader.uid
 shaders/vignette.gdshader
@@ -700,6 +714,8 @@ tests/render_policy.gd
 tests/render_policy.gd.uid
 tests/render_ps2_update.gd
 tests/render_ps2_update.gd.uid
+tests/render_spellbook.gd
+tests/render_spellbook.gd.uid
 tests/render_ssao.gd
 tests/render_ssao.gd.uid
 tests/render_stair_cinematic.gd
@@ -726,6 +742,8 @@ tests/settings.gd
 tests/settings.gd.uid
 tests/smoke.gd
 tests/smoke.gd.uid
+tests/spellbook.gd
+tests/spellbook.gd.uid
 tests/ssao_fullscreen.gd
 tests/ssao_fullscreen.gd.uid
 tests/stair_cinematic.gd

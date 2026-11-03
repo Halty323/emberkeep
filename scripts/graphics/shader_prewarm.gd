@@ -113,6 +113,15 @@ func stock() -> void:
 		holder(index).add_child(pickup)
 		pickup.setup(game, Vector3.ZERO, str(definition.id))
 		index += 1
+	# A spellbook wearing one relic of each look family, so the first relic
+	# found draws without a stall, and a reliquary as treasure rooms show it.
+	var book := Node3D.new()
+	holder(index).add_child(book)
+	SpellbookView.populate(book)
+	SpellbookLooks.dress(book, ["warm_wax", "heartstone", "seeking_spark", "firefly_jar", "second_wind", "chili_oil", "sugar_rush", "quick_wick"])
+	index += 1
+	Reliquary.build(holder(index), Color("ffc874"), game.first_person)
+	index += 1
 	# Anything a setup left in the room (a vine, a fixture's light) is ours.
 	if is_instance_valid(room):
 		while room.extra_lights.size() > lights_before: room.extra_lights.pop_back()

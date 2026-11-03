@@ -2,6 +2,10 @@
 
 Current first-person work uses **Godot 4.7.2 Standard** on Linux. The headless regression runner keeps original gameplay/presentation suites in explicit legacy mode (`EMBERKEEP_LEGACY_TEST=1`) and switches the dedicated `first_person` suite back to the default gameplay mode. Historical rendering/build measurements below retain their original engine context. Phone performance is not inferred from desktop software rendering.
 
+## Magic update
+
+The [magic update](MAGIC_UPDATE.md) replaces the gun with a spellbook in hand. Every relic marks the book or the arm, spells replace tracer bullets, relics are rarer and stronger, and relics wait in a reliquary. The new `spellbook` suite passes **35 checks**, and the runner now has **36 suites**. `tests/render_spellbook.gd` captures the book, relic sets, the reliquary and spells in flight under a display.
+
 ## Frame pacing
 
 The [frame pacing update](FRAME_PACING.md) removes the long single frames behind first-person stutter. These came from corridor staging, fight-start route grids, room entry and first-use shader compiles. It also smooths eye motion between fixed ticks. The new `frame_pacing` suite passes **41 checks**. All **35 suites** pass with Godot 4.7.2. `tools/profile_frames.gd` reproduces the measurements: a bot plays real rooms and corridors and reports the worst frames with what caused them. Its desktop and llvmpipe numbers are workload references, not phone frame times.
@@ -63,7 +67,7 @@ The [0.2.1 update report](PS2_UPDATE.md) describes the ramp reproduction, correc
 
 ## Headless suites
 
-`./tools/test.sh` imports the project, runs every suite with disposable user storage, and fails on any script error even if Godot exits successfully. The runner now includes 35 suites; results are recorded above. The earlier pre-first-person run passed **133,076 checks** plus the painting importer's offline test.
+`./tools/test.sh` imports the project, runs every suite with disposable user storage, and fails on any script error even if Godot exits successfully. The runner now includes 36 suites; results are recorded above. The earlier pre-first-person run passed **133,076 checks** plus the painting importer's offline test.
 
 The 2026-10-31 PowerVR safeguard run passed **133,052 checks** across all suites plus the importer test; the subsequently expanded policy suite passed **63 checks** (five additional checks). Android, Linux and iOS resource packs each passed their catalog check and 240 quickstart frames. A native desktop OpenGL smoke also rendered the full High post/glow/water-reflection path without shader errors.
 
@@ -78,6 +82,7 @@ The 2026-10-31 PowerVR safeguard run passed **133,052 checks** across all suites
 | `render_policy` | 63 | PowerVR fallback, MSAA and framebuffer policy, render-resolution budget and shader selection. |
 | `first_person_navigation` | 330 | Physical ramp traversal, landing, dash release, doorway clearance, recovery and saved terrain validation. |
 | `first_person_stress` | 52 | Bounded projectile resources, room rebuilds, routing work and elevated combat effects. |
+| `spellbook` | 35 | View-model contract, every relic's own visible mark on the book or arm, all relics at once, spell wording, relic rarity and strength, the reliquary and animated spell shaders. |
 | `frame_pacing` | 41 | Paced and hurried staged rooms identical to ordinary builds; staged and bucketed route grids equal to brute force; kept ledge residue surfaces; shared doorway meshes; eye interpolation, snapping and per-frame touch look; a shader warm-up that never touches the run. |
 | `dungeon_style` | 178 | Shared high-resolution physical materials, theme variation, device map/cache bounds, all packed assets, shader compatibility and isolated cosmetic randomness. |
 | `lighting_centered` | 55 | First-person profile isolation, real flames, fixture/door cues, bounded lights, snuffing/relighting and settings transitions. |
