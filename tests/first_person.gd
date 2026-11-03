@@ -57,6 +57,7 @@ func exercise() -> void:
 	game.player.fire_cooldown = 0
 	game.player.fire()
 	check(game.shots.size() > shot_count and absf(game.shots[-1].direction.y) > .3, "weapon volleys retain vertical aim")
+	test_centered_volleys()
 	game.paused = true
 	var remaining: float = game.player.dash_cooldown
 	await frames(3)
@@ -231,3 +232,41 @@ func exercise() -> void:
 	await process_frame
 	print("EMBERKEEP FIRST PERSON RESULT: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
+
+## Real forged books used to send single spells to -spread/2. Check both
+## single shots and paired/odd fans against the requested 3D aiming ray.
+func test_centered_volleys() -> void:
+	var forge = load("res://scripts/items/forge.gd")
+	var old_angles := Vector2(game.fps.yaw, game.fps.pitch)
+	var old_aim: Vector3 = game.player.aim_direction
+	var singles := 0
+	for slot in 50:
+		var weapon: Dictionary = forge.lookup(forge.id_for(42013, slot)).duplicate(true)
+		if weapon.count != 1: continue
+		singles += 1
+		for angles in [Vector2.ZERO, Vector2(1.3, .55), Vector2(-2.1, -.6)]:
+			game.fps.yaw = angles.x
+			game.fps.pitch = angles.y
+			game.player.aim_direction = game.fps.shot_direction(game.fps.shot_origin())
+			var stats: Dictionary = root.get_node("Content").base_stats()
+			clear_aim_test_shots()
+			game.player.volley(weapon, stats, 3.0, Color(weapon.color))
+			check(game.shots[-1].direction.dot(game.player.aim_direction) > .999999, "single " + weapon.pattern + " spell follows the aimed ray at " + str(angles))
+			for count in [2, 3, 5]:
+				clear_aim_test_shots()
+				stats.shots = count - 1
+				var before: int = game.shots.size()
+				game.player.volley(weapon, stats, 3.0, Color(weapon.color))
+				var center := Vector3.ZERO
+				for index in range(before, game.shots.size()): center += game.shots[index].direction
+				check(center.normalized().dot(game.player.aim_direction) > .999999, "volley of %d remains symmetric around the crosshair" % count)
+	check(singles > 10, "aim regression exercises many real single-shot forged books")
+	clear_aim_test_shots()
+	game.fps.yaw = old_angles.x
+	game.fps.pitch = old_angles.y
+	game.player.aim_direction = old_aim
+
+func clear_aim_test_shots() -> void:
+	for shot in game.shots:
+		if is_instance_valid(shot): shot.free()
+	game.shots.clear()

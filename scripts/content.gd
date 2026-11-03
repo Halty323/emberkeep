@@ -81,19 +81,25 @@ func load_catalog() -> void:
 	revision = "%08x" % stable_hash(digest_source)
 
 ## Summary for packaged-build checks: what loaded, and which painting files
-## are bundled versus still awaiting import.
+## are bundled, including every work required by a collection.
 func report() -> Dictionary:
 	var counts := {}
 	for family in families:
 		counts[family] = families[family].size()
 	var imported: Array = []
 	var missing: Array = []
+	var required: Array = []
+	for collection in families.get("collections", []):
+		for id in collection.paintings:
+			if id not in required: required.append(id)
 	for painting in families.get("paintings", []):
 		if painting.asset.status != "imported": continue
 		if ResourceLoader.exists(painting.asset.wall) and ResourceLoader.exists(painting.asset.full): imported.append(painting.id)
 		else: missing.append(painting.id)
+	for id in required:
+		if id not in imported and id not in missing: missing.append(id)
 	return {"revision": revision, "errors": errors, "families": counts, "relics": items.size(), "weapons": weapons.size(),
-		"paintings_imported": imported, "paintings_missing": missing}
+		"paintings_required": required, "paintings_imported": imported, "paintings_missing": missing}
 
 ## Replaces one family's records. Tests use this to prove broken data is rejected.
 func ingest(family: String, raw_records: Array) -> void:
@@ -322,7 +328,7 @@ func validate_painting(painting: Dictionary) -> PackedStringArray:
 	elif asset.status == "imported":
 		for key in ["sha256_wall", "sha256_full"]:
 			if not str(asset.get(key, "")).is_valid_hex_number() or str(asset.get(key, "")).length() != 64: problems.append("painting %s is missing its %s" % [painting.id, key])
-		for key in ["retrieved", "revision", "image_url"]:
+		for key in ["retrieved", "revision", "image_url", "rights_evidence"]:
 			if str(asset.get(key, "")).is_empty(): problems.append("painting %s is missing its %s" % [painting.id, key])
 		if not is_number(asset.get("width")) or not is_number(asset.get("height")) or asset.width <= 0 or asset.height <= 0:
 			problems.append("painting %s has no recorded dimensions" % painting.id)
@@ -341,6 +347,8 @@ func validate_collection(collection: Dictionary) -> PackedStringArray:
 		var painting = by_id.get("paintings", {}).get(id, {})
 		if painting.is_empty(): problems.append("collection %s names missing painting '%s'" % [collection.id, id])
 		elif painting.verification != "observed": problems.append("collection %s includes unverified painting '%s'" % [collection.id, id])
+		elif painting.asset.status != "imported" or not ResourceLoader.exists(painting.asset.wall) or not ResourceLoader.exists(painting.asset.full):
+			problems.append("collection %s is missing bundled artwork '%s'" % [collection.id, id])
 	var weapon = collection.get("unlocks", {}).get("weapon", "")
 	if weapon != "":
 		if not weapon_by_id.has(weapon): problems.append("collection %s unlocks missing weapon '%s'" % [collection.id, weapon])

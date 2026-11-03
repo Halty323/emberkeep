@@ -74,6 +74,11 @@ func test_catalog() -> void:
 		check(painting.verification == "observed" and painting.record_url.begins_with("https://") and painting.source.page.begins_with("https://"),
 			"provenance recorded for " + id)
 		check(not painting.caption.is_empty() and not painting.credit.is_empty() and not painting.rights.is_empty(), "caption, credit and rights for " + id)
+		check(Library.has_image(id) and Library.has_image(id, "full"), "both real artwork resources are bundled for " + id)
+		var texture: Texture2D = Library.wall_texture(id)
+		var inspection: Texture2D = Library.inspection_texture(id)
+		check(texture != null and inspection != null and texture.get_width() > 500 and inspection.get_width() >= texture.get_width(), "wall and inspection images decode for " + id)
+	check(catalog.report().paintings_required.size() == 12 and catalog.report().paintings_missing.is_empty(), "packaged report requires the complete founding collection")
 	check(catalog.record("paintings", "last_supper").medium.contains("wall painting"), "the Last Supper is labelled as a wall painting")
 	var base = catalog.record("paintings", "mona_lisa").duplicate(true)
 	var unsourced = base.duplicate(true)
@@ -84,7 +89,14 @@ func test_catalog() -> void:
 	rejected("paintings", [no_page], "paintings without a reproduction source")
 	var unhashed = base.duplicate(true)
 	unhashed.asset.status = "imported"
+	unhashed.asset.sha256_wall = ""
 	rejected("paintings", [unhashed], "imported files without hashes and dimensions")
+	var pending = base.duplicate(true)
+	pending.asset.status = "pending"
+	rejected("paintings", [pending], "required collection artwork marked pending")
+	var absent = base.duplicate(true)
+	absent.asset.wall = "res://assets/paintings/missing-required.jpg"
+	rejected("paintings", [absent], "required collection artwork omitted from the pack")
 	var cropped = base.duplicate(true)
 	cropped.asset.merge({"status": "imported", "sha256_wall": "a".repeat(64), "sha256_full": "b".repeat(64), "retrieved": "2026-10-28",
 		"revision": "r", "image_url": "https://example.org/x.jpg", "width": 1000, "height": 1000}, true)

@@ -172,14 +172,13 @@ static func dress_props(room) -> void:
 					mesh.visible = false
 					continue
 				if mesh.name == "Flame":
-					mesh.mesh = candle_flame_mesh()
-					mesh.material_override = candle_flame()
-					mesh.scale = Vector3.ONE * 2.4
-					mesh.position.y = 1.2
-					mesh.layers = Geo.FLAME_LAYER
+					dress_brazier_fire(mesh)
+					continue
+				if mesh.name == "Coals":
+					mesh.material_override = brazier_coals()
 					continue
 				if source is StandardMaterial3D:
-					mesh.material_override = Geo.material(Color("994626"),.3) if source.emission_enabled else metal_material(source.albedo_color)
+					mesh.material_override = metal_material(source.albedo_color)
 					continue
 			if not source is StandardMaterial3D or source.emission_enabled: continue
 			var color: Color = source.albedo_color
@@ -196,6 +195,38 @@ static func lantern_glass() -> ShaderMaterial:
 	return mat
 
 static var candle_mesh: QuadMesh
+static var brazier_mesh: QuadMesh
+
+static func brazier_coals() -> ShaderMaterial:
+	if not materials.has("coals"):
+		var mat := ShaderMaterial.new()
+		mat.shader = preload("res://shaders/hearth_coals.gdshader")
+		materials.coals = mat
+	return materials.coals
+
+static func dress_brazier_fire(flame: MeshInstance3D) -> void:
+	if not brazier_mesh:
+		brazier_mesh = QuadMesh.new()
+		brazier_mesh.size = Vector2(.58, .80)
+	flame.mesh = brazier_mesh
+	flame.material_override = candle_flame()
+	flame.scale = Vector3.ONE
+	flame.position = Vector3(0, 1.34, 0)
+	flame.layers = Geo.FLAME_LAYER
+	flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Three small, spatially separated tongues give fire volume from above
+	# and from every side. Geometry/materials are shared, with no new lights.
+	if flame.get_child_count() > 0: return
+	for side in [-1.0, 1.0]:
+		var tongue := MeshInstance3D.new()
+		tongue.mesh = brazier_mesh
+		tongue.material_override = candle_flame()
+		tongue.position = Vector3(side * .13, -.11, side * .08)
+		tongue.scale = Vector3(.72, .72 if side < 0 else .64, .72)
+		tongue.layers = Geo.FLAME_LAYER
+		tongue.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		flame.add_child(tongue)
+
 static func candle_flame() -> ShaderMaterial:
 	if materials.has("candle_flame"): return materials.candle_flame
 	var mat = ShaderMaterial.new()

@@ -2,6 +2,20 @@
 
 Current first-person work uses **Godot 4.7.2 Standard** on Linux. The headless regression runner keeps original gameplay/presentation suites in explicit legacy mode (`EMBERKEEP_LEGACY_TEST=1`) and switches the dedicated `first_person` suite back to the default gameplay mode. Historical rendering/build measurements below retain their original engine context. Phone performance is not inferred from desktop software rendering.
 
+The twelve founding paintings are now committed as wall/inspection image pairs.
+`tools/test.sh` starts with an offline completeness, SHA-256, composition and
+dimension check; runtime catalog validation and packaged-build verification
+also reject missing required artwork. The importer mock tests cover pending
+or absent required works, a missing inspection file and changed image bytes.
+The `collection` suite decodes all twelve image pairs and retains its placement,
+journal and unlock checks. `first_person` checks single-shot forged books and
+2/3/5-shot fans at several yaw/pitch angles for centered aim.
+
+`tools/render_fire_art.sh [output-directory]` is an opt-in Compatibility OpenGL
+capture under the PowerVR graphics policy. It renders the actual brazier at
+each effects level and from above, checks visible motion and an unchanged
+light count, and opens the actual painting viewer with bundled artwork.
+
 ## Co-op
 
 [Co-op](COOP.md) adds two to four players on a local network. The new `coop` suite passes **96 checks** with a party of three, the guest processes' own included, and the runner now has **37 suites**. It runs a real host and a real second game process over loopback ENet. Together they cover the handshake, LAN discovery, the shared floor, gathering in a passage, the fight's start, foes drawn and struck from the guest, the guest's spells, personal kill credit, blows reaching the right player, falling and rekindling, the shared stair, the end when everyone is down and the return to the lobby. All 37 suites pass with Godot 4.7.2. `tests/render_coop.gd` captures the lobby, teammates in a room, rekindling and a fallen view under a display.

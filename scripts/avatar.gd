@@ -327,7 +327,10 @@ func volley(weapon: Dictionary, stats: Dictionary, damage: float, tint: Color) -
 	var turn = spin_angle
 	spin_angle += float(weapon.get("spin", 0))
 	for i in count:
-		var angle = TAU * float(i) / count + turn if stats.radial > 0 else (float(i) / maxf(1, count - 1) - .5) * spread
+		# A single spell belongs on the reticle, not at the left edge of its
+		# fan. Even volleys straddle it; odd volleys include a central spell.
+		var fan = (float(i) / float(count - 1) - .5) * spread if count > 1 else 0.0
+		var angle = TAU * float(i) / count + turn if stats.radial > 0 else fan
 		var axis = game.fps.right().cross(aim_direction).normalized() if game.first_person else Vector3.UP
 		var direction = aim_direction.rotated(axis, angle)
 		var at = origin + direction * (.08 if game.first_person else .5)

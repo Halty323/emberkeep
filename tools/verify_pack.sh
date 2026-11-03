@@ -26,7 +26,10 @@ problems = list(report["errors"])
 if len(report["families"]) < expected or not all(report["families"].values()):
     problems.append("missing content families: %s" % report["families"])
 if report["paintings_missing"]:
-    problems.append("imported paintings missing from the pack: %s" % report["paintings_missing"])
+    problems.append("required paintings missing from the pack: %s" % report["paintings_missing"])
+required = report.get("paintings_required", [])
+if len(required) < 12 or not set(required) <= set(report["paintings_imported"]):
+    problems.append("the pack must include all twelve collection paintings")
 print("%s pack: %d families, %d relics, %d weapons, %d bundled paintings, revision %s" % (
     preset, len(report["families"]), report["relics"], report["weapons"], len(report["paintings_imported"]), report["revision"]))
 for problem in problems:

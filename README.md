@@ -67,7 +67,7 @@ The play screen keeps out of the way: one small slab top left for health, coins,
 - **Secrets.** Every floor hides one optional room behind a wall with subtle cracks and rubble. A bomb opens it; the Miner's Lantern points to it. Secrets are never on the way to the boss.
 - **Pickups and supplies.** Copper and silver coins, half and full hearts, wards (persistent protective hits), keys for locked chests, bombs, and small and full batteries for your held item. New runs start with one bomb.
 - **One held item.** Eight original actives — Pocket Hearth, Gale Bell, Ember Flask, Winter Globe, Copper Kettle, Moth Jar, Miner's Lantern and Bell Jar — acquired only from chests, with cooldowns that run only during play. Only a useful activation starts the timer, and swapping never resets one.
-- **Twelve classic paintings.** A rest room on every floor shows a painting, and secret galleries may hold more. Inspect one to add it to the permanent journal; finding all twelve unlocks the **Paint Sprayer**, an eleventh weapon that cycles red, blue and green bursts (burn, chill, poison). See [painting provenance](docs/PAINTING_CREDITS.md). Reproductions are fetched with `tools/import_paintings.py`; until then a slot shows a covered canvas.
+- **Twelve classic paintings.** A rest room on every floor shows a painting, and secret galleries may hold more. Inspect one to add it to the permanent journal; finding all twelve unlocks the **Paint Sprayer**, an eleventh weapon that cycles red, blue and green bursts (burn, chill, poison). All twelve public-domain reproductions are committed in `assets/paintings/`, with 1K wall and 2K inspection images and [source/rights records](docs/PAINTING_CREDITS.md). Builds work offline and reject missing required artwork. Three documented alternates remain outside the collection.
 - **Spellbooks written for every seed.** There is no fixed list: each spellbook is a casting pattern (single bolts, bursts, sprays, twin bolts, rings, spirals, lances, slow bursting orbs, returning wisps), an element (ember, frost, storm, venom, radiance, glass, wax, tide) and two traits (piercing, ricochet, seeking, weaving, splitting, bursting, chaining, accelerating, lingering mines, swelling, forking, kindled, keen, heavy), balanced against one damage budget and named from its parts, such as *Crystal Catherine Wheel* or *Tidal Mortar*. Wax, tide and frost spells leave their element on the floor as they fly. Shops sell new ones; the dark store binds stronger ones with a third trait. You hold the open book in your hand, its pages written in its colour, and every relic you find adds its own mark to the book or your arm.
 - **The dark store.** After the first floor, new expeditions have a 35% chance of a dark room with a violet altar. Its merchant takes no coins, only maximum health, 2 to 5 half-hearts for each bargain and never your last heart: one of eight dark relics (Black Wick, Hollow Crown, Widow's Lantern, Grave Glass, Dark Star, Starving Flame, Night Moth, Ash Mantle), a dark-forged weapon or a precious relic, and something small. Take as many bargains as you can afford.
 - 60 stackable relics with homing, piercing, ricochets, elemental status, chain lightning, split shots, explosions, orbitals and dash attacks, plus the eight dark relics. New expeditions begin with 4 coins; ordinary foes average 0.2 coins, healing is scarcer, and at most one ordinary combat room per floor awards a passive relic. Boss rewards remain separate. Enemies apply more pressure through bounded speed, count and attack cadence.
@@ -136,12 +136,14 @@ godot --headless --editor --path . --import --quit
 ./tools/render_stress.sh        # worst-case workload report
 ./tools/render_visibility.sh    # lit enemy bodies and non-stacking mist
 ./tools/render_mobile_startup.sh # PowerVR fallback startup and wet-room regression
+./tools/render_fire_art.sh       # animated braziers and bundled painting viewer
 
 # Verify the bundled high-resolution material derivatives offline.
 python3 tools/import_dungeon_materials.py --check
 
-# Authoring only: fetch approved painting reproductions and record provenance.
-python3 tools/import_paintings.py
+# Optional authoring: refresh selected approved reproductions and provenance.
+python3 tools/import_paintings.py --only mona_lisa --force
+# Offline completeness, composition and SHA-256 checks (also run by CI).
 python3 tools/import_paintings.py --check
 
 # Rebuild the relic and weapon catalog after editing its authoring source.
