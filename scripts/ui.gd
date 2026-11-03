@@ -708,10 +708,14 @@ func settings_rows(page: String) -> Array:
 				vsync = ["vsync", "VSync", "System controlled", false]
 			elif Settings.effective_vsync() != on_off("vsync").to_lower():
 				vsync[2] += " · driver " + Settings.effective_vsync().capitalize()
+			var last = ["fullscreen", "Fullscreen", on_off("fullscreen") if Settings.fullscreen_supported() else "System controlled", Settings.fullscreen_supported()]
+			# A phone whose chip gets a 3D pixel budget may lift it, in place of
+			# the fullscreen row it cannot change anyway.
+			if not Settings.fullscreen_supported() and Settings.resolution_capped():
+				last = ["full_resolution", "Full resolution", "On · may be slower" if Settings.values.full_resolution else "Off", true]
 			return [["render_scale", "Render resolution", "%s  ·  %d×%d" % [scale, pixels.x, pixels.y], true],
 				["fps_limit", "FPS limit", "Unlimited" if Settings.values.fps_limit == 0 else str(Settings.values.fps_limit), true],
-				vsync, ["show_fps", "Show FPS", on_off("show_fps"), true],
-				["fullscreen", "Fullscreen", on_off("fullscreen") if Settings.fullscreen_supported() else "System controlled", Settings.fullscreen_supported()]]
+				vsync, ["show_fps", "Show FPS", on_off("show_fps"), true], last]
 		"camera":
 			return [["fov", "Field of view", "%d°" % Settings.values.fov, true],
 				["mouse_sensitivity", "Mouse sensitivity", "%.4f" % Settings.values.mouse_sensitivity, true],
