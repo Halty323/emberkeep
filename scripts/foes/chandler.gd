@@ -77,7 +77,7 @@ func cast_effigies() -> void:
 		var effigy = game.spawn_enemy(global_position + Vector3(mirror * 2.0, 0, 1.0), "effigy")
 		effigy.mirror = mirror
 		effigy.keeper = self
-	game.ui.notify("She shapes you in wax", "Your effigies fire your own weapon. Wax melts.", Color("ffb060"))
+	game.ui.notify("She shapes you in wax", "Your effigies cast your own spells. Wax melts.", Color("ffb060"))
 
 func on_death() -> void:
 	for enemy in game.enemies.duplicate():

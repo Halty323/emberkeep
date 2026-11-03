@@ -167,7 +167,7 @@ func exercise() -> void:
 	check(run.inventory.size()==before_inventory+1 and run.coins==5,"stale shop selection is sanitized before payment and grants only a passive relic")
 	check(run.active_item==carried and run.cooldowns["moth_jar"]==17.0 and data.get("items",[]).size()==before_active_drops,"source separation preserves carried equipment and its cooldown")
 	data.erase("offers")
-	check(Balance.combat_relic_due({"type":"combat"},{"boss":{"clear_reward":"boss_relic"}}),"boss reward does not consume the floor's combat-relic allowance")
+	check(not Balance.combat_relic_due({"type":"combat"},{}) and Balance.combat_relic_due({"type":"boss"},{}),"ordinary fights never award relics; the boss always does")
 	check(not Balance.combat_relic_due({"type":"combat"},{"combat":{"clear_reward":"relic"}}),"one combat relic exhausts the floor allowance")
 	check(not Balance.combat_relic_due({"type":"combat","vertical_challenge":true},{}),"vertical chest reward does not also create a passive-relic pedestal")
 	var state_before: int=run.rng.state

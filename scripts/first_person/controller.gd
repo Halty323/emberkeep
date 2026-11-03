@@ -16,6 +16,8 @@ var weapon_shape: Node3D
 var was_playing := false
 var near_wall := false
 var view_weapon_id := ""
+var view_relics := "-"
+var view_clock := 0.0
 var hit_time := 0.0
 var damage_time := 0.0
 var damage_angle := 0.0
@@ -37,11 +39,15 @@ func setup(owner_game) -> void:
 	weapon_shape = Node3D.new()
 	weapon_shape.position = Vector3(.05, -.12, -.18)
 	weapon.add_child(weapon_shape)
-	FirstPersonWeaponView.populate(weapon_shape)
-	for mesh in weapon_shape.find_children("*", "MeshInstance3D", true, false):
+	SpellbookView.populate(weapon_shape)
+	view_layers()
+	weapon.visible = false
+
+## Every held mesh draws only in the eye's own layer, never in reflections.
+func view_layers() -> void:
+	for mesh in weapon_shape.find_children("*", "GeometryInstance3D", true, false):
 		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		mesh.layers = Geo.VIEW_LAYER
-	weapon.visible = false
 
 func _input(event: InputEvent) -> void:
 	if not game.is_playing(): return
@@ -95,10 +101,17 @@ func update_view(delta: float, snap := false) -> void:
 	weapon.visible = active and game.ui.mode == "play"
 	if active and view_weapon_id != Run.weapon_id:
 		view_weapon_id = Run.weapon_id
-		var model = Run.weapon()
-		var tint = Color(model.color)
-		weapon_shape.get_child(2).material_override = Geo.material(tint, .35)
-		weapon_shape.scale = Vector3(.8 if model.count > 1 else .7, .7, .85 if model.get("pattern", "") == "lance" else .7)
+		SpellbookView.tint(weapon_shape, Color(Run.weapon().color))
+	# Each relic marks the book or the arm; the marks follow the inventory.
+	var carried := ",".join(Run.inventory.map(func(id): return str(id)))
+	if active and carried != view_relics:
+		view_relics = carried
+		SpellbookLooks.dress(weapon_shape, Run.inventory)
+		view_layers()
+	if active and weapon.visible:
+		view_clock += delta
+		SpellbookLooks.animate(weapon_shape, view_clock)
+		SpellbookView.glow(weapon_shape, game.player.recoil * 5.0)
 	var playing: bool = game.is_playing() and game.ui.mode == "play"
 	if playing != was_playing:
 		was_playing = playing
@@ -129,7 +142,8 @@ func update_view(delta: float, snap := false) -> void:
 	player.gun.visible = false
 	player.shelter.visible = false
 	var tucked := .25 if near_wall else 0.0
-	var wanted = Vector3(0, -tucked, player.recoil * .16 + tucked)
+	# A cast thrusts the open book forward and lifts it a little.
+	var wanted = Vector3(0, player.recoil * .05 - tucked, -player.recoil * .14 + tucked)
 	weapon.position = weapon.position.lerp(wanted, 1.0 - exp(-16.0 * delta))
 	game.camera_focus = player.global_position
 	game.room.update_light_selection(player.global_position)

@@ -84,8 +84,8 @@ func build_light(color: Color) -> void:
 		core_mesh = SphereMesh.new()
 		core_mesh.radius = 1.0
 		core_mesh.height = 2.0
-		core_mesh.radial_segments = 10
-		core_mesh.rings = 6
+		core_mesh.radial_segments = 18
+		core_mesh.rings = 10
 		quad_mesh = QuadMesh.new()
 		pool_mesh = PlaneMesh.new()
 		pool_mesh.size = Vector2.ONE

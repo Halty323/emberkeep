@@ -44,7 +44,7 @@ const REWARD_GAP := 26.0
 const SETTINGS_PAGES := [["display", "Display"], ["graphics", "Graphics"], ["controls", "Controls"], ["camera", "Camera"]]
 const SETTINGS_NOTES := {"display": "Resolution scales only the dungeon; text and controls stay sharp. Your display or device can still cap the frame rate.",
 	"graphics": "SSAO shades surface contacts on supported GPUs. Detail changes appearance; room collision and combat stay identical.",
-	"camera": "Comfort settings affect presentation, never movement speed or weapon damage.",
+	"camera": "Comfort settings affect presentation, never movement speed or spell damage.",
 	"controls": "Touch controls show the on-screen sticks and action buttons on any device."}
 var game: Node3D
 var body: Font = preload("res://assets/fonts/body.ttf")
@@ -533,7 +533,7 @@ func build_legacy_menu() -> void:
 	content.add_child(seed_field)
 	button("‹", Rect2(64, 278, 56, 56), func(): cycle_weapon(-1))
 	button("›", Rect2(426, 278, 56, 56), func(): cycle_weapon(1))
-	button("New weapons ↻", Rect2(270, 388, 212, 56), func():
+	button("New spellbooks ↻", Rect2(270, 388, 212, 56), func():
 		reforge()
 		seed_field.text = ""
 		seed_field.placeholder_text = "Seed %d" % menu_seed
@@ -560,9 +560,9 @@ func offer_info(offer: Dictionary) -> Dictionary:
 		"weapon":
 			var weapon: Dictionary = Forge.lookup(offer.id)
 			var forged: bool = weapon.get("forged", false)
-			var tag = "%s · %s" % [str(weapon.element).to_upper(), str(weapon.pattern).to_upper()] if forged else "NEW FIGHTING STYLE"
+			var tag = "%s · %s" % [str(weapon.element).to_upper(), str(weapon.pattern).to_upper()] if forged else "NEW SCHOOL OF MAGIC"
 			return {"name": weapon.name, "description": weapon.description, "color": Color(weapon.color),
-				"label": "DARK-FORGED WEAPON" if int(weapon.get("tier", 0)) > 0 else "WEAPON", "tag": tag, "take": "Equip weapon", "buy": "%d coins · equip"}
+				"label": "DARK-BOUND SPELLBOOK" if int(weapon.get("tier", 0)) > 0 else "SPELLBOOK", "tag": tag, "take": "Take up the spellbook", "buy": "%d coins · take up"}
 		"active":
 			var active: Dictionary = Content.record("actives", offer.id)
 			return {"name": active.name, "description": active.description, "color": Color(active.color),
@@ -1022,7 +1022,7 @@ func draw_menu() -> void:
 func draw_armory() -> void:
 	draw_title_shade()
 	text("Prepare your light",Vector2(58,156),36,INK,heading)
-	text("CHOOSE AN ARMAMENT",Vector2(61,188),12,GOLD,bold)
+	text("CHOOSE A SPELLBOOK",Vector2(61,188),12,GOLD,bold)
 	var choices = Collection.starters(chosen_seed())
 	for slot in choices.size():
 		var selected = slot == posmod(starter_index,choices.size())
@@ -1056,7 +1056,7 @@ func draw_legacy_menu() -> void:
 	anchor(widen())
 	hearth_emblem(Vector2(798, 566), 10)
 	text("A warm place. A wild little dungeon.", Vector2(826, 574), 21, GOLD, heading)
-	text("%d stackable relics  ·  new weapons every seed  ·  %d floors" % [Content.items.size(), Content.record("climbs", Run.CLIMB).bands.size()], Vector2(789, 617), 18, INK)
+	text("%d stackable relics  ·  new spellbooks every seed  ·  %d floors" % [Content.items.size(), Content.record("climbs", Run.CLIMB).bands.size()], Vector2(789, 617), 18, INK)
 	text("Strange combinations. One more little light.", Vector2(789, 650), 17, MUTED)
 
 func draw_hud() -> void:
@@ -1112,7 +1112,7 @@ func draw_hud_left() -> void:
 	if Run.inventory.size() > 12:
 		text("+%d" % (Run.inventory.size() - 12), Vector2(232, HUD_RECT.end.y + 21), 14, GOLD)
 	if not touch_hud_visible() and not stair_presentation_active():
-		text("WASD move · Mouse aim/fire · Space jump · Shift dash · E interact" if game.first_person else "WASD move · Mouse fire · Space dash · F item · B bomb", Vector2(28, 668), 15, MUTED)
+		text("WASD move · Mouse aim/cast · Space jump · Shift dash · E interact" if game.first_person else "WASD move · Mouse cast · Space dash · F item · B bomb", Vector2(28, 668), 15, MUTED)
 	text("SEED %d" % Run.seed_value, Vector2(28, 697), 13, MUTED)
 	if touch_hud_visible():
 		draw_stick(left_origin, left_vector, "MOVE", left_touch >= 0)
@@ -1158,10 +1158,10 @@ func draw_hud_right() -> void:
 	if not touch_hud_visible(): return
 	if game.first_person:
 		draw_action_ring("fire", 1.0, GOLD)
-		centered("FIRE", 1178, 558, 18, GOLD, bold)
+		centered("CAST", 1178, 558, 18, GOLD, bold)
 		draw_action_ring("jump", 1.0, GOLD)
 		centered("JUMP", 1178, 666, 15, GOLD, bold)
-	else: draw_stick(right_origin, right_vector, "AIM + FIRE", right_touch >= 0)
+	else: draw_stick(right_origin, right_vector, "AIM + CAST", right_touch >= 0)
 	var ready: bool = game.player and game.player.dash_cooldown <= 0
 	draw_action_ring("dash", 1.0 if ready else 0.0, GOLD if ready else MUTED)
 	centered("DASH" if ready else "%.1f" % game.player.dash_cooldown, DASH_CENTER.x, DASH_CENTER.y + 7, 18, GOLD if ready else MUTED, bold)
@@ -1525,7 +1525,7 @@ func draw_rewards() -> void:
 
 func draw_journal() -> void:
 	text("The things we carry", Vector2(64, 146), 40, INK, heading)
-	text("%d relics to find. Every effect stacks with your weapon and other relics." % Content.items.size(), Vector2(66, 184), 19, MUTED)
+	text("%d relics to find. Every effect stacks with your spellbook and other relics." % Content.items.size(), Vector2(66, 184), 19, MUTED)
 	var start = journal_page * JOURNAL_PAGE_SIZE
 	for slot in JOURNAL_PAGE_SIZE:
 		var index = start + slot

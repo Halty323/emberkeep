@@ -636,11 +636,12 @@ func _process(delta: float) -> void:
 	if marker_visual and is_instance_valid(marker_visual):
 		# Animate the luminous relic alone; its pedestal and light stay static,
 		# allowing the room's shadow maps to remain cached while idle.
-		marker_visual.rotation.y += delta * .5
+		if marker_visual.has_meta("rest_y"): Reliquary.animate(marker_visual, Time.get_ticks_msec() * .001, delta)
+		else: marker_visual.rotation.y += delta * .5
 	for view in item_views.values():
 		if is_instance_valid(view):
-			var orb = view.get_node_or_null("Orb")
-			if orb: orb.position.y = .62 + sin(Time.get_ticks_msec() * .003) * .06
+			var relic = view.get_node_or_null("Reliquary/Relic")
+			if relic: Reliquary.animate(relic, Time.get_ticks_msec() * .001 + view.get_instance_id() % 7, delta)
 
 func update_camera(delta: float, snap := false) -> void:
 	if not camera:
@@ -789,7 +790,7 @@ func start_run(weapon: String, seed_input: int, is_daily: bool) -> void:
 	ui.show_screen("play")
 	var arrival: Array = Run.theme().arrival
 	if first_person and not Run.profile.get("fps_tutorial_seen", false):
-		ui.notify("Keep your little light close", "Swipe right to look · Hold FIRE · Jump and dash to dodge" if ui.is_touch_platform() else "Mouse look · Click fire · Space jump · Shift dash")
+		ui.notify("Keep your little light close", "Swipe right to look · Hold CAST · Jump and dash to dodge" if ui.is_touch_platform() else "Mouse look · Click to cast · Space jump · Shift dash")
 		Run.profile["fps_tutorial_seen"] = true
 		Run.save_profile()
 	else: ui.notify(arrival[0], arrival[1])
@@ -1312,7 +1313,8 @@ func ensure_offers(premium := false, persist := true) -> void:
 	var items = Content.roll_items(gen, 3, Run.inventory, premium, Run.stats.luck)
 	var offers: Array = []
 	for item in items:
-		var price: int = {"common": 8, "uncommon": 12, "rare": 17, "mythic": 24}[item.rarity]
+		# Fewer, stronger relics are dearer at the merchant too.
+		var price: int = {"common": 12, "uncommon": 18, "rare": 26, "mythic": 36}[item.rarity]
 		offers.append({"kind": "item", "id": item.id, "price": price})
 	if gen.randf() < .5 or data.type == "shop":
 		# Every weapon on offer is forged here, for this room alone.
@@ -1349,14 +1351,9 @@ func make_marker(kind: String, at := Vector3.ZERO) -> void:
 		Geo.sphere(marker, Vector3(0, .75, 0), .25, Color("ffd28d"), 1.8)
 		Geo.halo(marker, Vector3(0, .03, 0), 4, Color(1, .6, .2, .3))
 	else:
-		var reward_base = Geo.cylinder(marker, Vector3(0, .22, 0), .5, .44, Color("656454"))
-		if first_person: reward_base.material_override = DungeonStyle.wall_material(Color("656454"))
-		var relic = Geo.box(marker, Vector3(0, 1.0, 0), Vector3(.43, .43, .43), Color("d4b580") if kind == "treasure" else Color("a9c4ad"), .7)
-		marker_visual = relic
-		relic.rotation_degrees = Vector3(45, 35, 30)
-		Geo.ring(marker, Vector3(0, .035, 0), .95, Color("d9b97a"), .035)
+		# A relic waits in a reliquary; the merchant's wares glow cooler.
+		marker_visual = Reliquary.build(marker, Color("ffc874") if kind == "treasure" else Color("9fd8c4"), first_person)
 		Geo.halo(marker, Vector3(0, .03, 0), 4, Color(1, .65, .22, .22))
-		Geo.light(marker, Vector3(0, 1.5, 0), Color("f0c68c"), .55, 3.5)
 	if first_person:
 		for child in marker.get_children():
 			if child is MeshInstance3D and child.material_override is ShaderMaterial and child.material_override.shader == preload("res://shaders/halo.gdshader"):

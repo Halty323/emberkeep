@@ -1,6 +1,7 @@
 class_name ItemViews
 extends RefCounted
-## Procedural placeholder views for chests and dropped active items.
+## Procedural views for chests and dropped active items. Equipment waits in
+## a small reliquary, its crystal in the item's own colour.
 
 static func chest(parent: Node3D, record: Dictionary) -> Node3D:
 	var node = Node3D.new()
@@ -33,9 +34,7 @@ static func item(parent: Node3D, record: Dictionary) -> Node3D:
 	var node = Node3D.new()
 	parent.add_child(node)
 	node.position = Vector3(float(record.position[0]), 0, float(record.position[1]))
-	Geo.cylinder(node, Vector3(0, .12, 0), .38, .24, Color("5d5a4c"))
-	var orb = Geo.sphere(node, Vector3(0, .62, 0), .24, Color(definition.color), .9)
-	orb.name = "Orb"
-	Geo.ring(node, Vector3(0, .26, 0), .42, Color(definition.color), .025)
+	var first_person: bool = parent.get_tree() != null and parent.get_tree().current_scene != null and parent.get_tree().current_scene.get("first_person") == true
+	Reliquary.build(node, Color(definition.color), first_person, .55)
 	Geo.halo(node, Vector3(0, .03, 0), 2.6, Color(Color(definition.color), .22))
 	return node

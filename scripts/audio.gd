@@ -25,7 +25,8 @@ func _ready() -> void:
 		add_child(player)
 		players.append(player)
 	sounds["step"] = tone(95, 48, .075, .045)
-	sounds["shoot"] = tone(650, 180, .08, .16)
+	# A cast is a short bright chime, rising a little, not a gunshot.
+	sounds["shoot"] = chime(740, .14, .13)
 	sounds["hit"] = tone(170, 65, .1, .23)
 	sounds["kill"] = tone(230, 55, .19, .23)
 	sounds["dash"] = tone(150, 660, .2, .16)
@@ -73,6 +74,29 @@ func tone(start: float, end: float, duration: float, amplitude: float) -> AudioS
 		phase += TAU * lerpf(start, end, t) / 22050.0
 		var sample = sin(phase) * pow(1.0 - t, 2.0) * minf(t * 25, 1.0) * amplitude
 		bytes.encode_s16(i * 2, int(sample * 32767))
+	var stream = AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = 22050
+	stream.data = bytes
+	return stream
+
+## A small bell-like note: a base tone with two softer overtones that rise a
+## little and ring away quickly.
+func chime(base: float, duration: float, amplitude: float) -> AudioStreamWAV:
+	var bytes = PackedByteArray()
+	var count = int(22050 * duration)
+	bytes.resize(count * 2)
+	var phases := [0.0, 0.0, 0.0]
+	var ratios := [1.0, 2.01, 3.03]
+	var weights := [1.0, .45, .2]
+	for i in count:
+		var t = float(i) / count
+		var sample := 0.0
+		for k in 3:
+			phases[k] += TAU * base * ratios[k] * (1.0 + .12 * t) / 22050.0
+			sample += sin(phases[k]) * weights[k]
+		sample *= exp(-t * 5.0) * minf(t * 60, 1.0) * amplitude * .6
+		bytes.encode_s16(i * 2, int(clampf(sample, -1.0, 1.0) * 32767))
 	var stream = AudioStreamWAV.new()
 	stream.format = AudioStreamWAV.FORMAT_16_BITS
 	stream.mix_rate = 22050

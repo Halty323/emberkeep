@@ -39,7 +39,7 @@ Every floor below the first draws one twist, and the first floor sometimes does.
 | Flooded | Lasting water pools in every room. |
 | Swarming | More foes, each a little frailer. |
 | Restless | Foes move and act faster. |
-| Windswept | A draught pushes every shot in flight, and the kindle cools faster. |
+| Windswept | A draught pushes every spell in flight, and the kindle cools faster. |
 
 ## Adding to the tower
 

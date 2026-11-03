@@ -1,6 +1,6 @@
 class_name Forge
 extends RefCounted
-## Weapons made fresh for every seed. A forged weapon is a firing pattern, an
+## Spellbooks written fresh for every seed. Each is a casting pattern, an
 ## element and two or three traits, balanced against one damage budget and
 ## named and coloured from its parts. Its id says how it was made,
 ## "forged:<version>:<seed>:<slot>:<tier>", so a save, a shop or the menu
@@ -33,9 +33,9 @@ const NOUNS := {"bolt": ["Wick", "Taper", "Glimmer", "Spark"], "burst": ["Flicke
 	"ring": ["Sunwheel", "Halo", "Corona", "Lantern Ring"], "spiral": ["Pinwheel", "Whirl", "Spindle", "Catherine Wheel"],
 	"lance": ["Lance", "Needle", "Ray", "Beam"], "lob": ["Mortar", "Censer", "Firepot", "Lamp Bomb"],
 	"boomerang": ["Homecomer", "Moth", "Swallow", "Wanderer"]}
-const PATTERN_WORDS := {"bolt": "steady single shots", "burst": "shots in bursts of three", "fan": "a wide spray of shots",
-	"twin": "paired shots side by side", "ring": "a full ring of shots", "spiral": "a turning spiral of shots", "lance": "fast piercing rays",
-	"lob": "slow bursting globes", "boomerang": "returning shots"}
+const PATTERN_WORDS := {"bolt": "steady single bolts", "burst": "bolts in bursts of three", "fan": "a wide spray of motes",
+	"twin": "paired bolts side by side", "ring": "a full ring of sparks", "spiral": "a turning spiral of sparks", "lance": "fast piercing rays",
+	"lob": "slow bursting orbs", "boomerang": "wisps that come back to you"}
 # [effects, colours, adjectives, damage cost, what it does].
 const ELEMENTS := {
 	"ember": [{"burn": .7}, ["ffb070", "ff9a5a", "ffc47a", "f58a4a"], ["Smouldering", "Cinder", "Hearth", "Scorching"], .95, "that set foes burning"],
@@ -159,7 +159,7 @@ static func make(seed_value: int, slot: int, tier: int) -> Dictionary:
 	return weapon
 
 static func describe(pattern_id: String, element_phrase: String, phrases: Array) -> String:
-	var line = "Fires %s %s" % [PATTERN_WORDS[pattern_id], element_phrase]
+	var line = "Casts %s %s" % [PATTERN_WORDS[pattern_id], element_phrase]
 	if phrases.is_empty(): return line + "."
 	if phrases.size() == 1: return "%s. They %s." % [line, phrases[0]]
 	return "%s. They %s and %s." % [line, ", ".join(phrases.slice(0, phrases.size() - 1)), phrases.back()]
