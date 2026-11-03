@@ -4,7 +4,7 @@ Current first-person work uses **Godot 4.7.2 Standard** on Linux. The headless r
 
 ## Co-op
 
-[Co-op](COOP.md) adds two to four players on a local network. The new `coop` suite passes **70 checks**, the guest process's own included, and the runner now has **37 suites**. It runs a real host and a real second game process over loopback ENet. Together they cover the handshake, LAN discovery, the shared floor, gathering in a passage, the fight's start, foes drawn and struck from the guest, the guest's spells, personal kill credit, blows reaching the right player, falling and rekindling, the shared stair and the end when everyone is down. All 37 suites pass with Godot 4.7.2. `tests/render_coop.gd` captures the lobby, teammates in a room, rekindling and a fallen view under a display.
+[Co-op](COOP.md) adds two to four players on a local network. The new `coop` suite passes **96 checks** with a party of three, the guest processes' own included, and the runner now has **37 suites**. It runs a real host and a real second game process over loopback ENet. Together they cover the handshake, LAN discovery, the shared floor, gathering in a passage, the fight's start, foes drawn and struck from the guest, the guest's spells, personal kill credit, blows reaching the right player, falling and rekindling, the shared stair, the end when everyone is down and the return to the lobby. All 37 suites pass with Godot 4.7.2. `tests/render_coop.gd` captures the lobby, teammates in a room, rekindling and a fallen view under a display.
 
 ## Magic update
 

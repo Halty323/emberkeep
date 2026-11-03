@@ -85,6 +85,8 @@ var snap_timer := 0.0
 var snap_tick := 0
 var first_inside := -1.0
 var clock := 0.0
+# When each teammate's casting was last heard, so a volley is one sound.
+var heard_cast: Dictionary = {}
 var notice := ""
 # Host: foes are taking their turn, so a blow can catch a teammate nearby.
 var foe_turn := false
@@ -515,6 +517,10 @@ func apply_residue(data) -> void:
 func tick(delta: float) -> void:
 	if not climbing(): return
 	clock += delta
+	# Walking away from the stair stops waiting at it.
+	if waiting_at_stair and (not is_instance_valid(game.stairs) or game.player.global_position.distance_to(game.stairs.approach_point()) > 3.5):
+		waiting_at_stair = false
+		at_stair.erase(Session.local_peer_id)
 	state_timer -= delta
 	if state_timer <= 0:
 		state_timer = STATE_RATE
@@ -564,7 +570,8 @@ func flush_host() -> void:
 		if not events.is_empty(): Session.send(peer_id, "ev", events)
 		if direct.has(peer_id) and not direct[peer_id].is_empty(): Session.send(peer_id, "me", direct[peer_id])
 		if pushes.has(peer_id): Session.stream(peer_id, "push", pushes[peer_id])
-	if not loose.is_empty(): Session.stream(0, "sights", loose)
+	# A few at a time, so each piece fits one network packet.
+	for start in range(0, loose.size(), 14): Session.stream(0, "sights", loose.slice(start, start + 14))
 	loose.clear()
 	outbox.clear()
 	direct.clear()
@@ -872,10 +879,10 @@ func on_message(from: int, kind: String, data) -> void:
 		"snap": if climbing() and data is Dictionary: take_snapshot(data)
 		"push": if climbing() and data is Vector3 and is_instance_valid(game.player): game.player.push = data
 		"lobby":
-			if Run.active:
-				Run.active = false
-				reset()
-				game.show_title_room()
+			# Back to the lobby for another climb, from a climb or its end.
+			Run.active = false
+			reset()
+			if not game.in_menu: game.show_title_room()
 			game.ui.show_screen("lobby")
 
 func take_state(from: int, data) -> void:
@@ -888,6 +895,7 @@ func take_state(from: int, data) -> void:
 	elif ep != epoch: return
 	var was_down := is_down(from)
 	states[from] = data
+	if not bool(data.get("stair", false)): at_stair.erase(from)
 	var member: PartyMember = ensure_member(from) if climbing() else null
 	if member: member.show_state(data)
 	if was_down and not bool(data.get("down", false)): revive.erase(from)
@@ -906,6 +914,7 @@ func take_acts(from: int, data) -> void:
 			"fire":
 				if not same_frame or not value is Array or value.size() < 7 or not value[1] is Vector3 or not value[2] is Vector3 or not value[6] is Color: continue
 				var stats: Dictionary = stats_list[int(value[5])] if int(value[5]) >= 0 and int(value[5]) < stats_list.size() and stats_list[int(value[5])] is Dictionary else {}
+				cast_heard(from, value[1])
 				shot_owner = from
 				pending_net_id = int(value[0])
 				pending_predicted = true
@@ -1138,10 +1147,21 @@ func draw_shot(data) -> void:
 	var stats: Dictionary = data[6] if data[6] is Dictionary else {}
 	var shot: EmberShot = game.make_shot(data[1], data[2], 0.0, float(data[3]), stats, data[4] if data[4] is Color else Color.WHITE, bool(data[5]))
 	if shot == null: return
+	if bool(data[5]): cast_heard(int(data[7]), data[1])
 	shot.cosmetic = true
 	shot.net_id = id
 	shot.owner_peer = int(data[7])
 	net_shots[id] = shot
+
+## A teammate's casting, heard where they stand: once per volley.
+func cast_heard(peer_id: int, at: Vector3) -> void:
+	if peer_id == Session.local_peer_id or clock - float(heard_cast.get(peer_id, -1.0)) < .09: return
+	heard_cast[peer_id] = clock
+	# Each device hears its own; this sound is never relayed.
+	var was := recording
+	recording = 0
+	Audio.play_at("shoot", game, at, 1.05)
+	recording = was
 
 func make_geo(data) -> void:
 	if not data is Array or data.size() < 4 or not data[2] is Array or not data[3] is Array: return

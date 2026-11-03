@@ -28,7 +28,7 @@ The game uses UDP port 47620 for play and ports 47621–47622 to find parties. W
 
 **Moving on together.** Doors open when a room's fight is won, for everyone at once. A passage between rooms has a turn halfway along. Nobody passes the turn until the whole party (everyone still standing) is in the same passage. A player waiting at the turn sees who the party is waiting for. When the last player steps in, the next room loads for everyone. Anyone lagging behind in the passage is carried just past the turn, and anyone fallen is brought along. A fight starts once the whole party is through the door, or three seconds after the first player enters. Anyone still in the passage is then pulled into the room.
 
-**The stair.** When the boss falls, each player's stair rises. A player who chooses to climb waits at the stair (*Waiting at the stair · 1 / 3*). The party climbs together once everyone standing is waiting, and arrives side by side on the next floor.
+**The stair.** When the boss falls, each player's stair rises. A player who chooses to climb waits at the stair (*Waiting at the stair · 1 / 3*); walking away stops waiting. The party climbs together once everyone standing is waiting, and arrives side by side on the next floor.
 
 **Menus do not stop the tower.** Pausing, the journal, the map, a painting and the reward screens stop only your own player. The fight goes on around you.
 
@@ -48,7 +48,7 @@ Phones often filter incoming broadcasts, but the host's direct answer still reac
 - **Floors.** The host builds each floor from the seed and sends it, compressed, so every device walks exactly the same rooms. Each player's own paintings, offers and drops are then laid on their own copy.
 - **Players.** Each device reports its player about 30 times a second: position, facing, health, whether it has fallen, and where it stands in a passage. The host stands a figure (`scripts/coop/party_member.gd`) in for each guest. Foes chase these figures, and what strikes a figure is sent to its player as a blow. The host sends everyone's figures back, so each player sees the others: a hooded figure in its party colour, with a flame on its head, an open book in its spellbook's colour, and its name above it.
 - **Foes.** The host's foes are drawn on each guest's device as puppets of the same kind (`DungeonEnemy.puppet`). A puppet glides to the host's position, mirrors the parts of its body that move and the telegraph geometry it makes (warning rings, landing marks), and shows the host's health. Anything a guest does to a puppet goes to the host, which applies it: a blow, a status, a slow, a shove or a dash through a ward. Foe updates go out 20 times a second. Each update sends only what moved and is split to fit network packets.
-- **Spells.** A guest's own spell is drawn at once and also sent to the host, which casts the real one as that guest's. The real spell decides every hit. The guest's hit marker, lifesteal and returning books follow the guest. Everyone else's spells and every hostile spell are drawn from the host's.
+- **Spells.** A guest's own spell is drawn at once and also sent to the host, which casts the real one as that guest's. The real spell decides every hit. The guest's hit marker, lifesteal and returning books follow the guest. Everyone else's spells and every hostile spell are drawn from the host's, and a teammate's casting is heard where they stand.
 - **Everything else.** Effects, sounds and damage numbers from the shared world are replayed on guests. They go unreliably, so a lost spark never delays the world's changes. Residue changes travel tile by tile. Kills, cleared rooms, the start of a fight, broken props, revealed passages, lanterns and bombs travel as reliable events. Each guest grants its own rewards for them.
 
 Every position is room-local. A passage handoff or a new floor moves the origin, so reports carry the count of handoffs so far. A report from just before a handoff is shifted into the new frame, and anything older is ignored.
@@ -69,18 +69,18 @@ Co-op is first-person only; the legacy isometric view (`--isometric`) stays sing
 
 ## Verification
 
-`tests/coop.gd` runs a real two-player climb over the loopback network. The test hosts in its own process and starts a second game process (`tests/coop_guest.gd`) that joins with its own storage. Together they check:
+`tests/coop.gd` runs a real three-player climb over the loopback network. The test hosts in its own process and starts two more game processes (`tests/coop_guest.gd`) that join, each with its own storage. Together they check:
 
 - the handshake's rules and LAN discovery
-- the shared floor
+- the shared floor, and guests seeing the host and each other where they really are
 - waiting at a passage's turn until the whole party is in, then moving on with the lagging player pulled along
 - the fight starting once the party is in, with every host foe drawn on the guest
-- a guest's blow and spell applied on the host as the guest's
+- a guest's blow and spell applied on the host as the guest's, and the other guest seeing that spell
 - foes chasing the nearest teammate
 - personal kill credit
 - a blow on the guest's figure landing on the guest alone
 - falling, being left alone by foes, and being rekindled on one heart
-- the stair waiting for the whole party, then everyone arriving on the same floor in the same room
-- the climb ending only when everyone is down, without a save
+- the stair waiting for the whole party (walking away stops waiting), then everyone arriving on the same floor in the same room
+- the climb ending only when everyone is down, without a save, and the host bringing the party back to the lobby
 
 It is part of `tools/test.sh`. `tests/render_coop.gd` is an opt-in native capture of the lobby, two teammates in a room, a fallen teammate being rekindled and a player's own fallen view. Set `EMBERKEEP_COOP_CAPTURE` to an output directory and run it under a display or Xvfb.

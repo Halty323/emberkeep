@@ -1467,7 +1467,9 @@ func prompt_for(target: Dictionary) -> String:
 		"shop": return "Browse the merchant’s wares"
 		"dark": return "Bargain with the dark · pay in life"
 		"rest": return "Warm your hands · heal %d" % (1 if ExpeditionBalance.active_new_run() else 3)
-		"exit": return "Carry the light home" if Run.last_floor() else "Climb to the next floor"
+		"exit":
+			if party.climbing(): return "Waiting for the party…" if party.waiting_at_stair else "Climb with the party"
+			return "Carry the light home" if Run.last_floor() else "Climb to the next floor"
 		"chest":
 			var chest = GameActions.find_record(Run.rooms[Run.current_room].get("chests", []), target.id.trim_prefix("chest:"))
 			if not chest.get("locked", false): return "Open the chest"

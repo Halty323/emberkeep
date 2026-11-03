@@ -6,6 +6,7 @@ extends SceneTree
 var game
 var port := 0
 var result_path := ""
+var player_name := "Guest"
 var checks := 0
 var failures := 0
 var notes: Array = []
@@ -16,6 +17,7 @@ func _initialize() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--port="): port = int(arg.trim_prefix("--port="))
 		if arg.begins_with("--result="): result_path = arg.trim_prefix("--result=")
+		if arg.begins_with("--name="): player_name = arg.trim_prefix("--name=")
 	call_deferred("exercise")
 
 func check(value: bool, label: String) -> void:
@@ -35,7 +37,7 @@ func exercise() -> void:
 	await process_frame
 	var session = root.get_node("Session")
 	session.message_received.connect(on_message)
-	var problem: String = session.join_party("127.0.0.1", "Guest", "candle", port)
+	var problem: String = session.join_party("127.0.0.1", player_name, "candle", port)
 	check(problem == "", "a join starts: " + problem)
 	var started := Time.get_ticks_msec()
 	while not done and Time.get_ticks_msec() - started < 150000:
@@ -62,7 +64,14 @@ func report() -> Dictionary:
 		"foes": game.party.puppets.size() if run.active else 0, "down": game.party.downed, "drawn": drawn,
 		"open": is_instance_valid(game.room) and game.room.open, "rooms": run.rooms.size(), "coins": run.coins,
 		"pickups": game.pickups.size() if run.active else 0, "position": game.player.global_position if run.active and is_instance_valid(game.player) else Vector3.ZERO,
-		"in_menu": game.in_menu, "mode": game.ui.mode}
+		"in_menu": game.in_menu, "mode": game.ui.mode, "figures": figures()}
+
+## The other players' figures as this guest sees them: id -> position.
+func figures() -> Dictionary:
+	var result := {}
+	for id in game.party.members:
+		if is_instance_valid(game.party.members[id]): result[id] = game.party.members[id].global_position
+	return result
 
 func on_message(_from: int, kind: String, data) -> void:
 	if kind != "test" or not data is Dictionary: return
@@ -101,6 +110,11 @@ func on_message(_from: int, kind: String, data) -> void:
 		"fall":
 			game.player_fell()
 			reply({"fell": game.party.downed})
-		"stair": reply(game.party.at_the_stair())
+		"stair":
+			# Walk up to this player's own stair, raising it if this room has none.
+			if not is_instance_valid(game.stairs): game.raise_stairs(false)
+			game.player.position = game.stairs.approach_point()
+			game.player.last_valid = game.player.position
+			reply(game.party.at_the_stair())
 		"done":
 			done = true
