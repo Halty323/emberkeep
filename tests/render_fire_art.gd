@@ -34,6 +34,7 @@ func capture() -> void:
 	var visuals = load("res://scripts/dungeon/prop_visuals.gd")
 	var batch = load("res://scripts/dungeon/detail_batch.gd")
 	var library = load("res://scripts/progression/painting_library.gd")
+	var effects = load("res://scripts/effects/effects_pool.gd")
 	# Exercise the mobile-safe GLES path used by the reported device.
 	policy.device_override = policy.for_device("Android", "Imagination", "PowerVR", "gl_compatibility")
 	settings.apply_render_policy()
@@ -41,12 +42,20 @@ func capture() -> void:
 	root.add_child(game)
 	current_scene = game
 	game.start_run("candle", 31609250, false)
-	for frame in 12: await process_frame
 	game.paused = true
 	game.set_process(false)
 	game.set_physics_process(false)
+	game.room.resume_build(true)
+	game.update_camera(.016, true)
 	# Captures stop the startup controller, so also remove its fade cover.
 	game.light_veil.visible = false
+	# Retire the unseen material samples that the startup cover was hiding.
+	# Their artificial pile must not appear in the rendered room or mirror.
+	if is_instance_valid(game.prewarm):
+		game.prewarm.show_residue(false)
+		game.prewarm.free()
+		game.prewarm = null
+	if is_instance_valid(effects.current): effects.current.expire_transients()
 	game.fps.weapon.visible = false
 	game.ui.visible = false
 	var definition: Dictionary = root.get_node("Content").record("furniture", "brazier")
