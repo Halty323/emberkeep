@@ -709,7 +709,8 @@ func settings_rows(page: String) -> Array:
 		"display":
 			var pixels = Settings.render_pixels()
 			var scale = "%d%%" % roundi(Settings.values.render_scale * 100)
-			if get_viewport().scaling_3d_scale < float(Settings.values.render_scale) - .005:
+			if Settings.adaptive < .995: scale += " (adaptive)"
+			elif get_viewport().scaling_3d_scale < float(Settings.values.render_scale) - .005:
 				scale += " (limited)"
 			var vsync = ["vsync", "VSync", on_off("vsync"), true]
 			if not Settings.vsync_supported():
@@ -734,7 +735,8 @@ func settings_rows(page: String) -> Array:
 			return [["effects_detail", "Effects detail", Settings.values.effects_detail.capitalize(), true],
 				["small_details", "Small details", Settings.values.small_details.capitalize(), true],
 				["shadows", "Lantern shadows", on_off("shadows"), true],
-				["ssao", "SSAO", Settings.values.ssao.capitalize() if Settings.ssao_supported() else "Off · device safe mode", Settings.ssao_supported()]]
+				["ssao", "SSAO", Settings.values.ssao.capitalize() if Settings.ssao_supported() else "Off · device safe mode", Settings.ssao_supported()],
+				["adaptive_resolution", "Adaptive resolution", on_off("adaptive_resolution") if Settings.adaptive_supported() else "Phones only", Settings.adaptive_supported()]]
 	return [["sound", "Sound effects", on_off("sound"), true], ["music", "Ambient music", on_off("music"), true],
 		["shake", "Camera shake", on_off("shake"), true], ["touch", "Touch controls", on_off("touch"), true]]
 

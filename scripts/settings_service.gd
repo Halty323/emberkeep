@@ -15,7 +15,9 @@ const DEFAULTS := {"render_scale": 1.0, "fps_limit": 60, "vsync": true, "show_fp
 	"fov": 78, "mouse_sensitivity": .0025, "touch_sensitivity": .004, "invert_y": false, "head_bob": false,
 	"sound": true, "music": true, "shake": true, "touch": false, "shadows": true,
 	# Opt out of a device's 3D pixel budget (PowerVR phones): sharper, slower.
-	"full_resolution": false}
+	"full_resolution": false,
+	# Phones: draw the dungeon smaller while the frame rate is falling short.
+	"adaptive_resolution": true}
 # Preferences previously stored in profile.json, migrated once.
 const LEGACY_KEYS := {"sound": "sound", "music": "music", "shake": "shake", "touch": "touch", "quality": "shadows"}
 # Provisional active-room totals; tune on real devices before changing.
@@ -126,7 +128,7 @@ func apply(key: String) -> void:
 		return
 	_applied[key] = values[key]
 	match key:
-		"render_scale", "full_resolution":
+		"render_scale", "full_resolution", "adaptive_resolution":
 			# Godot's built-in Compatibility bilinear scaling: only the 3D buffer
 			# shrinks, so canvas text, input and camera projection stay native.
 			apply_render_policy()
@@ -144,7 +146,46 @@ func apply_render_policy() -> void:
 		viewport.msaa_3d = Viewport.MSAA_DISABLED
 	viewport.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
 	var requested := float(values.render_scale)
-	viewport.scaling_3d_scale = requested if values.full_resolution else RenderPolicy.effective_scale(requested, viewport.size)
+	var scale := requested if values.full_resolution else RenderPolicy.effective_scale(requested, viewport.size)
+	if not adaptive_active(): adaptive = 1.0
+	viewport.scaling_3d_scale = maxf(.35, scale * adaptive)
+
+# ---------------------------------------------------------------- adaptive resolution
+# Phones measure their own frame rate in two-second windows. Falling short
+# of the target lowers the dungeon's resolution a step (text and controls
+# stay sharp); a steady margin raises it back, never above the chosen scale.
+const ADAPT_WINDOW := 2.0
+const ADAPT_FLOOR := .5
+var adaptive := 1.0
+var adapt_time := 0.0
+var adapt_frames := 0
+var adapt_calm := 0
+
+func adaptive_active() -> bool:
+	return bool(values.adaptive_resolution) and (OS.has_feature("android") or OS.has_feature("ios"))
+
+func _process(delta: float) -> void:
+	if not adaptive_active(): return
+	adapt_time += delta
+	adapt_frames += 1
+	if adapt_time < ADAPT_WINDOW: return
+	var fps := adapt_frames / adapt_time
+	adapt_time = 0.0
+	adapt_frames = 0
+	var target := float(values.fps_limit) if int(values.fps_limit) > 0 else 60.0
+	target = minf(target, 60.0)
+	if fps < target * .85 and adaptive > ADAPT_FLOOR:
+		adaptive = maxf(ADAPT_FLOOR, adaptive - .1)
+		adapt_calm = 0
+		apply_render_policy()
+	elif fps >= target * .97 and adaptive < 1.0:
+		adapt_calm += 1
+		if adapt_calm >= 3:
+			adapt_calm = 0
+			adaptive = minf(1.0, adaptive + .05)
+			apply_render_policy()
+	else:
+		adapt_calm = 0
 
 ## Whether this device caps the 3D resolution (the player may lift the cap).
 func resolution_capped() -> bool:
@@ -197,3 +238,6 @@ func ssao_supported() -> bool:
 
 func effective_ssao() -> String:
 	return str(values.ssao) if ssao_supported() else "off"
+
+func adaptive_supported() -> bool:
+	return OS.has_feature("android") or OS.has_feature("ios")

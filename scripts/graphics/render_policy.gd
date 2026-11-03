@@ -11,13 +11,18 @@ static var _detected: Dictionary = {}
 static func for_device(platform: String, vendor: String, adapter: String, method: String) -> Dictionary:
 	var mobile_gles = platform in ["Android", "iOS"] and method == "gl_compatibility"
 	var gpu = (vendor + " " + adapter).to_lower()
-	var conservative = platform == "Android" and mobile_gles and ("powervr" in gpu or "imagination" in gpu)
+	var powervr: bool = platform == "Android" and mobile_gles and ("powervr" in gpu or "imagination" in gpu)
+	# Exynos phones: Mali (vendor ARM) and Samsung's Xclipse. Their GLES
+	# drivers fall far behind on full-screen passes and heavy surfaces at
+	# native resolution, so they take the same bounded path, without SSAO.
+	var exynos: bool = platform == "Android" and mobile_gles and (vendor.to_lower().strip_edges() == "arm" or "mali" in gpu or "xclipse" in gpu or "samsung" in gpu)
+	var conservative: bool = powervr or exynos
 	return {
 		"msaa": not mobile_gles,
 		"post_processing": not conservative,
 		# Contact AO reads depth only. It does not use the color-copy/MSAA
 		# path that failed on PowerVR; keep a smaller finite sampling budget.
-		"ambient_occlusion": true,
+		"ambient_occlusion": not exynos,
 		"ssao_samples": Vector2i(6,8) if conservative else Vector2i(8,12),
 		"glow": not conservative,
 		"reflections": not conservative,
@@ -25,7 +30,7 @@ static func for_device(platform: String, vendor: String, adapter: String, method
 		"lightweight_surfaces": conservative,
 		"max_3d_pixels": 1280 * 720 if conservative else 0,
 		"reflection_limit": Vector2i(640, 360) if mobile_gles else Vector2i(1280, 720),
-		"reason": "PowerVR GLES compatibility" if conservative else ""
+		"reason": "PowerVR GLES compatibility" if powervr else ("Mali/Xclipse GLES performance" if exynos else "")
 	}
 
 static func current() -> Dictionary:

@@ -26,7 +26,8 @@ func test_policy() -> void:
 	check(affected.max_3d_pixels == 1280 * 720, "PowerVR main 3D target has a fixed pixel budget")
 	var fixtures := [
 		["Android", "QUALCOMM", "Adreno 830", "gl_compatibility", false, true],
-		["Android", "ARM", "Mali-G720", "gl_compatibility", false, true],
+		["Android", "ARM", "Mali-G720", "gl_compatibility", false, false],
+		["Android", "Samsung Electronics Co., Ltd.", "Samsung Xclipse 940", "gl_compatibility", false, false],
 		["iOS", "Apple", "Apple GPU", "gl_compatibility", false, true],
 		["Linux", "Imagination Technologies", "PowerVR", "gl_compatibility", true, true],
 		["Android", "Imagination Technologies", "PowerVR", "mobile", true, true],
