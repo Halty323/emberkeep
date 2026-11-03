@@ -24,6 +24,9 @@ var geometry: RoomGeometry
 var vents: Array = []
 var pendulums: Array = []
 var time = 0.0
+# Co-op guest: vents glow and blades swing here, but the host's own hazards
+# are the ones that burn and strike.
+var cosmetic := false
 
 func setup(owner_game: Node3D, room_data: Dictionary, room_geometry: RoomGeometry, field: ResidueField, pedestal: Vector3) -> void:
 	game = owner_game
@@ -125,7 +128,12 @@ func update_vent(vent: Dictionary, delta: float, running: bool) -> void:
 				vent.warning.visible = true
 		"warn":
 			glow = 1.0 - vent.timer / VENT_WARNING
-			if vent.timer <= 0: erupt(vent)
+			if vent.timer <= 0:
+				if cosmetic:
+					vent.state = "rest"
+					vent.timer = vent.rest
+					vent.warning.visible = false
+				else: erupt(vent)
 	# Stepped, so the shared material cache stays small.
 	var heat = snappedf(.18+glow*1.15,.25) if game.first_person else snappedf(.3+glow*2.5,.5)
 	for slit in vent.slits:
@@ -140,7 +148,8 @@ func erupt(vent: Dictionary) -> void:
 	Effects.burst(game.scene_root, at + Vector3.UP * .4, Color("ff9a4a"), 14, 1.6)
 	Effects.ring_burst(game.scene_root, at, Color("ff8a4a"), VENT_REACH)
 	game.make_noise(at, 1.5)
-	if game.player.global_position.distance_to(at) < VENT_REACH: game.player.hurt(1.0, at)
+	for body in NetHooks.bodies(game):
+		if body.global_position.distance_to(at) < VENT_REACH: body.hurt(1.0, at)
 	for enemy in game.enemies.duplicate():
 		if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable: continue
 		if enemy.global_position.distance_to(at) < VENT_REACH + enemy.radius:
@@ -156,15 +165,16 @@ func update_pendulum(pendulum: Dictionary, running: bool) -> void:
 	pendulum.blade.position = bob + Vector3.UP * height
 	pendulum.rod.position = (bob + Vector3.UP * height + Vector3.UP * 4.2) / 2.0
 	pendulum.rod.rotation.z = 0.0
-	if not running or height > 1.1: return
+	if not running or height > 1.1 or cosmetic: return
 	var center: Vector3 = pendulum.node.position + bob
 	var across: Vector3 = pendulum.axis.cross(Vector3.UP)
 	var a = center - across * PENDULUM_BLADE
 	var b = center + across * PENDULUM_BLADE
 	var swing_dir = pendulum.axis * signf(cos(time * TAU / PENDULUM_PERIOD + pendulum.phase))
-	var player_at: Vector3 = game.player.global_position
-	if Geometry3D.get_closest_point_to_segment(player_at, a, b).distance_to(player_at) < .45:
-		game.player.hurt(1.0, center)
+	for body in NetHooks.bodies(game):
+		var player_at: Vector3 = body.global_position
+		if Geometry3D.get_closest_point_to_segment(player_at, a, b).distance_to(player_at) < .45:
+			body.hurt(1.0, center)
 	for enemy in game.enemies.duplicate():
 		if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable or enemy.boss: continue
 		var at: Vector3 = enemy.global_position

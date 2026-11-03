@@ -64,7 +64,12 @@ var daily = false
 # Device preferences live in the Settings service, never in the profile.
 const PROFILE_VERSION := 2
 var profile = {"version": PROFILE_VERSION, "runs": 0, "wins": 0, "kills": 0, "best_floor": 0, "discovered": [],
-	"paintings": [], "unlocks": [], "floors": [], "fps_tutorial_seen": false}
+	"paintings": [], "unlocks": [], "floors": [], "fps_tutorial_seen": false, "coop_name": "", "coop_address": "",
+	# Combinations found at least once ("r:shatter", "p:powder_keg", "e:ember").
+	"combos": []}
+# A floor the co-op host built, used instead of generating it here, so every
+# player in the party walks exactly the same rooms.
+var incoming_floor: Dictionary = {}
 
 func _ready() -> void:
 	if FileAccess.file_exists(PROFILE_PATH):
@@ -141,7 +146,23 @@ func projectile_stats() -> Dictionary:
 	var held: Dictionary = weapon()
 	for key in held.effects:
 		result[key] = float(result.get(key, 0)) + float(held.effects[key])
+	# The book's element, its resonance with the relics carried, and the
+	# pairings its spells apply (scripts/items/synergies.gd).
+	var extra := Synergies.spell_stats(inventory, Synergies.weapon_element(held))
+	for key in extra:
+		if extra[key] is float: result[key] = float(result.get(key, 0)) + extra[key]
+		else: result[key] = extra[key]
 	return result
+
+func has_pairing(id: String) -> bool:
+	return Synergies.has_pairing(inventory, id)
+
+## Records a combination as found; true the first time ever.
+func discover(combo: String) -> bool:
+	if combo in profile.combos: return false
+	profile.combos.append(combo)
+	save_profile()
+	return true
 
 func gain_item(id: String) -> void:
 	var old_max: float = stats.max_hp
@@ -401,22 +422,8 @@ func height() -> float:
 	return clampf(float(floor_number - 1) / maxf(1, climb_length() - 1), 0.0, 1.0)
 
 func generate_floor() -> void:
-	var floor_data: Dictionary
-	if generator_version == FloorGenerator.LEGACY_VERSION:
-		# Runs saved before v2 keep the original generator for later floors.
-		floor_data = FloorGenerator.from_legacy(FloorGenerator.legacy_rooms(seed_value, floor_number))
-	elif generator_version == FloorGenerator.PREVIOUS_VERSION:
-		floor_data = FloorGenerator.generate_v2(seed_value, floor_number)
-	else:
-		floor_data = FloorGenerator.generate_version(seed_value, floor_number, FloorGenerator.VERSION)
-	# Presentation architecture upgrades independently of the saved economy.
-	# Old runs keep their loot rules and receive real storeys on future floors.
-	if OS.get_environment("EMBERKEEP_LEGACY_TEST")!="1" and not "--isometric" in OS.get_cmdline_user_args():
-		if VerticalPlans.upgrade_unvisited(floor_data.rooms,floor_data.portals,floor_number):
-			for record in floor_data.rooms.values():
-				if record.get("fps_terrain",{}).get("kind","")=="loft":
-					VerticalPlans.make_mandatory(floor_data,record.id)
-					break
+	var floor_data: Dictionary = incoming_floor if not incoming_floor.is_empty() else floor_data_for(seed_value, floor_number)
+	incoming_floor = {}
 	rooms = floor_data.rooms
 	portals = floor_data.portals
 	current_room = FloorGenerator.START_ID
@@ -424,6 +431,26 @@ func generate_floor() -> void:
 	profile.best_floor = maxi(profile.best_floor, floor_number)
 	# The journal remembers every floor theme ever reached.
 	if theme_id() not in profile.floors: profile.floors.append(theme_id())
+
+## One floor's rooms and doorways, from the seed alone.
+func floor_data_for(seed_input: int, number: int) -> Dictionary:
+	var floor_data: Dictionary
+	if generator_version == FloorGenerator.LEGACY_VERSION:
+		# Runs saved before v2 keep the original generator for later floors.
+		floor_data = FloorGenerator.from_legacy(FloorGenerator.legacy_rooms(seed_input, number))
+	elif generator_version == FloorGenerator.PREVIOUS_VERSION:
+		floor_data = FloorGenerator.generate_v2(seed_input, number)
+	else:
+		floor_data = FloorGenerator.generate_version(seed_input, number, FloorGenerator.VERSION)
+	# Presentation architecture upgrades independently of the saved economy.
+	# Old runs keep their loot rules and receive real storeys on future floors.
+	if OS.get_environment("EMBERKEEP_LEGACY_TEST")!="1" and not "--isometric" in OS.get_cmdline_user_args():
+		if VerticalPlans.upgrade_unvisited(floor_data.rooms,floor_data.portals,number):
+			for record in floor_data.rooms.values():
+				if record.get("fps_terrain",{}).get("kind","")=="loft":
+					VerticalPlans.make_mandatory(floor_data,record.id)
+					break
+	return floor_data
 
 ## Fills this floor's painting mounts from a dedicated stream that depends on
 ## collection progress, never the other way round: topology, encounters and
@@ -492,7 +519,8 @@ func finish(won: bool) -> void:
 	if won:
 		profile.wins += 1
 	save_profile()
-	if FileAccess.file_exists(SAVE_PATH):
+	# A co-op climb is never saved, so it never ends the lone climb's save.
+	if FileAccess.file_exists(SAVE_PATH) and not Session.online:
 		DirAccess.remove_absolute(SAVE_PATH)
 	changed.emit()
 
@@ -540,8 +568,10 @@ static func migrate_v1(d: Dictionary) -> Dictionary:
 	migrated.version = SAVE_VERSION
 	return migrated
 
+## A co-op climb lives only while the party does: it is not saved, and the
+## lone climb's save is left as it was.
 func save_run() -> void:
-	if active:
+	if active and not Session.online:
 		_atomic_json(SAVE_PATH, snapshot())
 
 func has_save() -> bool:

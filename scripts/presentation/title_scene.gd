@@ -125,7 +125,9 @@ func build(game) -> void:
 	armament_view.rotation = Vector3(0,PI/2-.2,0)
 	armament_view.scale = Vector3.ONE * 1.8
 	add_child(armament_view)
-	FirstPersonWeaponView.populate(armament_view)
+	SpellbookView.populate(armament_view)
+	# On the table the book rests alone, without the hand that will hold it.
+	for part in ["Hand", "Sleeve", "Cuff"]: armament_view.get_node(part).visible = false
 	preview_weapon(game.ui.starter_weapon())
 	for i in 3:
 		var book = Geo.box(self,Vector3(4.67,.12+i*.13,-2.18),Vector3(.65,.12,.48),[Color("554431"),Color("394b43"),Color("6a4135")][i])
@@ -196,8 +198,8 @@ func lantern(at: Vector3) -> void:
 
 func preview_weapon(weapon: Dictionary) -> void:
 	if not is_instance_valid(armament_view): return
+	SpellbookView.tint(armament_view, Color(weapon.color))
 	armament_view.get_child(2).material_override = Geo.material(Color(weapon.color),.6)
-	armament_view.get_child(1).scale = Vector3(1.18 if int(weapon.count) > 1 else 1.0,1.0,1.15 if weapon.get("pattern","") == "lance" else 1.0)
 
 func _process(delta: float) -> void:
 	clock += delta

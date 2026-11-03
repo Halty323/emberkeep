@@ -45,6 +45,7 @@ func exercise() -> void:
 	navigation_matches_brute_force()
 	doorways_share_meshes()
 	eye_interpolation()
+	await reaper_and_save()
 	await prewarm_is_inert()
 	game.queue_free()
 	await settle()
@@ -197,6 +198,32 @@ func eye_interpolation() -> void:
 	check(not is_equal_approx(fps.yaw, yaw) and game.ui.look_delta == Vector2.ZERO, "touch look turns the view on a drawn frame")
 	game.paused = true
 
+## A left room leaves the world at once and is deleted over later frames;
+## a corridor arrival saves a couple of frames after the handoff.
+func reaper_and_save() -> void:
+	var reaper = load("res://scripts/first_person/node_reaper.gd").new()
+	var top := Node3D.new()
+	var nodes: Array = [top]
+	var parent: Node3D = top
+	for i in 60:
+		var child := Node3D.new()
+		parent.add_child(child)
+		nodes.append(child)
+		if i % 6 == 0: parent = child
+	game.add_child(top)
+	reaper.reap(top)
+	check(not top.is_inside_tree() and is_instance_valid(top) and reaper.pending() == nodes.size(), "a reaped tree leaves the world at once, still to be deleted")
+	reaper.step(1000000)
+	check(reaper.pending() == 0 and nodes.all(func(node): return not is_instance_valid(node)), "the reaper deletes every node, deepest first, without errors")
+	game.save_soon()
+	check(game.save_due == 2, "a corridor arrival schedules its save")
+	await settle()
+	check(game.save_due == -1, "the scheduled save runs within a few frames")
+	var watch = load("res://scripts/graphics/frame_watch.gd")
+	watch.mark("a test cause")
+	watch.frame(.05)
+	check(watch.hitches.back()[2] == "a test cause" and int(watch.hitches.back()[1]) == 50, "a long frame is reported with what the game was doing")
+
 ## Warm-up draws foes, shots and drops that never join the run.
 func prewarm_is_inert() -> void:
 	var Prewarm = load("res://scripts/graphics/shader_prewarm.gd")
@@ -211,9 +238,6 @@ func prewarm_is_inert() -> void:
 	var visited: Array = run.rooms.keys().filter(func(id): return run.rooms[id].get("visited", false))
 	var warm = Prewarm.begin(game)
 	check(warm.find_children("*", "DungeonEnemy", true, false).size() >= 2, "warm-up shows this floor's foes")
-	check(warm.swatches > 10 and warm.find_children("*", "DungeonRoom", true, false).is_empty(), "warm-up keeps swatches of the other rooms' materials, not the rooms (%d)" % warm.swatches)
-	check(run.rooms.keys().filter(func(id): return run.rooms[id].get("visited", false)) == visited and run.current_room == game.room.data.id, "building the other rooms visits none of them")
-	check(load("res://scripts/effects/effects_pool.gd").current == game.room.effects, "the active room keeps its particle pool")
 	check(warm.find_children("*", "EmberShot", true, false).size() == 2, "warm-up shows a friendly and a hostile shot")
 	check(game.entity_counter == entity_counter and run.rng.state == rng_state, "warm-up leaves entity ids and the run's RNG alone")
 	check(game.enemies.size() == enemies and game.shots.size() == shots and game.pickups.size() == pickups and get_nodes_in_group("enemies").size() == enemies, "warm-up foes, shots and drops are not in play")
@@ -221,7 +245,20 @@ func prewarm_is_inert() -> void:
 	check(game.scene_root.get_child_count() == roots + 1, "everything a warm-up setup left behind is held by the warm-up")
 	var pool = load("res://scripts/effects/effects_pool.gd").current
 	check(pool == null or pool.transient_count() > 0, "warm-up draws every effect")
-	for i in Prewarm.HOLD_FRAMES: warm.step()
+	var steps := 0
+	var most_rooms := 0
+	var shown := {}
+	while warm.active() and steps < 500:
+		var rooms: Array = warm.find_children("*", "DungeonRoom", true, false)
+		most_rooms = maxi(most_rooms, rooms.size())
+		for room in rooms: shown[room.data.id] = true
+		warm.step()
+		steps += 1
+	check(shown.size() == run.rooms.size() - 1 and most_rooms == 1, "warm-up shows every other room, one at a time (%d)" % shown.size())
+	check(warm.shaders.size() > 10 and warm.find_children("*", "DungeonRoom", true, false).is_empty(), "warm-up ends with one swatch set per distinct shader and no rooms (%d shaders)" % warm.shaders.size())
+	check(run.rooms.keys().filter(func(id): return run.rooms[id].get("visited", false)) == visited and run.current_room == game.room.data.id, "showing the other rooms visits none of them")
+	check(load("res://scripts/effects/effects_pool.gd").current == game.room.effects, "the active room keeps its particle pool")
+	check(steps > Prewarm.HOLD_FRAMES and warm.swatches == warm.shaders.size(), "warm-up lays its shaders a few per frame, then holds (%d frames)" % steps)
 	check(pool == null or pool.transient_count() == 0, "warm-up particles are gone when the veil lifts")
 	await settle()
 	check(not is_instance_valid(warm) and game.scene_root.get_child_count() == roots, "warm-up removes itself after its frames")

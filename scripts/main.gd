@@ -46,6 +46,10 @@ var view_mask: RoomGeometry
 var fade_prewarm = 0
 # Each floor's shaders compile behind the veil, not mid-fight (ShaderPrewarm).
 var prewarm: ShaderPrewarm
+# The room a corridor leaves is deleted over the following frames.
+var reaper := NodeReaper.new()
+# A corridor arrival saves a couple of frames later, off the handoff frame.
+var save_due := -1
 # The way up: a stair that builds itself when the boss falls, climbed into
 # the light from the floor above; the next floor opens at its stairwell.
 const CLIMB_APPROACH := .5
@@ -63,6 +67,8 @@ var vignette: ShaderMaterial
 var screen_fx: ScreenFx
 var mirror: WaterMirror
 var actions: GameActions
+# Co-op on the local network (scripts/coop/party.gd); idle when alone.
+var party: Party
 var interactions := InteractionRegistry.new()
 var companions: Array = []
 var bomb_views: Dictionary = {}
@@ -182,6 +188,9 @@ func _ready() -> void:
 		for kind in 3: DungeonStyle.surface_maps(kind)
 	Run.item_gained.connect(on_item_gained)
 	actions = GameActions.new(self)
+	party = Party.new()
+	add_child(party)
+	party.setup(self)
 	Session.command_received.connect(on_command)
 	Collection.unlocked.connect(on_weapon_unlocked)
 	get_tree().auto_accept_quit = false
@@ -242,12 +251,27 @@ func submit(command: Dictionary) -> Dictionary:
 	Session.submit(command)
 	return last_result
 
+## Each player's own actions run on their own device, co-op included.
 func on_command(peer_id: int, command: Dictionary) -> void:
-	if Session.is_authority():
+	if peer_id == Session.local_peer_id or Session.is_authority():
 		last_result = actions.perform(command, peer_id)
+
+func _exit_tree() -> void:
+	flush_save()
+	reaper.flush()
+
+func save_soon() -> void:
+	save_due = 2
+
+func flush_save() -> void:
+	if save_due < 0: return
+	save_due = -1
+	FrameWatch.mark("saving")
+	Run.save_run()
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
+		flush_save()
 		if is_instance_valid(ui) and is_playing():
 			pause_game()
 	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
@@ -260,11 +284,42 @@ func _notification(what: int) -> void:
 			elif ui.mode == "painting": ui.close_painting()
 			elif ui.mode == "secret": ui.close_secret_code()
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		save_due = -1
 		if first_person and Run.active: Run.save_run()
 		get_tree().quit()
 
 func is_playing() -> bool:
 	return Run.active and not paused and not in_menu
+
+## Whether the tower moves this tick. Alone, a menu stops it; in co-op a
+## menu only stops this player, and the party's world goes on.
+func sim_live() -> bool:
+	return Run.active and not in_menu and (not paused or party.climbing())
+
+## Everyone foes can strike this tick: the player, and in co-op on the host
+## every standing teammate's figure.
+func party_bodies() -> Array:
+	return party.bodies()
+
+func nearest_body(at: Vector3) -> Node3D:
+	var best: Node3D = player
+	var best_distance := INF
+	for body in party_bodies():
+		var distance: float = body.global_position.distance_to(at)
+		if distance < best_distance:
+			best_distance = distance
+			best = body
+	return best
+
+## A hostile spell caught or blown away by this player.
+func dispel(shot: EmberShot) -> void:
+	party.dispel(shot)
+	shot.remove()
+
+## The last heart is gone: the end of a lone climb, a fall in co-op.
+func player_fell() -> void:
+	if party.climbing(): party.fall()
+	else: end_run(false)
 
 func screen_direction(value: Vector2) -> Vector3:
 	if first_person and fps:
@@ -272,21 +327,27 @@ func screen_direction(value: Vector2) -> Vector3:
 	return screen_right * value.x + screen_down * value.y
 
 func _physics_process(delta: float) -> void:
-	if not is_playing(): return
+	if not sim_live(): return
 	# A doorway transition owns the tick: foes, shots and timers wait for it.
 	if not transition.is_empty():
 		advance_transition(delta)
+		party.tick(delta)
 		return
 	if hitstop > 0:
 		hitstop -= delta
+		party.tick(delta)
 		return
+	# A menu open in co-op, or a fallen player: the body stands still.
+	var steering := is_playing() and not party.downed
 	sim_time += delta
 	Run.elapsed += delta
 	transition_cooldown -= delta
 	# Cooldowns, modifiers and fuses advance on this same unpaused clock.
 	for bomb in Run.advance(delta):
+		party.begin_world()
 		actions.detonate(bomb)
-		if not is_playing(): return
+		party.end_world()
+		if not sim_live(): return
 	var move_input = Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	var move_joy = Vector2(Input.get_joy_axis(0, JOY_AXIS_LEFT_X), Input.get_joy_axis(0, JOY_AXIS_LEFT_Y))
 	if move_joy.length() > .18: move_input = move_joy.limit_length()
@@ -294,7 +355,13 @@ func _physics_process(delta: float) -> void:
 	var aim = Vector3.ZERO
 	var shooting = false
 	var aim_joy = Vector2(Input.get_joy_axis(0, JOY_AXIS_RIGHT_X), Input.get_joy_axis(0, JOY_AXIS_RIGHT_Y))
-	if first_person:
+	if not steering:
+		move_input = Vector2.ZERO
+		request_dash = false
+		if first_person:
+			corridors.prepare()
+			aim = fps.forward()
+	elif first_person:
 		corridors.prepare()
 		fps.collect_look(delta)
 		aim = fps.shot_direction(fps.shot_origin())
@@ -324,14 +391,26 @@ func _physics_process(delta: float) -> void:
 		request_dash = false
 	player.update_sim(delta, move_input, aim, shooting)
 	advance_stair_assembly(delta)
-	for enemy in enemies.duplicate():
-		if is_instance_valid(enemy) and is_playing() and enemy.alive: enemy.update_sim(delta)
+	if party.client(): party.update_puppets(delta)
+	elif party.climbing(): party.run_foes(delta)
+	else:
+		for enemy in enemies.duplicate():
+			if is_instance_valid(enemy) and is_playing() and enemy.alive: enemy.update_sim(delta)
 	enemies = enemies.filter(func(e): return is_instance_valid(e) and e.alive)
+	party.begin_world()
 	for shot in shots.duplicate():
-		if is_instance_valid(shot) and is_playing(): shot.update_sim(delta)
+		if is_instance_valid(shot) and sim_live():
+			# Whose spell it is decides whose hit marker and heal it brings.
+			party.shot_owner = 0 if party.spell_owner_local(shot) else shot.owner_peer
+			shot.update_sim(delta)
+	party.shot_owner = 0
+	party.end_world()
 	shots = shots.filter(func(s): return is_instance_valid(s) and s.alive)
-	if residue: residue.update_sim(delta)
+	party.begin_world()
+	# A guest's floor is the host's, sent tile by tile.
+	if residue and not party.client(): residue.update_sim(delta)
 	if hazards and deferred_encounter.is_empty(): hazards.update_sim(delta)
+	party.end_world()
 	# A streak cools once kills stop coming.
 	kindle_quiet += delta
 	# A draught takes the heat away faster.
@@ -344,8 +423,9 @@ func _physics_process(delta: float) -> void:
 	pickups = pickups.filter(func(p): return is_instance_valid(p) and not p.collected)
 	if not Run.active: return
 	track_exploration()
-	# Posts and dropped lanterns never hold a room shut.
-	if not room.open and deferred_encounter.is_empty() and enemies.all(func(e): return e.inert):
+	# Posts and dropped lanterns never hold a room shut. A guest's room opens
+	# when the host says its fight is won.
+	if not party.client() and not room.open and deferred_encounter.is_empty() and enemies.all(func(e): return e.inert):
 		for enemy in enemies:
 			enemy.alive = false
 			enemy.queue_free()
@@ -359,6 +439,7 @@ func _physics_process(delta: float) -> void:
 		snapshot_timer = .1
 		Session.publish({"player": {"id": player.entity_id, "owner": player.owner_peer_id, "position": [player.position.x, player.position.z], "hp": Run.hp},
 			"room": Run.current_room, "seed": Run.seed_value, "floor": Run.floor_number})
+	party.tick(delta)
 	# Room changes start only here, after every actor finished this tick.
 	if pending_portal != "":
 		var portal_id: String = pending_portal
@@ -464,9 +545,11 @@ func reach_next_floor() -> void:
 		return
 	Run.next_floor()
 	enter_room(Vector3(0, 0, 2.0))
+	party.floor_changed()
 	var pedestal = Vector2(room.pedestal.x, room.pedestal.z)
 	var out = (pedestal - Vector2(well_spot.x, well_spot.z)).normalized()
-	var landing = room.geometry.safe_point(Vector2(well_spot.x, well_spot.z) + out * (Staircase.OUTER + .9), .5, room.blocked_at)
+	var beside := Vector2(-out.y, out.x) * ((Session.local_slot() - 1.5) * .8 if party.climbing() else 0.0)
+	var landing = room.geometry.safe_point(Vector2(well_spot.x, well_spot.z) + out * (Staircase.OUTER + .9) + beside, .5, room.blocked_at)
 	var arrival = Vector3(landing.x, 0, landing.y)
 	var path = Staircase.rise_path(well_spot, arrival)
 	var times: Array = []
@@ -587,6 +670,7 @@ func finish_slide() -> void:
 	transition.time = 0.0
 
 func _process(delta: float) -> void:
+	FrameWatch.frame(delta)
 	if fade_prewarm > 0:
 		fade_prewarm -= 1
 		if fade_prewarm == 0 and in_menu and is_instance_valid(player): player.set_fade(1.0)
@@ -595,6 +679,11 @@ func _process(delta: float) -> void:
 	if warming:
 		light_veil.color.a = 1.0
 		prewarm.step()
+	if reaper.pending() > 0:
+		FrameWatch.mark("freeing the room left behind")
+		reaper.step()
+	if save_due > 0: save_due -= 1
+	elif save_due == 0: flush_save()
 	shake = maxf(0, shake - delta * .9)
 	hurt_flash = maxf(0, hurt_flash - delta * 1.6)
 	update_camera(delta)
@@ -611,11 +700,12 @@ func _process(delta: float) -> void:
 	if marker_visual and is_instance_valid(marker_visual):
 		# Animate the luminous relic alone; its pedestal and light stay static,
 		# allowing the room's shadow maps to remain cached while idle.
-		marker_visual.rotation.y += delta * .5
+		if marker_visual.has_meta("rest_y"): Reliquary.animate(marker_visual, Time.get_ticks_msec() * .001, delta)
+		else: marker_visual.rotation.y += delta * .5
 	for view in item_views.values():
 		if is_instance_valid(view):
-			var orb = view.get_node_or_null("Orb")
-			if orb: orb.position.y = .62 + sin(Time.get_ticks_msec() * .003) * .06
+			var relic = view.get_node_or_null("Reliquary/Relic")
+			if relic: Reliquary.animate(relic, Time.get_ticks_msec() * .001 + view.get_instance_id() % 7, delta)
 
 func update_camera(delta: float, snap := false) -> void:
 	if not camera:
@@ -664,7 +754,9 @@ func camera_target(at: Vector3) -> Vector3:
 		center.y + clampf((at.z - center.y) * gain.y, -limit.y, limit.y))
 
 func clean_room(keep_view := false, keep_corridor := false) -> void:
+	flush_save()
 	deferred_encounter={}
+	party.room_changed()
 	if corridors and not keep_corridor: corridors.reset()
 	stair_cinematic.cancel(self)
 	for shot in shots:
@@ -693,6 +785,10 @@ func clean_room(keep_view := false, keep_corridor := false) -> void:
 	if scene_root:
 		if keep_view:
 			previous_view = scene_root
+		elif keep_corridor and first_person:
+			# Leaving through a corridor: out of the world now, deleted over
+			# the next frames instead of all on the handoff frame.
+			reaper.reap(scene_root)
 		else:
 			remove_child(scene_root)
 			scene_root.queue_free()
@@ -754,12 +850,13 @@ func start_run(weapon: String, seed_input: int, is_daily: bool) -> void:
 	sim_time = 0
 	entity_counter = 10
 	reset_combat()
-	enter_room(Vector3(0, 0, 2.0))
+	# A party spreads out a little rather than standing in one spot.
+	enter_room(Vector3((Session.local_slot() - 1.5) * .9, 0, 2.0) if party.online() else Vector3(0, 0, 2.0))
 	warm_shaders()
 	ui.show_screen("play")
 	var arrival: Array = Run.theme().arrival
 	if first_person and not Run.profile.get("fps_tutorial_seen", false):
-		ui.notify("Keep your little light close", "Swipe right to look · Hold FIRE · Jump and dash to dodge" if ui.is_touch_platform() else "Mouse look · Click fire · Space jump · Shift dash")
+		ui.notify("Keep your little light close", "Swipe right to look · Hold CAST · Jump and dash to dodge" if ui.is_touch_platform() else "Mouse look · Click to cast · Space jump · Shift dash")
 		Run.profile["fps_tutorial_seen"] = true
 		Run.save_profile()
 	else: ui.notify(arrival[0], arrival[1])
@@ -770,6 +867,7 @@ func start_run(weapon: String, seed_input: int, is_daily: bool) -> void:
 func warm_shaders() -> void:
 	if not first_person or in_menu or DisplayServer.get_name() == "headless": return
 	if is_instance_valid(prewarm): prewarm.queue_free()
+	FrameWatch.mark("preparing shaders")
 	prewarm = ShaderPrewarm.begin(self)
 	light_veil.color.a = 1.0
 
@@ -817,6 +915,8 @@ func enter_room(spawn: Vector3, keep_view := false, walking_state: Dictionary = 
 	hazards = FloorHazards.new()
 	scene_root.add_child(hazards)
 	hazards.setup(self, data, room.geometry, residue, room.pedestal)
+	hazards.cosmetic = party.client()
+	residue.logging = party.host()
 	wind = Vector3.ZERO
 	if Run.has_twist("windswept"):
 		var bearing = float(Content.stable_hash("wind:%d:%d" % [Run.seed_value, Run.floor_number]) % 628) / 100.0
@@ -833,6 +933,7 @@ func enter_room(spawn: Vector3, keep_view := false, walking_state: Dictionary = 
 		player = Adventurer.new()
 		scene_root.add_child(player)
 		player.setup(self)
+	player.owner_peer_id = Session.local_peer_id
 	if first_person:
 		spawn.y = room.floor_height(spawn) + .03
 		Run.entry["height"] = spawn.y
@@ -847,7 +948,8 @@ func enter_room(spawn: Vector3, keep_view := false, walking_state: Dictionary = 
 	if not data.cleared and data.type in ["combat", "boss"]:
 		room.set_open(false)
 		if walking_state.is_empty():
-			spawn_room_encounter(data,spawn)
+			# A guest's foes are the host's, drawn as they arrive.
+			if not party.client(): spawn_room_encounter(data,spawn)
 		else:
 			deferred_encounter={"room":Run.current_room}
 	else:
@@ -865,7 +967,8 @@ func enter_room(spawn: Vector3, keep_view := false, walking_state: Dictionary = 
 			make_marker("treasure", room.pedestal)
 		if data.type == "boss":
 			raise_stairs(false)
-		Run.save_run()
+		if walking_state.is_empty(): Run.save_run()
+		else: save_soon()
 	for drop in data.get("pickups", []):
 		spawn_pickup(Vector3(float(drop.position[0]), float(drop.get("height",0)), float(drop.position[1])), drop.def, float(drop.get("value", -1)), str(drop.id))
 	if data.type == "start" and Run.floor_number > 1:
@@ -946,6 +1049,7 @@ func activate_corridor_encounter() -> void:
 	if id!=Run.current_room: return
 	var data: Dictionary=Run.rooms[id]
 	if not data.cleared and data.type in ["combat","boss"]:
+		FrameWatch.mark("fight start")
 		room.set_open(false)
 		spawn_room_encounter(data,player.position)
 
@@ -1059,16 +1163,28 @@ func spawn_enemy(at: Vector3, kind: String, source := "") -> DungeonEnemy:
 	var enemy: DungeonEnemy = Foes.create(kind)
 	scene_root.add_child(enemy)
 	entity_counter += 1
+	# A foe's own body is built the same way on every guest's device.
+	party.geo_paused += 1
 	enemy.setup(self, kind, entity_counter)
+	party.geo_paused -= 1
 	enemy.source = source
 	var safe = room.geometry.safe_point(Vector2(at.x, at.z), .5 + enemy.radius * .5, room.blocked_at)
 	enemy.place(Vector3(safe.x, room.floor_height(Vector3(safe.x, at.y, safe.y)) if first_person else 0, safe.y))
 	enemies.append(enemy)
+	party.foe_spawned(enemy)
 	return enemy
 
 ## Friendly volleys may not starve enemies of their attacks under the global
 ## cap: hostile projectiles keep a reserved share.
 func spawn_shot(at: Vector3, direction: Vector3, damage: float, speed_value: float, stats: Dictionary, color: Color, friendly: bool) -> EmberShot:
+	if party.client():
+		# A guest casts only its own spells here; the host sends all others.
+		return party.predict_shot(at, direction, damage, speed_value, stats, color) if friendly else null
+	var shot := make_shot(at, direction, damage, speed_value, stats, color, friendly)
+	if shot: party.shot_spawned(shot)
+	return shot
+
+func make_shot(at: Vector3, direction: Vector3, damage: float, speed_value: float, stats: Dictionary, color: Color, friendly: bool) -> EmberShot:
 	if shots.size() >= MAX_SHOTS: return null
 	if friendly:
 		var friendly_count := 0
@@ -1104,29 +1220,81 @@ func blast(at: Vector3, radius: float, damage: float, friendly: bool, excluded: 
 			if is_instance_valid(enemy) and enemy.alive and enemy.targetable and enemy != excluded and (enemy.global_position + Vector3.UP * (enemy.hit_height * .4 if first_person else 0)).distance_to(at if first_person else Vector3(at.x, 0, at.z)) < radius + enemy.radius:
 				enemy.take_hit(damage, (enemy.global_position - at).normalized() * 2, false, false, "blast")
 	else:
-		if player.global_position.distance_to(at) < radius:
-			player.hurt(1, at)
+		for body in party_bodies():
+			if body.global_position.distance_to(at) < radius: body.hurt(1, at)
 
 ## A foe pays out once per run: its credit and its stable drop records are
 ## created together, so any later save holds both or neither.
+## In co-op every player gets their own drops from each foe.
 func on_enemy_killed(enemy: DungeonEnemy) -> void:
-	if not enemy.inert: stoke()
+	var data: Dictionary = Run.rooms[Run.current_room]
+	var credited: bool = enemy.source != "" and enemy.source not in data.get("credited", [])
+	if credited:
+		if not data.has("credited"): data.credited = []
+		data.credited.append(enemy.source)
+	var event := {"at": enemy.global_position, "boss": enemy.boss, "inert": enemy.inert, "loot": credited}
+	party.foe_killed(enemy, event)
 	if enemy.boss:
-		hitstop = .11
-		shake = .3
-		ScreenFx.wave(enemy.global_position, 7.0, 1.6)
 		for shot in shots:
 			if is_instance_valid(shot) and not shot.friendly: shot.remove()
-	var data: Dictionary = Run.rooms[Run.current_room]
-	if enemy.source == "" or enemy.source in data.get("credited", []):
+	award_kill(event)
+
+## Pairings this player carries that answer any foe falling.
+func kill_pairings(at: Vector3) -> void:
+	if Run.has_pairing("frenzy"): Run.add_modifier("frenzy", 2.0, {"rate": 1.0})
+	if Run.has_pairing("last_stand") and Run.hp <= Run.stats.max_hp / 2.0: Run.heal(.5)
+	if Run.has_pairing("glass_cannon"):
+		var stats := Run.projectile_stats()
+		stats.element = "glass"
+		for i in 4:
+			var direction := Vector3.FORWARD.rotated(Vector3.UP, TAU * i / 4.0 + randf())
+			spawn_shot(at + Vector3.UP * .8 + direction * .3, direction, 6.0 * float(Run.stats.damage), 13.0, stats, Color("e0f8ff"), true)
+
+## A reaction's name where it happened (or a pairing's, when it acts). A
+## reaction seen for the first time is written into the journal.
+func reaction_word(at: Vector3, id: String) -> void:
+	if party.recording > 0: party.share("word", [at, id])
+	var combo := id if ":" in id else "r:" + id
+	var info: Array = Synergies.entry(combo)
+	if not camera.is_position_behind(at): ui.word(camera.unproject_position(at), info[0], info[4])
+	if combo.begins_with("r:") and Run.discover(combo):
+		ui.notify("New reaction · %s" % info[0], info[2], info[4])
+
+## A heal a pairing pays to whoever earned it (this player, or a teammate).
+func heal_player(owner: int, amount: float) -> void:
+	if owner == 0 or owner == Session.local_peer_id: Run.heal(amount)
+	else: party.tell(owner, "heal", amount)
+
+## Announces the pairings and resonance a relic or spellbook brings.
+func announce_combinations(relic := "") -> void:
+	var element := Synergies.weapon_element(Run.weapon())
+	for id in Synergies.pairings_for(Run.inventory):
+		if relic != "" and relic not in [Synergies.PAIRINGS[id][0], Synergies.PAIRINGS[id][1]]: continue
+		if relic != "" and Run.inventory.count(relic) > 1: continue
+		Run.discover("p:" + id)
+		var pairing: Array = Synergies.entry("p:" + id)
+		ui.notify("Pairing · %s" % pairing[0], pairing[2], pairing[4])
 		return
-	if not data.has("credited"): data.credited = []
-	data.credited.append(enemy.source)
+	if element != "" and Synergies.resonance(Run.inventory, element) > 0 and (relic == "" or Synergies.resonates(relic, element)):
+		var first := Run.discover("e:" + element)
+		var resonance: Array = Synergies.entry("e:" + element)
+		if first or relic == "": ui.notify("Resonance · %s" % resonance[0], resonance[2], resonance[4])
+
+## This player's share of a fallen foe: the kill's warmth and, once per foe,
+## their own drops.
+func award_kill(event: Dictionary) -> void:
+	var at: Vector3 = event.at if event.get("at") is Vector3 else Vector3.ZERO
+	if not bool(event.get("inert", false)): stoke()
+	if bool(event.get("boss", false)):
+		hitstop = .11
+		shake = .3
+		ScreenFx.wave(at, 7.0, 1.6)
+	if not bool(event.get("inert", false)) and is_instance_valid(player): kill_pairings(at)
+	if not bool(event.get("loot", false)) or not is_instance_valid(room): return
 	Run.kills += 1
-	var drops = Drops.roll("boss" if enemy.boss else "enemy_common", Run.rng, Run.stats.luck, Run.coin_bonus())
+	var drops = Drops.roll("boss" if bool(event.get("boss", false)) else "enemy_common", Run.rng, Run.stats.luck, Run.coin_bonus())
 	for i in drops.size():
-		var at = Drops.scatter(drops.size(), i, enemy.global_position)
-		spawn_pickup(at, drops[i].def)
+		spawn_pickup(Drops.scatter(drops.size(), i, at), drops[i].def)
 
 func spawn_pickup(at: Vector3, pickup_id: String, amount := -1.0, restored_id := "") -> DungeonPickup:
 	var definition = Content.record("pickups", pickup_id)
@@ -1214,6 +1382,8 @@ func ease_from_stairs(delta: float) -> void:
 func clear_room() -> void:
 	var data: Dictionary = Run.rooms[Run.current_room]
 	if data.cleared: return
+	# Every player's own rewards follow on their own device.
+	party.share("clear", Run.current_room)
 	room.set_open(true)
 	# New expeditions persist clear credit and its reward together, so a
 	# reload cannot lose or duplicate the chest/relic between two writes.
@@ -1225,6 +1395,10 @@ func clear_room() -> void:
 	if data.type == "boss":
 		# The exit assembles in the background while the player keeps control.
 		raise_stairs(true)
+	# Hearthkeeper: a ward for every room won.
+	if Run.has_pairing("hearthkeeper"):
+		Run.wards += 1
+		Run.changed.emit()
 	if ExpeditionBalance.active_new_run():
 		resolve_expedition_clear(data)
 	elif data.type == "boss" or Run.cleared % 2 == 0:
@@ -1275,15 +1449,17 @@ func ensure_offers(premium := false, persist := true) -> void:
 		data.offers = ExpeditionBalance.sanitize_offers(data.offers,int(data.seed))
 		return
 	var gen = RandomNumberGenerator.new()
-	gen.seed = int(data.seed) + 991
+	# In co-op each player is offered their own pick.
+	gen.seed = int(data.seed) + 991 + party.loot_salt()
 	var items = Content.roll_items(gen, 3, Run.inventory, premium, Run.stats.luck)
 	var offers: Array = []
 	for item in items:
-		var price: int = {"common": 8, "uncommon": 12, "rare": 17, "mythic": 24}[item.rarity]
+		# Fewer, stronger relics are dearer at the merchant too.
+		var price: int = {"common": 12, "uncommon": 18, "rare": 26, "mythic": 36}[item.rarity]
 		offers.append({"kind": "item", "id": item.id, "price": price})
 	if gen.randf() < .5 or data.type == "shop":
 		# Every weapon on offer is forged here, for this room alone.
-		offers[2] = {"kind": "weapon", "id": Forge.id_for(Content.stable_hash("shop:%d:%s" % [Run.seed_value, data.id]), gen.randi_range(0, 99)), "price": 14}
+		offers[2] = {"kind": "weapon", "id": Forge.id_for(Content.stable_hash("shop:%d:%s" % [Run.seed_value + party.loot_salt(), data.id]), gen.randi_range(0, 99)), "price": 14}
 
 	data.offers = offers
 	if persist: Run.save_run()
@@ -1316,14 +1492,9 @@ func make_marker(kind: String, at := Vector3.ZERO) -> void:
 		Geo.sphere(marker, Vector3(0, .75, 0), .25, Color("ffd28d"), 1.8)
 		Geo.halo(marker, Vector3(0, .03, 0), 4, Color(1, .6, .2, .3))
 	else:
-		var reward_base = Geo.cylinder(marker, Vector3(0, .22, 0), .5, .44, Color("656454"))
-		if first_person: reward_base.material_override = DungeonStyle.wall_material(Color("656454"))
-		var relic = Geo.box(marker, Vector3(0, 1.0, 0), Vector3(.43, .43, .43), Color("d4b580") if kind == "treasure" else Color("a9c4ad"), .7)
-		marker_visual = relic
-		relic.rotation_degrees = Vector3(45, 35, 30)
-		Geo.ring(marker, Vector3(0, .035, 0), .95, Color("d9b97a"), .035)
+		# A relic waits in a reliquary; the merchant's wares glow cooler.
+		marker_visual = Reliquary.build(marker, Color("ffc874") if kind == "treasure" else Color("9fd8c4"), first_person)
 		Geo.halo(marker, Vector3(0, .03, 0), 4, Color(1, .65, .22, .22))
-		Geo.light(marker, Vector3(0, 1.5, 0), Color("f0c68c"), .55, 3.5)
 	if first_person:
 		for child in marker.get_children():
 			if child is MeshInstance3D and child.material_override is ShaderMaterial and child.material_override.shader == preload("res://shaders/halo.gdshader"):
@@ -1342,7 +1513,9 @@ func prompt_for(target: Dictionary) -> String:
 		"shop": return "Browse the merchant’s wares"
 		"dark": return "Bargain with the dark · pay in life"
 		"rest": return "Warm your hands · heal %d" % (1 if ExpeditionBalance.active_new_run() else 3)
-		"exit": return "Carry the light home" if Run.last_floor() else "Climb to the next floor"
+		"exit":
+			if party.climbing(): return "Waiting for the party…" if party.waiting_at_stair else "Climb with the party"
+			return "Carry the light home" if Run.last_floor() else "Climb to the next floor"
 		"chest":
 			var chest = GameActions.find_record(Run.rooms[Run.current_room].get("chests", []), target.id.trim_prefix("chest:"))
 			if not chest.get("locked", false): return "Open the chest"
@@ -1424,6 +1597,8 @@ func use_pedestal(target: Dictionary) -> Dictionary:
 		"exit":
 			if not is_instance_valid(stairs) or not stairs.built:
 				return GameActions.result(false, "the stair is still rising")
+			# The party climbs together, once everyone standing is at the stair.
+			if party.climbing(): return party.at_the_stair()
 			begin_climb()
 	return GameActions.result(true)
 
@@ -1476,6 +1651,7 @@ func choose_offer(index: int) -> void:
 		Run.changed.emit()
 		ui.notify(Forge.lookup(offer.id).name, "A new way to carry the light.")
 		Audio.play_sound("item")
+		announce_combinations()
 	elif offer.kind == "active":
 		# The new item goes into the slot; the one in hand is set beside the
 		# pedestal, keeping its instance and its running cooldown.
@@ -1506,7 +1682,7 @@ func ensure_dark_offers() -> void:
 		data.offers = ExpeditionBalance.sanitize_offers(data.offers,int(data.seed))
 		return
 	var gen = RandomNumberGenerator.new()
-	gen.seed = int(data.seed) + 6661
+	gen.seed = int(data.seed) + 6661 + party.loot_salt()
 	var dark: Array = Content.items.filter(func(item): return item.rarity == "dark")
 	var relic: Dictionary = dark[gen.randi_range(0, dark.size() - 1)]
 	var offers: Array = [{"kind": "item", "id": relic.id, "price": int(relic.cost)}]
@@ -1597,6 +1773,7 @@ func breach(room_id: String, at: Vector3, radius: float, live: bool) -> void:
 		if RoomGeometry.socket_point(side.cell, side.dir).distance_to(flat) <= radius + .6:
 			# Revealed for good: saved with the blast, never resealed on reload.
 			portal.state = "revealed"
+			party.share("portal", [portal_id, "revealed"])
 			if live:
 				room.reveal_socket(portal_id)
 				ui.notify("A hidden passage", "The old wall gives way.", Color("d7c3e8"))
@@ -1616,6 +1793,8 @@ func destroy_prop(room_id: String, record: Dictionary, live: bool) -> void:
 	if record.get("destroyed", false):
 		return
 	record.destroyed = true
+	# Broken for everyone; each player gets their own drops from it.
+	party.share("prop", [room_id, record.id])
 	var definition: Dictionary = Content.record("furniture", record.kind)
 	var loot = RandomNumberGenerator.new()
 	loot.seed = Content.stable_hash("loot:%d:%d:%s" % [Run.seed_value, Run.floor_number, record.id])
@@ -1657,6 +1836,8 @@ func on_item_gained(item: Dictionary) -> void:
 	if player and is_instance_valid(player): player.refresh_orbitals()
 	Audio.play_sound("item")
 	ui.notify(item.name, item.description, Content.RARITY_COLORS[item.rarity])
+	# A pairing completed or a resonance found outshines the relic's own line.
+	announce_combinations(item.id)
 
 func redeem_secret_code(code: String) -> bool:
 	if not Run.active or in_menu:
@@ -1701,6 +1882,10 @@ func return_to_title() -> void:
 	if Run.active and Run.rooms[Run.current_room].cleared:
 		Run.save_run()
 	Run.active = false
+	if Session.online:
+		# Leaving a co-op climb leaves its party; a host's leaving ends it.
+		Session.leave_party()
+		party.reset()
 	show_title_room()
 	ui.show_screen("menu")
 
@@ -1708,6 +1893,7 @@ func end_run(won: bool) -> void:
 	stair_cinematic.cancel(self)
 	transition = {}
 	if light_veil: light_veil.color.a = 0.0
+	if party.climbing(): party.ended()
 	Run.finish(won)
 	paused = true
 	ui.show_screen("won" if won else "dead")
@@ -1749,13 +1935,15 @@ func gutter() -> void:
 
 ## A hostile ember caught in a grazing dash.
 func catch_spark(shot: EmberShot) -> void:
-	shot.remove()
+	dispel(shot)
 	if sparks >= MAX_SPARKS: return
 	sparks += 1
 	Effects.play("pickup", shot.global_position, Color("fff3c4"))
 	Audio.play_sound("coin", 1.5 + sparks * .08)
 
 func make_noise(at: Vector3, loudness: float) -> void:
+	# The host's foes hear a guest's casting and dashing too.
+	party.world_noise(at, loudness)
 	noises.append({"at": Vector3(at.x, 0, at.z), "loudness": loudness, "time": sim_time})
 	while noises.size() > 12: noises.pop_front()
 
@@ -1769,6 +1957,7 @@ func latest_noise(loudness := 1.0, within := 3.0) -> Dictionary:
 ## A shot through a dead lantern's glass lights it again.
 func relight(index: int) -> void:
 	if not room.set_lantern(index, true): return
+	party.share("lamp", [index, true])
 	make_noise(room.lanterns[index].at, 1.5)
 	Audio.play_sound("item", 1.3)
 	for enemy in enemies:
@@ -1777,6 +1966,7 @@ func relight(index: int) -> void:
 
 func snuff(index: int) -> void:
 	if not room.set_lantern(index, false): return
+	party.share("lamp", [index, false])
 	Audio.play_sound("door", .6)
 	save_lanterns()
 
@@ -1798,5 +1988,6 @@ func get_boss() -> DungeonEnemy:
 	return null
 
 func damage_number(at: Vector3, damage: float, critical: bool) -> void:
+	if party.recording > 0: party.share("dmg", [at, damage, critical])
 	if camera.is_position_behind(at): return
 	ui.damage_number(camera.unproject_position(at), damage, critical)

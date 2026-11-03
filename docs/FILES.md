@@ -344,6 +344,7 @@ content/pickups.json
 content/rooms.json
 docs/ANDROID.md
 docs/ANDROID_RENDERING_FIX.md
+docs/COOP.md
 docs/CORRIDOR_UPDATE.md
 docs/EXPANSION_PLAN.md
 docs/EXPEDITION_UPDATE.md
@@ -354,6 +355,7 @@ docs/IOS.md
 docs/LIGHTING_UPDATE.md
 docs/LINUX.md
 docs/LORE.md
+docs/MAGIC_UPDATE.md
 docs/ONLINE.md
 docs/PAINTING_COLLECTION_PLAN.md
 docs/PAINTING_CREDITS.md
@@ -364,6 +366,9 @@ docs/TESTING.md
 docs/THEME_MATERIALS.md
 docs/TWO_STOREY_ROOMS.md
 docs/images/.gdignore
+docs/images/coop-lobby.png
+docs/images/coop-rekindling.png
+docs/images/coop-teammates.png
 docs/images/corridor-cellar-room.png
 docs/images/corridor-doorway.png
 docs/images/corridor-upper-room.png
@@ -372,6 +377,9 @@ docs/images/expedition-door.png
 docs/images/expedition-stairs.png
 docs/images/lighting-gameplay.png
 docs/images/lighting-hearth.png
+docs/images/magic-reliquary.png
+docs/images/magic-spellbook.png
+docs/images/magic-spells.png
 docs/images/stylized-cellar.png
 docs/images/stylized-hall.png
 docs/images/stylized-hearth.png
@@ -410,6 +418,16 @@ scripts/combat/residue.gd
 scripts/combat/residue.gd.uid
 scripts/content.gd
 scripts/content.gd.uid
+scripts/coop/coop_menus.gd
+scripts/coop/coop_menus.gd.uid
+scripts/coop/lan_discovery.gd
+scripts/coop/lan_discovery.gd.uid
+scripts/coop/net_hooks.gd
+scripts/coop/net_hooks.gd.uid
+scripts/coop/party.gd
+scripts/coop/party.gd.uid
+scripts/coop/party_member.gd
+scripts/coop/party_member.gd.uid
 scripts/dungeon/corridor_plan.gd
 scripts/dungeon/corridor_plan.gd.uid
 scripts/dungeon/detail_batch.gd
@@ -448,10 +466,12 @@ scripts/first_person/corridor_transit.gd
 scripts/first_person/corridor_transit.gd.uid
 scripts/first_person/loft_room.gd
 scripts/first_person/loft_room.gd.uid
+scripts/first_person/node_reaper.gd
+scripts/first_person/node_reaper.gd.uid
 scripts/first_person/room_terrain.gd
 scripts/first_person/room_terrain.gd.uid
-scripts/first_person/weapon_view.gd
-scripts/first_person/weapon_view.gd.uid
+scripts/first_person/spellbook_view.gd
+scripts/first_person/spellbook_view.gd.uid
 scripts/foes/archivist.gd
 scripts/foes/archivist.gd.uid
 scripts/foes/bailer.gd
@@ -526,6 +546,8 @@ scripts/graphics/dungeon_style.gd
 scripts/graphics/dungeon_style.gd.uid
 scripts/graphics/dungeon_textures.gd
 scripts/graphics/dungeon_textures.gd.uid
+scripts/graphics/frame_watch.gd
+scripts/graphics/frame_watch.gd.uid
 scripts/graphics/look.gd
 scripts/graphics/look.gd.uid
 scripts/graphics/pbr_materials.gd
@@ -558,6 +580,10 @@ scripts/items/moth_companion.gd
 scripts/items/moth_companion.gd.uid
 scripts/items/pickup_rules.gd
 scripts/items/pickup_rules.gd.uid
+scripts/items/reliquary.gd
+scripts/items/reliquary.gd.uid
+scripts/items/spellbook_looks.gd
+scripts/items/spellbook_looks.gd.uid
 scripts/main.gd
 scripts/main.gd.uid
 scripts/pickup.gd
@@ -638,6 +664,8 @@ shaders/shot_splat.gdshader
 shaders/shot_splat.gdshader.uid
 shaders/shot_streak.gdshader
 shaders/shot_streak.gdshader.uid
+shaders/spell_page.gdshader
+shaders/spell_page.gdshader.uid
 shaders/ui_stone.gdshader
 shaders/ui_stone.gdshader.uid
 shaders/vignette.gdshader
@@ -654,6 +682,10 @@ tests/collection.gd
 tests/collection.gd.uid
 tests/combat.gd
 tests/combat.gd.uid
+tests/coop.gd
+tests/coop.gd.uid
+tests/coop_guest.gd
+tests/coop_guest.gd.uid
 tests/corridors.gd
 tests/corridors.gd.uid
 tests/doors_lava.gd
@@ -686,6 +718,8 @@ tests/lighting_centered.gd
 tests/lighting_centered.gd.uid
 tests/presentation.gd
 tests/presentation.gd.uid
+tests/render_coop.gd
+tests/render_coop.gd.uid
 tests/render_corridors.gd
 tests/render_corridors.gd.uid
 tests/render_first_person.gd
@@ -700,6 +734,8 @@ tests/render_policy.gd
 tests/render_policy.gd.uid
 tests/render_ps2_update.gd
 tests/render_ps2_update.gd.uid
+tests/render_spellbook.gd
+tests/render_spellbook.gd.uid
 tests/render_ssao.gd
 tests/render_ssao.gd.uid
 tests/render_stair_cinematic.gd
@@ -726,6 +762,8 @@ tests/settings.gd
 tests/settings.gd.uid
 tests/smoke.gd
 tests/smoke.gd.uid
+tests/spellbook.gd
+tests/spellbook.gd.uid
 tests/ssao_fullscreen.gd
 tests/ssao_fullscreen.gd.uid
 tests/stair_cinematic.gd

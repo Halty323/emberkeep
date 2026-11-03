@@ -39,12 +39,14 @@ const TITLE_HOLD := 1.6
 const TITLE_FADE := .9
 # A newly walked cell is scribbled onto the map over this long.
 const SCRIBBLE_TIME := .75
+# Screens laid out against the edges rather than centred whole.
+const TITLE_MODES := ["play", "menu", "armory", "coop", "lobby"]
 const REWARD_WIDTH := 340.0
 const REWARD_GAP := 26.0
 const SETTINGS_PAGES := [["display", "Display"], ["graphics", "Graphics"], ["controls", "Controls"], ["camera", "Camera"]]
 const SETTINGS_NOTES := {"display": "Resolution scales only the dungeon; text and controls stay sharp. Your display or device can still cap the frame rate.",
 	"graphics": "SSAO shades surface contacts on supported GPUs. Detail changes appearance; room collision and combat stay identical.",
-	"camera": "Comfort settings affect presentation, never movement speed or weapon damage.",
+	"camera": "Comfort settings affect presentation, never movement speed or spell damage.",
 	"controls": "Touch controls show the on-screen sticks and action buttons on any device."}
 var game: Node3D
 var body: Font = preload("res://assets/fonts/body.ttf")
@@ -155,7 +157,7 @@ func resize() -> void:
 			layer.size = Vector2(view_width, 720)
 	place_layers()
 	# Edge-anchored controls are placed when a screen is built.
-	if widened and game and content and mode in ["play", "menu", "armory"]: show_screen(mode)
+	if widened and game and content and mode in TITLE_MODES: show_screen(mode)
 	queue_redraw()
 
 func local_point(at: Vector2) -> Vector2:
@@ -179,7 +181,7 @@ func moved(rect: Rect2, by: float) -> Rect2:
 ## Play and the title place their own edge-anchored groups; every other
 ## screen is centred whole.
 func layer_shift() -> float:
-	return 0.0 if mode in ["play", "menu", "armory"] else widen() / 2.0
+	return 0.0 if mode in TITLE_MODES else widen() / 2.0
 
 func place_layers() -> void:
 	var at = offset + Vector2(layer_shift() * scale_value, 0)
@@ -216,13 +218,15 @@ func show_screen(screen: String) -> void:
 	toast_surface = null
 	interaction_surface = null
 	boss_surface = null
-	backdrop.color = Color(.025, .035, .035, .74) if mode not in ["play", "menu", "armory"] else Color(0, 0, 0, 0)
+	backdrop.color = Color(.025, .035, .035, .74) if mode not in TITLE_MODES else Color(0, 0, 0, 0)
 	place_layers()
 	build_surfaces()
 	seed_field = null
 	match mode:
 		"menu": build_menu()
 		"armory": build_armory()
+		"coop": CoopMenus.build_coop(self)
+		"lobby": CoopMenus.build_lobby(self)
 		"play":
 			# The journal stays a key (Tab) or a pause-menu entry away.
 			button("II", moved(PAUSE_RECT, widen()), func(): game.pause_game(), false)
@@ -242,7 +246,7 @@ func show_screen(screen: String) -> void:
 			button("Continue the journey", Rect2(430, 280, 420, 62), func(): game.resume_game(), true)
 			button("Journal", Rect2(430, 358, 420, 58), func(): open_journal("pause"))
 			button("Settings", Rect2(430, 432, 420, 58), func(): open_settings("pause"))
-			button("Return to title", Rect2(430, 506, 420, 58), func(): game.return_to_title())
+			button("Leave the party" if game.party.climbing() else "Return to title", Rect2(430, 506, 420, 58), func(): game.return_to_title())
 			var trigger = Button.new()
 			trigger.name = "SecretTrigger"
 			trigger.position = Vector2(410, 146)
@@ -258,10 +262,13 @@ func show_screen(screen: String) -> void:
 		"painting": button("← Back", Rect2(812, 598, 360, 58), func(): close_painting())
 		"settings": build_settings()
 		"dead", "won":
-			button("One more little light", Rect2(430, 457, 420, 62), func():
-				reforge()
-				game.start_run(starter_weapon().id, menu_seed, false), true)
-			button("Return to title", Rect2(430, 535, 420, 58), func(): game.return_to_title())
+			if Session.online and Session.hosting:
+				button("Climb again together", Rect2(430, 457, 420, 62), func(): game.party.regroup(), true)
+			elif not Session.online:
+				button("One more little light", Rect2(430, 457, 420, 62), func():
+					reforge()
+					game.start_run(starter_weapon().id, menu_seed, false), true)
+			button("Leave the party" if Session.online else "Return to title", Rect2(430, 535, 420, 58), func(): game.return_to_title())
 	sync_lighting()
 	update_surface_visibility()
 	queue_redraw()
@@ -283,6 +290,7 @@ func journal_rect(slot: int) -> Rect2:
 
 func journal_page_count() -> int:
 	if journal_tab == "floors": return maxi(1, ceili(float(Content.families.floors.size()) / FLOOR_PAGE_SIZE))
+	if journal_tab == "combos": return maxi(1, ceili(float(Synergies.all_ids().size()) / JOURNAL_PAGE_SIZE))
 	return maxi(1, ceili(float(Content.items.size()) / JOURNAL_PAGE_SIZE))
 
 func floor_rect(slot: int) -> Rect2:
@@ -316,6 +324,12 @@ func build_surfaces() -> void:
 				var index = journal_page * FLOOR_PAGE_SIZE + slot
 				if index >= Content.families.floors.size(): break
 				make_surface(floor_rect(slot), PANEL, GOLD if Content.families.floors[index].id in Run.profile.floors else EDGE)
+		"journal" when journal_tab == "combos":
+			var ids: Array = Synergies.all_ids()
+			for slot in JOURNAL_PAGE_SIZE:
+				var index = journal_page * JOURNAL_PAGE_SIZE + slot
+				if index >= ids.size(): break
+				make_surface(journal_rect(slot), PANEL, Synergies.entry(ids[index])[4] if ids[index] in Run.profile.combos else EDGE)
 		"journal" when journal_tab == "paintings":
 			var required = gallery_ids()
 			for i in required.size():
@@ -418,7 +432,7 @@ func build_menu() -> void:
 		build_legacy_menu()
 		return
 	if menu_seed == 0: reforge()
-	var y = 300.0
+	var y = 286.0 if Run.has_save() else 300.0
 	if Run.has_save():
 		title_button("Continue journey", Rect2(56,y,420,58), func(): game.continue_run(), true)
 		y += 68
@@ -426,11 +440,14 @@ func build_menu() -> void:
 	y += 68
 	title_button("Daily journey", Rect2(56,y,420,58), func(): game.start_run(starter_weapon(Run.daily_seed()).id,Run.daily_seed(),true))
 	y += 62
-	title_button("Journal", Rect2(56,y,420,56), func(): open_journal("menu"))
-	y += 56
-	title_button("Options", Rect2(56,y,420,56), func(): open_settings("menu"))
-	y += 56
-	if not is_touch_platform(): title_button("Leave the hearth", Rect2(56,y,420,56), func(): game.get_tree().quit())
+	# Two to four players on the same network.
+	title_button("Climb together", Rect2(56,y,420,54), func(): show_screen("coop"))
+	y += 54
+	title_button("Journal", Rect2(56,y,420,54), func(): open_journal("menu"))
+	y += 54
+	title_button("Options", Rect2(56,y,420,54), func(): open_settings("menu"))
+	y += 54
+	if not is_touch_platform(): title_button("Leave the hearth", Rect2(56,y,420,54), func(): game.get_tree().quit())
 
 func title_button(label: String, rect: Rect2, callback: Callable, primary := false) -> Button:
 	var control = Button.new()
@@ -511,7 +528,12 @@ func handle_title_back() -> bool:
 	if not game.first_person or not game.in_menu or mode == "menu": return false
 	if mode == "painting": close_painting()
 	elif mode in ["journal","settings"]: close_subscreen()
-	else: show_screen("menu")
+	elif mode == "lobby":
+		Session.leave_party()
+		show_screen("coop")
+	else:
+		if mode == "coop": Session.stop_looking()
+		show_screen("menu")
 	return true
 
 func build_legacy_menu() -> void:
@@ -533,7 +555,7 @@ func build_legacy_menu() -> void:
 	content.add_child(seed_field)
 	button("‹", Rect2(64, 278, 56, 56), func(): cycle_weapon(-1))
 	button("›", Rect2(426, 278, 56, 56), func(): cycle_weapon(1))
-	button("New weapons ↻", Rect2(270, 388, 212, 56), func():
+	button("New spellbooks ↻", Rect2(270, 388, 212, 56), func():
 		reforge()
 		seed_field.text = ""
 		seed_field.placeholder_text = "Seed %d" % menu_seed
@@ -560,9 +582,9 @@ func offer_info(offer: Dictionary) -> Dictionary:
 		"weapon":
 			var weapon: Dictionary = Forge.lookup(offer.id)
 			var forged: bool = weapon.get("forged", false)
-			var tag = "%s · %s" % [str(weapon.element).to_upper(), str(weapon.pattern).to_upper()] if forged else "NEW FIGHTING STYLE"
+			var tag = "%s · %s" % [str(weapon.element).to_upper(), str(weapon.pattern).to_upper()] if forged else "NEW SCHOOL OF MAGIC"
 			return {"name": weapon.name, "description": weapon.description, "color": Color(weapon.color),
-				"label": "DARK-FORGED WEAPON" if int(weapon.get("tier", 0)) > 0 else "WEAPON", "tag": tag, "take": "Equip weapon", "buy": "%d coins · equip"}
+				"label": "DARK-BOUND SPELLBOOK" if int(weapon.get("tier", 0)) > 0 else "SPELLBOOK", "tag": tag, "take": "Take up the spellbook", "buy": "%d coins · take up"}
 		"active":
 			var active: Dictionary = Content.record("actives", offer.id)
 			return {"name": active.name, "description": active.description, "color": Color(active.color),
@@ -596,7 +618,8 @@ func build_journal() -> void:
 	button("Relics", Rect2(232, 36, 150, 56), func(): set_journal_tab("relics"), journal_tab == "relics")
 	button("Paintings", Rect2(394, 36, 190, 56), func(): set_journal_tab("paintings"), journal_tab == "paintings")
 	button("Floors", Rect2(596, 36, 160, 56), func(): set_journal_tab("floors"), journal_tab == "floors")
-	if journal_tab in ["relics", "floors"]:
+	button("Combos", Rect2(768, 36, 170, 56), func(): set_journal_tab("combos"), journal_tab == "combos")
+	if journal_tab in ["relics", "floors", "combos"]:
 		button("←", Rect2(1044, 626, 76, 58), func(): change_journal_page(-1))
 		button("→", Rect2(1136, 626, 76, 58), func(): change_journal_page(1))
 		return
@@ -693,10 +716,14 @@ func settings_rows(page: String) -> Array:
 				vsync = ["vsync", "VSync", "System controlled", false]
 			elif Settings.effective_vsync() != on_off("vsync").to_lower():
 				vsync[2] += " · driver " + Settings.effective_vsync().capitalize()
+			var last = ["fullscreen", "Fullscreen", on_off("fullscreen") if Settings.fullscreen_supported() else "System controlled", Settings.fullscreen_supported()]
+			# A phone whose chip gets a 3D pixel budget may lift it, in place of
+			# the fullscreen row it cannot change anyway.
+			if not Settings.fullscreen_supported() and Settings.resolution_capped():
+				last = ["full_resolution", "Full resolution", "On · may be slower" if Settings.values.full_resolution else "Off", true]
 			return [["render_scale", "Render resolution", "%s  ·  %d×%d" % [scale, pixels.x, pixels.y], true],
 				["fps_limit", "FPS limit", "Unlimited" if Settings.values.fps_limit == 0 else str(Settings.values.fps_limit), true],
-				vsync, ["show_fps", "Show FPS", on_off("show_fps"), true],
-				["fullscreen", "Fullscreen", on_off("fullscreen") if Settings.fullscreen_supported() else "System controlled", Settings.fullscreen_supported()]]
+				vsync, ["show_fps", "Show FPS", on_off("show_fps"), true], last]
 		"camera":
 			return [["fov", "Field of view", "%d°" % Settings.values.fov, true],
 				["mouse_sensitivity", "Mouse sensitivity", "%.4f" % Settings.values.mouse_sensitivity, true],
@@ -798,6 +825,11 @@ func damage_number(at: Vector2, amount: float, critical: bool) -> void:
 		return
 	floating_numbers.append({"at": local_point(at), "text": str(maxi(1, roundi(amount))) + ("!" if critical else ""), "critical": critical, "age": 0.0})
 
+## A reaction's or pairing's name rising where it happened.
+func word(at: Vector2, label: String, color: Color) -> void:
+	if label == "" or floating_numbers.size() > 40: return
+	floating_numbers.append({"at": local_point(at) - Vector2(heading.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 24).x / 2.0, 0), "text": label, "critical": false, "age": 0.0, "life": 1.2, "color": color})
+
 func _process(delta: float) -> void:
 	elapsed_ui += delta
 	fps_frames += 1
@@ -811,7 +843,7 @@ func _process(delta: float) -> void:
 		if elapsed_ui - scribbles[cell] > SCRIBBLE_TIME: scribbles.erase(cell)
 	for number in floating_numbers:
 		number.age += delta
-	floating_numbers = floating_numbers.filter(func(n): return n.age < .65)
+	floating_numbers = floating_numbers.filter(func(n): return n.age < n.get("life", .65))
 	sync_lighting()
 	update_surface_visibility()
 	queue_redraw()
@@ -942,12 +974,16 @@ func _draw() -> void:
 	match mode:
 		"menu": draw_menu()
 		"armory": draw_armory()
-		"play": draw_hud()
+		"coop": CoopMenus.draw_coop(self)
+		"lobby": CoopMenus.draw_lobby(self)
+		"play":
+			draw_hud()
+			CoopMenus.draw_hud(self)
 		"pause":
 			hearth_emblem(Vector2(640, 144), 12)
 			centered("Catch your breath", 640, 204, 34, INK, heading)
 			centered("Even a little flame needs a moment.", 640, 245, 18, MUTED)
-			centered("Your last safe room is saved automatically.", 640, 604, 16, MUTED)
+			centered("The party climbs on while you rest; co-op climbs are not saved." if game.party.climbing() else "Your last safe room is saved automatically.", 640, 604, 16, MUTED)
 		"secret":
 			hearth_emblem(Vector2(640, 177), 11)
 			centered("A whispered wish", 640, 237, 34, INK, heading)
@@ -961,6 +997,7 @@ func _draw() -> void:
 		"journal":
 			match journal_tab:
 				"relics": draw_journal()
+				"combos": draw_combos()
 				"floors": draw_floors()
 				_: draw_gallery()
 		"painting": draw_painting()
@@ -969,6 +1006,11 @@ func _draw() -> void:
 	if mode == "play":
 		anchor(0)
 		for number in floating_numbers:
+			if number.has("color"):
+				var tint: Color = number.color
+				tint.a = minf(1, (float(number.life) - number.age) * 3)
+				text(number.text, number.at + Vector2(0, -number.age * 40), 24, tint, heading)
+				continue
 			var c = GOLD if number.critical else INK
 			c.a = minf(1, (0.65 - number.age) * 4)
 			text(number.text, number.at + Vector2(0, -number.age * 65), 26 if number.critical else 21, c, bold)
@@ -980,6 +1022,9 @@ func _draw() -> void:
 	if Settings.values.show_fps:
 		anchor(widen())
 		text("%d FPS" % roundi(fps_value), Vector2(1072, 697), 15, GOLD, bold)
+		# Long frames and their likely cause, to read off a phone.
+		var hitches := FrameWatch.summary()
+		text(hitches, Vector2(1140 - body.get_string_size(hitches, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x, 679), 12, GOLD, body)
 	draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
 
 func hearth_emblem(at: Vector2, radius: float) -> void:
@@ -1019,7 +1064,7 @@ func draw_menu() -> void:
 func draw_armory() -> void:
 	draw_title_shade()
 	text("Prepare your light",Vector2(58,156),36,INK,heading)
-	text("CHOOSE AN ARMAMENT",Vector2(61,188),12,GOLD,bold)
+	text("CHOOSE A SPELLBOOK",Vector2(61,188),12,GOLD,bold)
 	var choices = Collection.starters(chosen_seed())
 	for slot in choices.size():
 		var selected = slot == posmod(starter_index,choices.size())
@@ -1053,7 +1098,7 @@ func draw_legacy_menu() -> void:
 	anchor(widen())
 	hearth_emblem(Vector2(798, 566), 10)
 	text("A warm place. A wild little dungeon.", Vector2(826, 574), 21, GOLD, heading)
-	text("%d stackable relics  ·  new weapons every seed  ·  %d floors" % [Content.items.size(), Content.record("climbs", Run.CLIMB).bands.size()], Vector2(789, 617), 18, INK)
+	text("%d stackable relics  ·  new spellbooks every seed  ·  %d floors" % [Content.items.size(), Content.record("climbs", Run.CLIMB).bands.size()], Vector2(789, 617), 18, INK)
 	text("Strange combinations. One more little light.", Vector2(789, 650), 17, MUTED)
 
 func draw_hud() -> void:
@@ -1109,7 +1154,7 @@ func draw_hud_left() -> void:
 	if Run.inventory.size() > 12:
 		text("+%d" % (Run.inventory.size() - 12), Vector2(232, HUD_RECT.end.y + 21), 14, GOLD)
 	if not touch_hud_visible() and not stair_presentation_active():
-		text("WASD move · Mouse aim/fire · Space jump · Shift dash · E interact" if game.first_person else "WASD move · Mouse fire · Space dash · F item · B bomb", Vector2(28, 668), 15, MUTED)
+		text("WASD move · Mouse aim/cast · Space jump · Shift dash · E interact" if game.first_person else "WASD move · Mouse cast · Space dash · F item · B bomb", Vector2(28, 668), 15, MUTED)
 	text("SEED %d" % Run.seed_value, Vector2(28, 697), 13, MUTED)
 	if touch_hud_visible():
 		draw_stick(left_origin, left_vector, "MOVE", left_touch >= 0)
@@ -1155,10 +1200,10 @@ func draw_hud_right() -> void:
 	if not touch_hud_visible(): return
 	if game.first_person:
 		draw_action_ring("fire", 1.0, GOLD)
-		centered("FIRE", 1178, 558, 18, GOLD, bold)
+		centered("CAST", 1178, 558, 18, GOLD, bold)
 		draw_action_ring("jump", 1.0, GOLD)
 		centered("JUMP", 1178, 666, 15, GOLD, bold)
-	else: draw_stick(right_origin, right_vector, "AIM + FIRE", right_touch >= 0)
+	else: draw_stick(right_origin, right_vector, "AIM + CAST", right_touch >= 0)
 	var ready: bool = game.player and game.player.dash_cooldown <= 0
 	draw_action_ring("dash", 1.0 if ready else 0.0, GOLD if ready else MUTED)
 	centered("DASH" if ready else "%.1f" % game.player.dash_cooldown, DASH_CENTER.x, DASH_CENTER.y + 7, 18, GOLD if ready else MUTED, bold)
@@ -1518,11 +1563,13 @@ func draw_rewards() -> void:
 		divider(Vector2(x + 28, 379), Vector2(x + REWARD_WIDTH - 28, 379))
 		draw_multiline_string(body, Vector2(x + 26, 409), item.description, HORIZONTAL_ALIGNMENT_CENTER, REWARD_WIDTH - 52, 18, 3, MUTED)
 		centered(item.tag, middle, 465, 13, color, bold)
+		var hint := combination_hint(offers[i])
+		if hint != "": centered(hint, middle, 556, 12, GOLD, bold)
 	centered("What you give stays given until the run ends." if dark else "Relics stack. Find something beautifully strange.", 640, 692, 17, MUTED)
 
 func draw_journal() -> void:
 	text("The things we carry", Vector2(64, 146), 40, INK, heading)
-	text("%d relics to find. Every effect stacks with your weapon and other relics." % Content.items.size(), Vector2(66, 184), 19, MUTED)
+	text("%d relics to find. Every effect stacks with your spellbook and other relics." % Content.items.size(), Vector2(66, 184), 19, MUTED)
 	var start = journal_page * JOURNAL_PAGE_SIZE
 	for slot in JOURNAL_PAGE_SIZE:
 		var index = start + slot
@@ -1539,6 +1586,46 @@ func draw_journal() -> void:
 		if owned: text("×%d" % Run.inventory.count(item.id), Vector2(x + 504, y + 41), 18, GOLD)
 		draw_multiline_string(body, Vector2(x + 27, y + 73), item.description, HORIZONTAL_ALIGNMENT_LEFT, 510, 18, 2, MUTED)
 	text("%d / %d found  ·  Filled diamonds are discovered relics" % [Run.profile.discovered.size(), Content.items.size()], Vector2(66, 664), 17, MUTED)
+	centered("%d / %d" % [journal_page + 1, journal_page_count()], 976, 664, 20, GOLD)
+
+## What an offer would combine with: a pairing it completes (named once
+## found, hinted before), or the spellbook's element it sings with.
+func combination_hint(offer: Dictionary) -> String:
+	var element := Synergies.weapon_element(Run.weapon())
+	if offer.get("kind", "item") == "weapon":
+		var count := Synergies.resonance(Run.inventory, Synergies.weapon_element(Forge.lookup(offer.id)))
+		return "%d OF YOUR RELICS SING WITH IT" % count if count > 0 else ""
+	if offer.get("kind", "item") != "item": return ""
+	var completed := Synergies.completes(Run.inventory, str(offer.id))
+	if not completed.is_empty():
+		var id: String = completed[0]
+		return "COMPLETES " + Synergies.PAIRINGS[id][2].to_upper() if "p:" + id in Run.profile.combos else "SOMETHING YOU CARRY ANSWERS THIS"
+	return "SINGS WITH YOUR SPELLBOOK" if Synergies.resonates(str(offer.id), element) else ""
+
+## Reactions, pairings and resonance: named once found, a riddle before.
+func draw_combos() -> void:
+	text("What meets, and what it makes", Vector2(64, 146), 40, INK, heading)
+	var ids: Array = Synergies.all_ids()
+	var found = ids.filter(func(id): return id in Run.profile.combos).size()
+	text("%d / %d found  ·  Elements meet on foes, relics pair, relics sing with a spellbook" % [found, ids.size()], Vector2(66, 184), 19, MUTED)
+	for slot in JOURNAL_PAGE_SIZE:
+		var index = journal_page * JOURNAL_PAGE_SIZE + slot
+		if index >= ids.size(): break
+		var id: String = ids[index]
+		var info: Array = Synergies.entry(id)
+		var rect = journal_rect(slot)
+		var x = rect.position.x
+		var y = rect.position.y
+		var known: bool = id in Run.profile.combos
+		var kind: String = {"r": "REACTION", "p": "PAIRING", "e": "RESONANCE"}[id.get_slice(":", 0)]
+		var recipe: String = info[1]
+		if id.begins_with("p:"):
+			var pair: Array = Synergies.PAIRINGS[id.get_slice(":", 1)]
+			recipe = "%s + %s" % [Content.item_by_id[pair[0]].name, Content.item_by_id[pair[1]].name]
+		diamond(Vector2(x + 31, y + 34), 11, info[4], known)
+		text(info[0] if known else "???", Vector2(x + 57, y + 41), 21, info[4] if known else MUTED, bold)
+		right_text(kind + ("  ·  " + recipe.to_upper() if known else ""), Vector2(x + 540, y + 38), 12, Color(GOLD, .8), bold)
+		draw_multiline_string(body, Vector2(x + 27, y + 73), info[2] if known else "“%s”" % info[3], HORIZONTAL_ALIGNMENT_LEFT, 510, 17, 2, INK if known else MUTED)
 	centered("%d / %d" % [journal_page + 1, journal_page_count()], 976, 664, 20, GOLD)
 
 ## Every floor theme of the tower, its words revealed once reached.

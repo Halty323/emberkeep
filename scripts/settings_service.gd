@@ -13,7 +13,9 @@ const SSAO_LEVELS := ["off", "low", "high"]
 const DEFAULTS := {"render_scale": 1.0, "fps_limit": 60, "vsync": true, "show_fps": false, "fullscreen": false, "ssao": "low",
 	"effects_detail": "balanced", "small_details": "balanced",
 	"fov": 78, "mouse_sensitivity": .0025, "touch_sensitivity": .004, "invert_y": false, "head_bob": false,
-	"sound": true, "music": true, "shake": true, "touch": false, "shadows": true}
+	"sound": true, "music": true, "shake": true, "touch": false, "shadows": true,
+	# Opt out of a device's 3D pixel budget (PowerVR phones): sharper, slower.
+	"full_resolution": false}
 # Preferences previously stored in profile.json, migrated once.
 const LEGACY_KEYS := {"sound": "sound", "music": "music", "shake": "shake", "touch": "touch", "quality": "shadows"}
 # Provisional active-room totals; tune on real devices before changing.
@@ -124,7 +126,7 @@ func apply(key: String) -> void:
 		return
 	_applied[key] = values[key]
 	match key:
-		"render_scale":
+		"render_scale", "full_resolution":
 			# Godot's built-in Compatibility bilinear scaling: only the 3D buffer
 			# shrinks, so canvas text, input and camera projection stay native.
 			apply_render_policy()
@@ -141,7 +143,12 @@ func apply_render_policy() -> void:
 	if not RenderPolicy.current().msaa:
 		viewport.msaa_3d = Viewport.MSAA_DISABLED
 	viewport.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
-	viewport.scaling_3d_scale = RenderPolicy.effective_scale(float(values.render_scale), viewport.size)
+	var requested := float(values.render_scale)
+	viewport.scaling_3d_scale = requested if values.full_resolution else RenderPolicy.effective_scale(requested, viewport.size)
+
+## Whether this device caps the 3D resolution (the player may lift the cap).
+func resolution_capped() -> bool:
+	return int(RenderPolicy.current().max_3d_pixels) > 0
 
 func vsync_supported() -> bool:
 	# Godot 4.6 routes the Android/iOS VSync setter through RenderingDevice; the

@@ -18,29 +18,48 @@ var staged_id := ""
 # An armed doorway stays armed until the player is this far from it, so
 # pacing along the arming edge never rebuilds the corridor and its neighbour.
 const DISARM_DISTANCE := 5.5
+# In co-op the passage's turn is a gate: nobody passes it before the party
+# is all in the passage, and nobody walks back past it once moved on.
+const GATE := .35
+# Co-op: this player stands at the gate, waiting for the others.
+var coop_held := false
 
 func setup(owner_game) -> void: game=owner_game
 
+# Staging starts the frame after a corridor is built or a handoff, never in it.
+var stage_pending := false
+
 ## The hidden neighbour builds a slice per frame while the corridor is walked.
 func _process(_delta: float) -> void:
-	if is_instance_valid(staged_room) and staged_room.building: staged_room.resume_build()
+	if stage_pending:
+		stage_pending = false
+		FrameWatch.mark("next room, first slice")
+		preload_room()
+	elif is_instance_valid(staged_room) and staged_room.building:
+		FrameWatch.mark("next room, building")
+		staged_room.resume_build()
+
+## Large discarded trees are deleted over several frames.
+func discard(node: Node) -> void:
+	if game and game.get("reaper"): game.reaper.reap(node)
+	else:
+		if node.get_parent(): node.get_parent().remove_child(node)
+		node.queue_free()
 
 func reset() -> void:
-	if is_instance_valid(staged_room):
-		remove_child(staged_room)
-		staged_room.queue_free()
+	stage_pending=false
+	if is_instance_valid(staged_room): discard(staged_room)
 	staged_room=null
 	staged_id=""
 	if is_instance_valid(preview):
 		preview.visible=true
 		preview.process_mode=Node.PROCESS_MODE_INHERIT
 	preview=null
-	if is_instance_valid(active):
-		remove_child(active)
-		active.queue_free()
+	if is_instance_valid(active): discard(active)
 	active=null
 	portal_id=""
 	left_room=false
+	coop_held=false
 	if game and is_instance_valid(game.room):
 		game.room.entry_portal=""
 		game.room.set_open(game.room.open)
@@ -76,20 +95,19 @@ func arm(id: String) -> void:
 	destination_offset=FloorGenerator.vec2(plan.offset_b)*(1.0 if source_room==portal.a.room else -1.0)
 	handoff=float(plan.handoff) if source_room==portal.a.room else float(plan.length)-float(plan.handoff)
 	portal_id=id
+	FrameWatch.mark("corridor built")
 	active=WalkableCorridor.new()
 	active.name="ActiveCorridor"
 	add_child(active)
 	active.build(CorridorPlan.from_room(plan,portal,source_room),false,game.room.look)
 	hide_preview()
-	call_deferred("preload_room")
+	stage_pending=true
 
 func preload_room() -> void:
 	if not is_instance_valid(active) or not Run.active: return
 	var other: String=destination_room if Run.current_room==source_room else source_room
 	if is_instance_valid(staged_room) and staged_id==other: return
-	if is_instance_valid(staged_room):
-		remove_child(staged_room)
-		staged_room.queue_free()
+	if is_instance_valid(staged_room): discard(staged_room)
 	staged_room=DungeonRoom.new()
 	staged_id=other
 	# Hidden and inert from the start: its colliders never join the world
@@ -127,7 +145,17 @@ func hide_preview() -> void:
 		break
 
 func contains_point(point: Vector2, margin := .0) -> bool:
-	return is_instance_valid(active) and active.contains_point(point-Vector2(active.position.x,active.position.z),margin)
+	if not is_instance_valid(active): return false
+	var local := point-Vector2(active.position.x,active.position.z)
+	if not active.contains_point(local,margin): return false
+	if gated():
+		var along := CorridorPlan.project(active.path,local)
+		if Run.current_room==source_room and along>handoff+GATE: return false
+		if Run.current_room==destination_room and along<handoff-GATE: return false
+	return true
+
+func gated() -> bool:
+	return game!=null and game.get("party")!=null and game.party.climbing()
 
 func walking() -> bool:
 	return is_instance_valid(active) and is_instance_valid(game.player) and not game.room.geometry.contains(Vector2(game.player.position.x,game.player.position.z),.1)
@@ -138,15 +166,19 @@ func advance() -> void:
 	var local_point:=point-Vector2(active.position.x,active.position.z)
 	var along:=CorridorPlan.project(active.path,local_point)
 	if walking(): left_room=true
-	if Run.current_room==source_room and along>handoff+.25:
+	if gated():
+		# The party moves on together (Party.gather), never one player alone.
+		coop_held=Run.current_room==source_room and along>=handoff-.05
+	elif Run.current_room==source_room and along>handoff+.25:
 		rebase(destination_room,destination_offset)
 	elif Run.current_room==destination_room and along<handoff-.25:
 		rebase(source_room,-destination_offset)
 	if left_room and game.room.geometry.contains(Vector2(game.player.position.x,game.player.position.z),1.05):
 		reset()
-		game.activate_corridor_encounter()
+		if not gated(): game.activate_corridor_encounter()
 
 func rebase(destination: String, offset: Vector2) -> void:
+	FrameWatch.mark("room handoff")
 	var shift:=Vector3(offset.x,0,offset.y)
 	# All camera-relative positions stay identical during this atomic step.
 	active.position-=shift
@@ -155,4 +187,4 @@ func rebase(destination: String, offset: Vector2) -> void:
 	handoffs+=1
 	preview=null
 	hide_preview()
-	call_deferred("preload_room")
+	stage_pending=true

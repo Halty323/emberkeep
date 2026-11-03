@@ -4,7 +4,9 @@ extends RefCounted
 ## economy and combat cadence; new expeditions earn fewer, distinct rewards.
 const VERSION := 3
 const START_COINS := 4
-const COMBAT_RELICS_PER_FLOOR := 1
+# Relics are rare and strong: a floor's come from its boss, its treasure room
+# and the shop. Ordinary fights pay in supplies and chests, never relics.
+const COMBAT_RELICS_PER_FLOOR := 0
 const CHEST_TABLES := ["locked_chest", "secret_cache", "normal_chest", "locked_chest_hard", "secret_cache_hard"]
 const HARD_TABLES := {
 	"enemy_common": "enemy_common_hard", "boss": "boss_hard", "room_clear": "room_clear_hard",

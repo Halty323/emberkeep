@@ -487,7 +487,7 @@ func base_stats() -> Dictionary:
 		"size": 1.0, "crit": 0.05, "crit_damage": 2.0, "lifesteal": 0.0,
 		"shield": 0.0, "orbitals": 0.0, "luck": 0.0, "magnet": 1.6,
 		"dash_cd": 0.0, "dash_damage": 0.0, "dash_nova": 0.0,
-		"thorns": 0.0, "coin_bonus": 0.0, "room_heal": 0.0,
+		"thorns": 0.0, "coin_bonus": 0.0, "room_heal": 0.0, "wet": 0.0, "waxen": 0.0,
 		"kill_haste": 0.0, "low_hp": 0.0, "execute": 0.0,
 		"knockback": 1.0, "backshot": 0.0, "side_shot": 0.0,
 		"returning": 0.0, "wave": 0.0, "radial": 0.0, "heal_each_room": 0.0, "paint": 0.0,

@@ -2,7 +2,7 @@
   "version": 1,
   "effects": [
     {"id": "burst", "channel": "important", "count": 6, "speed": [2.4, 3.6], "lifetime": [0.24, 0.34], "size": [0.09, 0.13], "gravity": -2.0, "spread": "sphere", "color": "inherit"},
-    {"id": "muzzle", "channel": "important", "count": 2, "speed": [3.0, 5.0], "lifetime": [0.08, 0.14], "size": [0.04, 0.07], "gravity": 0.0, "spread": "forward", "color": "inherit", "min_interval": 0.06},
+    {"id": "muzzle", "channel": "important", "count": 5, "speed": [0.5, 1.4], "lifetime": [0.22, 0.42], "size": [0.012, 0.03], "gravity": 1.6, "spread": "sphere", "color": "inherit", "min_interval": 0.06},
     {"id": "impact", "channel": "important", "count": 3, "speed": [1.4, 2.8], "lifetime": [0.16, 0.26], "size": [0.04, 0.08], "gravity": -7.0, "spread": "sphere", "color": "inherit", "min_interval": 0.02},
     {"id": "hit_spark", "channel": "important", "count": 3, "speed": [2.2, 3.4], "lifetime": [0.14, 0.24], "size": [0.05, 0.09], "gravity": -3.0, "spread": "sphere", "color": "inherit", "min_interval": 0.015},
     {"id": "death_puff", "channel": "important", "count": 8, "speed": [1.2, 2.6], "lifetime": [0.3, 0.5], "size": [0.1, 0.16], "gravity": 1.2, "spread": "sphere", "color": "inherit"},

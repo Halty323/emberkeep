@@ -18,6 +18,7 @@ var walk_time = 0.0
 var recoil = 0.0
 var orbit_meshes: Array[MeshInstance3D] = []
 var shelter: MeshInstance3D
+var floor_ring: MeshInstance3D
 const ROOM_MARGIN := .3
 const RUN_SPEED := 5.2
 # A dash covers about 2.9 units, then leaves at running speed: no long glide.
@@ -64,7 +65,7 @@ func setup(owner_game: Node3D) -> void:
 	Geo.box(visual, Vector3(.12, 1.0, -.36), Vector3(.055, .075, .035), Color("32383a"))
 	Geo.box(visual, Vector3(-.16, .12, 0), Vector3(.21, .22, .3), Color("645b4e"))
 	Geo.box(visual, Vector3(.16, .12, 0), Vector3(.21, .22, .3), Color("645b4e"))
-	Geo.ring(self, Vector3(0, .045, 0), .47, Color("e9ca8e"), .025)
+	floor_ring = Geo.ring(self, Vector3(0, .045, 0), .47, Color("e9ca8e"), .025)
 	glow_halo = Geo.halo(self, Vector3(0, .025, 0), 4.2, Color(1, .64, .25, .16))
 	glow_halo.visible = not game.first_person
 	glow_light = Geo.light(self, Vector3(0, 1.5, 0), Color("ffcb88"), .65, 3.8)
@@ -247,6 +248,7 @@ func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting:
 	if shooting and fire_cooldown <= 0 and dash_time <= 0:
 		fire()
 	show_flame(delta)
+	constellation(delta)
 	for i in orbit_meshes.size():
 		orbit_meshes[i].position = orbit_position(i)
 		for enemy in game.enemies:
@@ -280,17 +282,27 @@ func fire() -> void:
 	# A kindled weapon burns hotter still with every kindle level.
 	damage *= 1.0 + float(stats.get("kindled", 0)) * .12 * game.kindle_level()
 	if weapon.has("trail"): stats["trail_kind"] = weapon.trail
+	# Candlemaker, and a wax book's resonance: spells leave wax as they fly.
+	elif float(stats.get("candle", 0)) > 0 or (stats.get("element", "") == "wax" and float(stats.get("resonance", 0)) > 0): stats["trail_kind"] = "wax"
+	# Last Stand: below half health, spells pierce.
+	if Run.has_pairing("last_stand") and Run.hp <= Run.stats.max_hp / 2.0: stats.pierce = float(stats.get("pierce", 0)) + 1.0
 	release_sparks(damage, stats)
 	var count = volley(weapon, stats, damage, tint)
 	if int(weapon.get("burst", 1)) > 1:
 		burst_left = int(weapon.burst) - 1
 		burst_timer = float(weapon.burst_gap)
 		burst_shot = {"weapon": weapon, "stats": stats, "damage": damage, "tint": tint, "gap": weapon.burst_gap}
+	# Crossfire: spells behind and beside curve toward foes and pierce one.
+	var flank: Dictionary = stats
+	if float(stats.get("crossfire", 0)) > 0:
+		flank = stats.duplicate()
+		flank.homing = float(flank.get("homing", 0)) + 3.0
+		flank.pierce = float(flank.get("pierce", 0)) + 1.0
 	if stats.backshot > 0:
-		launch_shot(shot_origin(), -aim_direction, damage, weapon.speed * stats.shot_speed, stats, tint, true)
+		launch_shot(shot_origin(), -aim_direction, damage, weapon.speed * stats.shot_speed, flank, tint, true)
 	if stats.side_shot > 0:
 		for side in [-1, 1]:
-			launch_shot(shot_origin(), aim_direction.rotated(aim_up(), side * PI / 2), damage * .75, weapon.speed * stats.shot_speed, stats, tint, true)
+			launch_shot(shot_origin(), aim_direction.rotated(aim_up(), side * PI / 2), damage * .75, weapon.speed * stats.shot_speed, flank, tint, true)
 	Effects.play("muzzle", shot_origin() + aim_direction * .2, tint, -1, 1.0, aim_direction)
 	game.make_noise(global_position, 1.0)
 	fire_cooldown = maxf(.07, weapon.cooldown / (stats.rate + (stats.kill_haste if haste_time > 0 else 0)))
@@ -365,17 +377,24 @@ func dash() -> void:
 	if Run.stats.dash_nova > 0:
 		var effects = Run.projectile_stats()
 		effects.chill += 1
+		# Snow Angel: the nova freezes what it touches.
+		if Run.has_pairing("snow_angel"): effects["freeze"] = 1.0
 		for i in 12:
 			var direction = Vector3.RIGHT.rotated(Vector3.UP, TAU * i / 12)
 			launch_shot(global_position + Vector3(0, .5, 0), direction, 5.0 * Run.stats.dash_nova, 10.0, effects, Color("b6e2e5"), true)
 
 func hurt(amount: float, source: Vector3) -> void:
-	if invulnerability > 0 or not Run.active or Run.has_flag("invulnerable"):
+	# A foe's blow on the co-op host can catch a teammate beside this player.
+	var net = NetHooks.party(game)
+	if net: net.splash(self, amount, source)
+	if invulnerability > 0 or not Run.active or Run.has_flag("invulnerable") or NetHooks.downed(game):
 		return
 	# Relic guard refreshes each room and is spent first; wards persist.
 	if shield > 0 or Run.wards > 0:
 		if shield > 0:
 			shield -= 1
+			# Bramble Ward: the guard answers with thorns.
+			if Run.has_pairing("bramble_ward"): thorns_ring()
 		else:
 			Run.wards -= 1
 			Run.changed.emit()
@@ -400,4 +419,31 @@ func hurt(amount: float, source: Vector3) -> void:
 	velocity += (global_position - source).normalized() * 5
 	Run.changed.emit()
 	if Run.hp <= 0:
-		game.end_run(false)
+		game.player_fell()
+
+var star_timer := 0.0
+var star_turn := 0
+
+## Constellation: the orbiting lights take turns casting at nearby foes.
+func constellation(delta: float) -> void:
+	if orbit_meshes.is_empty() or not Run.has_pairing("constellation"): return
+	star_timer -= delta
+	if star_timer > 0: return
+	star_timer = .9 / orbit_meshes.size()
+	star_turn = (star_turn + 1) % orbit_meshes.size()
+	var from: Vector3 = orbit_meshes[star_turn].global_position
+	var target = game.nearest_enemy(from, 7.0)
+	if target == null: return
+	var stats := Run.projectile_stats()
+	stats.homing = float(stats.get("homing", 0)) + 2.0
+	stats.size = .6
+	launch_shot(from, (target.global_position + Vector3.UP * .65 - from).normalized(), 4.0 * float(Run.stats.damage), 14.0, stats, Color("fff3c4"), true)
+
+## Bramble Ward: a ring of thorns flies out from the guard.
+func thorns_ring() -> void:
+	var stats := Run.projectile_stats()
+	stats.pierce = float(stats.get("pierce", 0)) + 1.0
+	for i in 10:
+		var direction := Vector3.FORWARD.rotated(Vector3.UP, TAU * i / 10.0)
+		launch_shot(global_position + Vector3.UP * .8 + direction * .4, direction, 7.0 * float(Run.stats.damage), 12.0, stats, Color("b0d080"), true)
+	game.reaction_word(global_position + Vector3.UP * 2.0, "p:bramble_ward")

@@ -80,8 +80,9 @@ func test_all() -> void:
 	run.gain_item("storm_lantern")
 	run.gain_item("winter_mint")
 	run.gain_item("firefly_jar")
-	check(run.stats.homing > 0 and run.stats.bounce == 2 and run.stats.split == 2 and run.stats.chain == 3, "synergy effects combine")
-	check(game.player.orbit_meshes.size() == 1, "orbital appears")
+	var relic: Dictionary = root.get_node("Content").item_by_id
+	check(run.stats.homing > 0 and run.stats.bounce == relic.skipping_stone.effects.bounce and run.stats.split == relic.shattered_star.effects.split and run.stats.chain == relic.storm_lantern.effects.chain, "synergy effects combine")
+	check(game.player.orbit_meshes.size() == int(relic.firefly_jar.effects.orbitals), "orbitals appear")
 	run.coins = 37
 	run.hp = 3
 	run.save_run()
@@ -213,7 +214,7 @@ func test_all() -> void:
 	run.rooms[boss_key].cleared = false
 	run.cleared = 1
 	run.mark_cleared()
-	check(run.hp == 3, "Eternal Hearth heals every cleared combat room")
+	check(run.hp == 2 + root.get_node("Content").item_by_id.eternal_hearth.effects.heal_each_room, "Eternal Hearth heals every cleared combat room")
 	run.next_floor()
 	check(run.floor_number == 2 and run.current_room == "0,0", "floor progression")
 	# Run 180 real physics frames to catch movement, AI and projectile runtime errors.
