@@ -88,6 +88,9 @@ var restless = false
 static var overlay: ShaderMaterial
 var skin: Array = []
 var flash = 0.0
+# Co-op guest: the host's foe, drawn here. It never thinks for itself; every
+# blow, status and shove it takes is sent to the host, which owns the foe.
+var puppet := false
 
 func setup(owner_game: Node3D, type: String, id: int) -> void:
 	game = owner_game
@@ -244,6 +247,9 @@ func steer_toward(target: Vector3, delta: float) -> Vector3:
 	return Vector3(step.x, 0, step.y).normalized() if step.length() > .01 else direct
 
 func slow(duration: float, factor: float) -> void:
+	if puppet:
+		game.party.foe_slow(self, duration, factor)
+		return
 	slow_time = maxf(slow_time, duration)
 	slow_factor = maxf(slow_factor if slow_time > 0 else 0.0, factor)
 
@@ -468,6 +474,9 @@ func set_shrouded(value: bool) -> void:
 	if is_instance_valid(halo): halo.visible = not value
 
 func apply_status(stats: Dictionary) -> void:
+	if puppet:
+		game.party.foe_status(self, stats)
+		return
 	if stats.get("burn", 0) > 0:
 		burn_time = 3.0
 		burn_power = maxf(burn_power, stats.burn * 1.8)
@@ -491,6 +500,21 @@ func damage_scale(_cause: String) -> float:
 func take_hit(damage: float, impulse: Vector3, critical := false, dot := false, cause := "hit") -> void:
 	if not alive or not targetable:
 		return
+	if puppet:
+		game.party.foe_hit(self, damage, impulse, critical, dot, cause)
+		return
+	# Whoever struck it, the guests see it struck.
+	var net = NetHooks.party(game)
+	if net: net.begin_world()
+	receive_hit(damage, impulse, critical, dot, cause)
+	if net: net.end_world()
+
+## A push away from something (a gust, a gale); on a guest, sent to the host.
+func shove(force: Vector3) -> void:
+	if puppet: game.party.foe_shove(self, force)
+	else: knock_velocity += force
+
+func receive_hit(damage: float, impulse: Vector3, critical: bool, dot: bool, cause: String) -> void:
 	if dot: cause = "dot"
 	if ward_up:
 		if cause == "blast" or cause == "dash": pop_ward()
@@ -565,6 +589,9 @@ func shocked(damage: float) -> void:
 
 ## The player dashed right through this foe.
 func dashed_through() -> void:
+	if puppet:
+		game.party.foe_dashed(self)
+		return
 	if ward_up: pop_ward()
 
 ## The player relit a lantern (the Last Light loses radiance to it).
@@ -577,6 +604,14 @@ func on_shot_missed(_shot: EmberShot) -> void:
 
 ## Volatile, gilded, twinned or warded: chosen by the encounter, from floor 2.
 func make_elite(twist: String, partner: DungeonEnemy = null) -> void:
+	var net = NetHooks.party(game)
+	if net: net.geo_paused += 1
+	dress_elite(twist, partner)
+	if net:
+		net.geo_paused -= 1
+		net.foe_elite(self, twist, partner)
+
+func dress_elite(twist: String, partner: DungeonEnemy) -> void:
 	elite = twist
 	var tint = {"gilded": Color("ffd36b"), "twinned": Color("c9a4ff"), "volatile": Color("ff8a6a"), "warded": Color("a3dacf")}[twist]
 	Geo.ring(self, Vector3(0, .04, 0), radius + .28, tint, .05)
@@ -623,7 +658,10 @@ func shed_coin() -> void:
 	if key in data.get("credited", []): return
 	if not data.has("credited"): data.credited = []
 	data.credited.append(key)
-	game.spawn_pickup(global_position + Vector3(rng.randf_range(-.6, .6), 0, rng.randf_range(-.6, .6)), "copper_coin")
+	var at := global_position + Vector3(rng.randf_range(-.6, .6), 0, rng.randf_range(-.6, .6))
+	game.spawn_pickup(at, "copper_coin")
+	# Every teammate gets a coin of their own.
+	if NetHooks.party(game): game.party.loot(at, "copper_coin")
 
 static func stretch(mesh: MeshInstance3D, a: Vector3, b: Vector3) -> void:
 	var length = a.distance_to(b)

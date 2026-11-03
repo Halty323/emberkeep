@@ -34,11 +34,13 @@ static func activate(game, definition: Dictionary) -> Dictionary:
 			var near_foes = foes(game).filter(func(enemy): return enemy.global_position.distance_to(player.global_position) < radius)
 			if near_shots.is_empty() and near_foes.is_empty():
 				return no("Nothing close enough to blow away")
-			for shot in near_shots: shot.remove()
+			for shot in near_shots:
+				if game.has_method("dispel"): game.dispel(shot)
+				else: shot.remove()
 			for enemy in near_foes:
 				var away: Vector3 = enemy.global_position - player.global_position
 				away.y = 0
-				enemy.knock_velocity += away.normalized() * float(params.push) / (2.5 if enemy.boss else 1.0)
+				enemy.shove(away.normalized() * float(params.push) / (2.5 if enemy.boss else 1.0))
 			Effects.ring_burst(game, player.global_position, Color(definition.color), radius)
 		"ember_burst":
 			if foes(game).is_empty():

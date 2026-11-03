@@ -4,6 +4,8 @@ A cozy, first-person 3D dungeon roguelike built in Godot for Android, iOS, Linux
 
 **Style experiment:** `experiment/stylized-lighting` replaces the photographic look with original painted materials, chipped relief, forged metal, reflected indirect light and first-person water reflections. See the [experiment notes and previews](docs/STYLIZED_EXPERIMENT.md). The experiment is isolated from `main` and preserves the expedition gameplay/save format. Each floor again has its own wall and ground artwork, carried through ceilings, galleries and corridors: [material themes and comparison screenshots](docs/THEME_MATERIALS.md).
 
+**Climb together:** two to four players on the same network can share a climb, each on their own device with their own loot. See [co-op](docs/COOP.md).
+
 You wake as a captive at the bottom of a tower, remembering nothing, with only a little light of your own. Each run climbs five floors toward the hearth at the top, and no two seeds climb the same tower or carry the same weapons. The tower's story is in [docs/LORE.md](docs/LORE.md).
 
 ## Play from source
@@ -77,7 +79,7 @@ The play screen keeps out of the way: one small slab top left for health, coins,
 - **Display settings** that work on each platform: desktop fullscreen/windowed mode with restored window size, bounded SSAO quality on supported devices, 3D render resolution (50–100 %, with the resulting pixel size), FPS limit (30–120 or unlimited), VSync where the platform honours it (shown as *System controlled* on Android and iOS), an FPS readout, and Low/Balanced/High effects and small-details levels that never change gameplay. Effects detail also sets the look: Low lays floors flat and keeps a plain vignette with no bloom, warps, water mirror, shot ribbons or foe rims; Balanced adds them at reduced cost; High adds the most floor relief, a sharper mirror, shot floor light and stronger warps.
 - Optional seeds and a date-derived “Today’s seed.” This is a local mode using the device’s UTC date, with no server verification or online ranking. Daily runs follow a fixed painting schedule.
 
-This is a playable implementation, not a balanced release. Device performance, touch comfort and long-run item combinations still need testing on real Android and iOS hardware. Co-op, accounts, leaderboards and cloud saves are planned, not implemented; see [docs/ONLINE.md](docs/ONLINE.md). The [expansion plan](docs/EXPANSION_PLAN.md) records what was built and what remains.
+This is a playable implementation, not a balanced release. Device performance, touch comfort and long-run item combinations still need testing on real Android and iOS hardware. Local-network co-op is in ([docs/COOP.md](docs/COOP.md)); internet play, accounts, leaderboards and cloud saves are planned, not implemented ([docs/ONLINE.md](docs/ONLINE.md)). The [expansion plan](docs/EXPANSION_PLAN.md) records what was built and what remains.
 
 ## Secret codes
 
@@ -94,9 +96,11 @@ Codes work only during an active run. They ignore letter case and surrounding sp
 - `user://profile.json` (version 2) holds discovered relics, the painting collection, unlocked rewards and lifetime counters. It survives death and new runs.
 - `user://run.json` (version 3) holds the active run: seed, floor rooms and doorways (including resolved furniture, chests, paintings and opened secrets), health, inventory, weapon, coins, keys, bombs, wards, the held item and its cooldown ledger, the map's explored cells, timed effects, lit bombs, Paint Sprayer's pigment, facing, resolved raised-gallery blueprints and the gameplay RNG state.
 
-Safe rooms save automatically, as do bombs and item uses. If the app closes mid-fight, continuing restarts that encounter rather than restoring an exact combat frame: projectiles and enemy positions are not saved, but your resources, timers and lit fuses are, and a foe you already defeated never pays out twice. Timers never catch up on time spent away. Version 2 saves migrate with their inventory and rooms intact and keep flat layouts; permanent discoveries remain in the profile. Version 1 run saves load through an adapter that keeps their floor, offers, drops and RNG state, and later floors of such a run use the original generator. Death or victory removes the active run save; the profile remains.
+Safe rooms save automatically, as do bombs and item uses. Co-op climbs are not saved, and they leave a solo save untouched. If the app closes mid-fight, continuing restarts that encounter rather than restoring an exact combat frame: projectiles and enemy positions are not saved, but your resources, timers and lit fuses are, and a foe you already defeated never pays out twice. Timers never catch up on time spent away. Version 2 saves migrate with their inventory and rooms intact and keep flat layouts; permanent discoveries remain in the profile. Version 1 run saves load through an adapter that keeps their floor, offers, drops and RNG state, and later floors of such a run use the original generator. Death or victory removes the active run save; the profile remains.
 
 ## First-person update
+
+The [co-op update](docs/COOP.md) lets two to four players climb together on the same local network. Choose **Climb together**, then host a party or join one (parties on the network are listed, or type the host's address). Every player keeps their own relics, spellbook, health, coins and loot, with their own drops and their own pick at every reliquary and shop. Foes chase the nearest teammate. A fallen player is rekindled by a teammate standing beside them, and the climb ends only when everyone is down at once. Rooms change once the whole party is in the passage, and the party climbs each stair together.
 
 The [magic update](docs/MAGIC_UPDATE.md) puts a spellbook in your hand instead of a gun. Every relic adds its own mark to the book or the arm that holds it. Spells fly as swirling orbs inside turning rune circles. Relics are rarer and stronger, and wait in a carved reliquary.
 

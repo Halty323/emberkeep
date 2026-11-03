@@ -35,7 +35,12 @@ static func shared_box(size: Vector3) -> BoxMesh:
 	return meshes[key]
 
 static func box(parent: Node3D, position: Vector3, size: Vector3, color: Color, emission := 0.0) -> MeshInstance3D:
-	return add_mesh(parent, shared_box(size), position, color, emission)
+	return shared(add_mesh(parent, shared_box(size), position, color, emission), "box", [position, size, color, emission])
+
+## Co-op: geometry a foe makes mid-fight (a warning ring, a mark where a lob
+## will land) is made on every guest's device too.
+static func shared(node: Node3D, method: String, args: Array) -> Node3D:
+	return NetHooks.geo(node, method, args)
 
 static func sphere(parent: Node3D, position: Vector3, radius: float, color: Color, emission := 0.0) -> MeshInstance3D:
 	var key = "sphere%.4f" % radius
@@ -46,7 +51,7 @@ static func sphere(parent: Node3D, position: Vector3, radius: float, color: Colo
 		mesh.radial_segments = 12
 		mesh.rings = 6
 		meshes[key] = mesh
-	return add_mesh(parent, meshes[key], position, color, emission)
+	return shared(add_mesh(parent, meshes[key], position, color, emission), "sphere", [position, radius, color, emission])
 
 static func cylinder(parent: Node3D, position: Vector3, radius: float, height: float, color: Color, emission := 0.0, top := -1.0) -> MeshInstance3D:
 	var key = "cylinder%.4f/%.4f/%.4f" % [radius, height, top]
@@ -57,7 +62,7 @@ static func cylinder(parent: Node3D, position: Vector3, radius: float, height: f
 		mesh.height = height
 		mesh.radial_segments = 12
 		meshes[key] = mesh
-	return add_mesh(parent, meshes[key], position, color, emission)
+	return shared(add_mesh(parent, meshes[key], position, color, emission), "cylinder", [position, radius, height, color, emission, top])
 
 static func ring(parent: Node3D, position: Vector3, radius: float, color: Color, thickness := .035) -> MeshInstance3D:
 	var mesh = TorusMesh.new()
@@ -65,7 +70,7 @@ static func ring(parent: Node3D, position: Vector3, radius: float, color: Color,
 	mesh.outer_radius = radius + thickness
 	mesh.rings = 24
 	mesh.ring_segments = 6
-	return add_mesh(parent, mesh, position, color, .5)
+	return shared(add_mesh(parent, mesh, position, color, .5), "ring", [position, radius, color, thickness])
 
 static func add_mesh(parent: Node3D, mesh: Mesh, position: Vector3, color: Color, emission := 0.0) -> MeshInstance3D:
 	var instance = MeshInstance3D.new()
@@ -92,7 +97,7 @@ static func halo(parent: Node3D, position: Vector3, size: float, color: Color) -
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(instance)
 	instance.position = position
-	return instance
+	return shared(instance, "halo", [position, size, color])
 
 ## A bar of light added over whatever lies behind it: unlit, on the effects
 ## layer, out of every shadow pass. Brightness is carried in the colour.
@@ -112,7 +117,7 @@ static func glow_box(parent: Node3D, position: Vector3, size: Vector3, color: Co
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(instance)
 	instance.position = position
-	return instance
+	return shared(instance, "glow_box", [position, size, color])
 
 static func light(parent: Node3D, position: Vector3, color: Color, energy: float, reach: float, shadows := false) -> OmniLight3D:
 	var light = OmniLight3D.new()
@@ -124,7 +129,7 @@ static func light(parent: Node3D, position: Vector3, color: Color, energy: float
 	light.shadow_enabled = shadows
 	parent.add_child(light)
 	light.position = position
-	return light
+	return shared(light, "light", [position, color, energy, reach, shadows])
 
 static func collider(parent: Node3D, position: Vector3, size: Vector3) -> StaticBody3D:
 	var body = StaticBody3D.new()

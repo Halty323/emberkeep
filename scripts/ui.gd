@@ -39,6 +39,8 @@ const TITLE_HOLD := 1.6
 const TITLE_FADE := .9
 # A newly walked cell is scribbled onto the map over this long.
 const SCRIBBLE_TIME := .75
+# Screens laid out against the edges rather than centred whole.
+const TITLE_MODES := ["play", "menu", "armory", "coop", "lobby"]
 const REWARD_WIDTH := 340.0
 const REWARD_GAP := 26.0
 const SETTINGS_PAGES := [["display", "Display"], ["graphics", "Graphics"], ["controls", "Controls"], ["camera", "Camera"]]
@@ -155,7 +157,7 @@ func resize() -> void:
 			layer.size = Vector2(view_width, 720)
 	place_layers()
 	# Edge-anchored controls are placed when a screen is built.
-	if widened and game and content and mode in ["play", "menu", "armory"]: show_screen(mode)
+	if widened and game and content and mode in TITLE_MODES: show_screen(mode)
 	queue_redraw()
 
 func local_point(at: Vector2) -> Vector2:
@@ -179,7 +181,7 @@ func moved(rect: Rect2, by: float) -> Rect2:
 ## Play and the title place their own edge-anchored groups; every other
 ## screen is centred whole.
 func layer_shift() -> float:
-	return 0.0 if mode in ["play", "menu", "armory"] else widen() / 2.0
+	return 0.0 if mode in TITLE_MODES else widen() / 2.0
 
 func place_layers() -> void:
 	var at = offset + Vector2(layer_shift() * scale_value, 0)
@@ -216,13 +218,15 @@ func show_screen(screen: String) -> void:
 	toast_surface = null
 	interaction_surface = null
 	boss_surface = null
-	backdrop.color = Color(.025, .035, .035, .74) if mode not in ["play", "menu", "armory"] else Color(0, 0, 0, 0)
+	backdrop.color = Color(.025, .035, .035, .74) if mode not in TITLE_MODES else Color(0, 0, 0, 0)
 	place_layers()
 	build_surfaces()
 	seed_field = null
 	match mode:
 		"menu": build_menu()
 		"armory": build_armory()
+		"coop": CoopMenus.build_coop(self)
+		"lobby": CoopMenus.build_lobby(self)
 		"play":
 			# The journal stays a key (Tab) or a pause-menu entry away.
 			button("II", moved(PAUSE_RECT, widen()), func(): game.pause_game(), false)
@@ -242,7 +246,7 @@ func show_screen(screen: String) -> void:
 			button("Continue the journey", Rect2(430, 280, 420, 62), func(): game.resume_game(), true)
 			button("Journal", Rect2(430, 358, 420, 58), func(): open_journal("pause"))
 			button("Settings", Rect2(430, 432, 420, 58), func(): open_settings("pause"))
-			button("Return to title", Rect2(430, 506, 420, 58), func(): game.return_to_title())
+			button("Leave the party" if game.party.climbing() else "Return to title", Rect2(430, 506, 420, 58), func(): game.return_to_title())
 			var trigger = Button.new()
 			trigger.name = "SecretTrigger"
 			trigger.position = Vector2(410, 146)
@@ -258,10 +262,13 @@ func show_screen(screen: String) -> void:
 		"painting": button("← Back", Rect2(812, 598, 360, 58), func(): close_painting())
 		"settings": build_settings()
 		"dead", "won":
-			button("One more little light", Rect2(430, 457, 420, 62), func():
-				reforge()
-				game.start_run(starter_weapon().id, menu_seed, false), true)
-			button("Return to title", Rect2(430, 535, 420, 58), func(): game.return_to_title())
+			if Session.online and Session.hosting:
+				button("Climb again together", Rect2(430, 457, 420, 62), func(): game.party.regroup(), true)
+			elif not Session.online:
+				button("One more little light", Rect2(430, 457, 420, 62), func():
+					reforge()
+					game.start_run(starter_weapon().id, menu_seed, false), true)
+			button("Leave the party" if Session.online else "Return to title", Rect2(430, 535, 420, 58), func(): game.return_to_title())
 	sync_lighting()
 	update_surface_visibility()
 	queue_redraw()
@@ -418,7 +425,7 @@ func build_menu() -> void:
 		build_legacy_menu()
 		return
 	if menu_seed == 0: reforge()
-	var y = 300.0
+	var y = 286.0 if Run.has_save() else 300.0
 	if Run.has_save():
 		title_button("Continue journey", Rect2(56,y,420,58), func(): game.continue_run(), true)
 		y += 68
@@ -426,11 +433,14 @@ func build_menu() -> void:
 	y += 68
 	title_button("Daily journey", Rect2(56,y,420,58), func(): game.start_run(starter_weapon(Run.daily_seed()).id,Run.daily_seed(),true))
 	y += 62
-	title_button("Journal", Rect2(56,y,420,56), func(): open_journal("menu"))
-	y += 56
-	title_button("Options", Rect2(56,y,420,56), func(): open_settings("menu"))
-	y += 56
-	if not is_touch_platform(): title_button("Leave the hearth", Rect2(56,y,420,56), func(): game.get_tree().quit())
+	# Two to four players on the same network.
+	title_button("Climb together", Rect2(56,y,420,54), func(): show_screen("coop"))
+	y += 54
+	title_button("Journal", Rect2(56,y,420,54), func(): open_journal("menu"))
+	y += 54
+	title_button("Options", Rect2(56,y,420,54), func(): open_settings("menu"))
+	y += 54
+	if not is_touch_platform(): title_button("Leave the hearth", Rect2(56,y,420,54), func(): game.get_tree().quit())
 
 func title_button(label: String, rect: Rect2, callback: Callable, primary := false) -> Button:
 	var control = Button.new()
@@ -511,7 +521,12 @@ func handle_title_back() -> bool:
 	if not game.first_person or not game.in_menu or mode == "menu": return false
 	if mode == "painting": close_painting()
 	elif mode in ["journal","settings"]: close_subscreen()
-	else: show_screen("menu")
+	elif mode == "lobby":
+		Session.leave_party()
+		show_screen("coop")
+	else:
+		if mode == "coop": Session.stop_looking()
+		show_screen("menu")
 	return true
 
 func build_legacy_menu() -> void:
@@ -942,12 +957,16 @@ func _draw() -> void:
 	match mode:
 		"menu": draw_menu()
 		"armory": draw_armory()
-		"play": draw_hud()
+		"coop": CoopMenus.draw_coop(self)
+		"lobby": CoopMenus.draw_lobby(self)
+		"play":
+			draw_hud()
+			CoopMenus.draw_hud(self)
 		"pause":
 			hearth_emblem(Vector2(640, 144), 12)
 			centered("Catch your breath", 640, 204, 34, INK, heading)
 			centered("Even a little flame needs a moment.", 640, 245, 18, MUTED)
-			centered("Your last safe room is saved automatically.", 640, 604, 16, MUTED)
+			centered("The party climbs on while you rest; co-op climbs are not saved." if game.party.climbing() else "Your last safe room is saved automatically.", 640, 604, 16, MUTED)
 		"secret":
 			hearth_emblem(Vector2(640, 177), 11)
 			centered("A whispered wish", 640, 237, 34, INK, heading)

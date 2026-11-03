@@ -344,6 +344,7 @@ content/pickups.json
 content/rooms.json
 docs/ANDROID.md
 docs/ANDROID_RENDERING_FIX.md
+docs/COOP.md
 docs/CORRIDOR_UPDATE.md
 docs/EXPANSION_PLAN.md
 docs/EXPEDITION_UPDATE.md
@@ -365,6 +366,9 @@ docs/TESTING.md
 docs/THEME_MATERIALS.md
 docs/TWO_STOREY_ROOMS.md
 docs/images/.gdignore
+docs/images/coop-lobby.png
+docs/images/coop-rekindling.png
+docs/images/coop-teammates.png
 docs/images/corridor-cellar-room.png
 docs/images/corridor-doorway.png
 docs/images/corridor-upper-room.png
@@ -414,6 +418,16 @@ scripts/combat/residue.gd
 scripts/combat/residue.gd.uid
 scripts/content.gd
 scripts/content.gd.uid
+scripts/coop/coop_menus.gd
+scripts/coop/coop_menus.gd.uid
+scripts/coop/lan_discovery.gd
+scripts/coop/lan_discovery.gd.uid
+scripts/coop/net_hooks.gd
+scripts/coop/net_hooks.gd.uid
+scripts/coop/party.gd
+scripts/coop/party.gd.uid
+scripts/coop/party_member.gd
+scripts/coop/party_member.gd.uid
 scripts/dungeon/corridor_plan.gd
 scripts/dungeon/corridor_plan.gd.uid
 scripts/dungeon/detail_batch.gd
@@ -668,6 +682,10 @@ tests/collection.gd
 tests/collection.gd.uid
 tests/combat.gd
 tests/combat.gd.uid
+tests/coop.gd
+tests/coop.gd.uid
+tests/coop_guest.gd
+tests/coop_guest.gd.uid
 tests/corridors.gd
 tests/corridors.gd.uid
 tests/doors_lava.gd
@@ -700,6 +718,8 @@ tests/lighting_centered.gd
 tests/lighting_centered.gd.uid
 tests/presentation.gd
 tests/presentation.gd.uid
+tests/render_coop.gd
+tests/render_coop.gd.uid
 tests/render_corridors.gd
 tests/render_corridors.gd.uid
 tests/render_first_person.gd

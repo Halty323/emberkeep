@@ -2,6 +2,10 @@
 
 Current first-person work uses **Godot 4.7.2 Standard** on Linux. The headless regression runner keeps original gameplay/presentation suites in explicit legacy mode (`EMBERKEEP_LEGACY_TEST=1`) and switches the dedicated `first_person` suite back to the default gameplay mode. Historical rendering/build measurements below retain their original engine context. Phone performance is not inferred from desktop software rendering.
 
+## Co-op
+
+[Co-op](COOP.md) adds two to four players on a local network. The new `coop` suite passes **70 checks**, the guest process's own included, and the runner now has **37 suites**. It runs a real host and a real second game process over loopback ENet. Together they cover the handshake, LAN discovery, the shared floor, gathering in a passage, the fight's start, foes drawn and struck from the guest, the guest's spells, personal kill credit, blows reaching the right player, falling and rekindling, the shared stair and the end when everyone is down. All 37 suites pass with Godot 4.7.2. `tests/render_coop.gd` captures the lobby, teammates in a room, rekindling and a fallen view under a display.
+
 ## Magic update
 
 The [magic update](MAGIC_UPDATE.md) replaces the gun with a spellbook in hand. Every relic marks the book or the arm, spells replace tracer bullets, relics are rarer and stronger, and relics wait in a reliquary. The new `spellbook` suite passes **35 checks**, and the runner now has **36 suites**. `tests/render_spellbook.gd` captures the book, relic sets, the reliquary and spells in flight under a display.

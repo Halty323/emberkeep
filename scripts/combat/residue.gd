@@ -55,6 +55,10 @@ var tick = 0.0
 var elevated_surface: ArrayMesh
 var surface_level := 0.0
 var upper_field: ResidueField
+# Co-op host: the tiles and clouds changed since the guests last heard.
+var logging := false
+var net_tiles: Dictionary = {}
+var clouds_changed := false
 
 func setup(owner_game: Node3D, room_geometry: RoomGeometry, elevation := 0.0) -> void:
 	surface_level=elevation
@@ -232,13 +236,17 @@ static func center(tile: Vector2i) -> Vector3:
 
 func layer_at(at: Vector3) -> ResidueField:
 	if surface_level<1 and first_person and geometry.terrain and geometry.terrain.loft and geometry.terrain.loft.upper(at):
-		if not is_instance_valid(upper_field):
-			upper_field=ResidueField.new()
-			upper_field.name="UpstairsResidue"
-			add_child(upper_field)
-			upper_field.setup(game,geometry,LoftRoom.RISE)
-		return upper_field
+		return upper()
 	return self
+
+func upper() -> ResidueField:
+	if not is_instance_valid(upper_field):
+		upper_field=ResidueField.new()
+		upper_field.name="UpstairsResidue"
+		add_child(upper_field)
+		upper_field.setup(game,geometry,LoftRoom.RISE)
+		upper_field.logging=logging
+	return upper_field
 
 func cell_center(tile: Vector2i) -> Vector3:
 	var at:=center(tile)
@@ -381,6 +389,7 @@ func set_tile(tile: Vector2i, kind: String, lasting := false) -> void:
 		tiles[tile] = {"kind": kind, "age": 0.0, "life": life, "spread": SPREAD_DELAY, "under": previous if kind in ["fire", "ice"] else ""}
 	dirty[previous] = true
 	dirty[kind] = true
+	if logging: net_tiles[tile] = [kind, lasting]
 
 ## Burn, chill and poison meeting what lies here.
 func react(at: Vector3, radius: float, stats: Dictionary) -> void:
@@ -486,6 +495,7 @@ func add_cloud(at: Vector3, radius: float, kind := "spores") -> void:
 	view.position = Vector3(at.x,height,at.z)
 	clouds.append({"at": Vector3(at.x,height,at.z), "radius": radius, "age": 0.0, "poisoned": false, "view": view, "kind": kind,
 		"life": STEAM_LIFE if kind == "steam" else CLOUD_LIFE})
+	clouds_changed = true
 	refresh_cloud_surface()
 
 func cloud_at(at: Vector3) -> int:
@@ -504,6 +514,7 @@ func remove_cloud(index: int) -> void:
 		return
 	if is_instance_valid(clouds[index].view): clouds[index].view.queue_free()
 	clouds.remove_at(index)
+	clouds_changed = true
 	refresh_cloud_surface()
 
 func poison_cloud(index: int) -> void:
@@ -514,6 +525,7 @@ func poison_cloud(index: int) -> void:
 	if cloud.kind == "spores" and not cloud.poisoned:
 		cloud.poisoned = true
 		cloud.age = minf(cloud.age, CLOUD_LIFE * .4)
+		clouds_changed = true
 		refresh_cloud_surface()
 
 ## Fire sets spores off: everything inside is struck, and the blast lights
@@ -533,8 +545,9 @@ func explode_cloud(index: int) -> void:
 		if first_person and is_instance_valid(enemy) and absf(enemy.global_position.y-cloud.at.y) > 1.8: continue
 		if is_instance_valid(enemy) and enemy.alive and enemy.targetable and Vector2(enemy.global_position.x - cloud.at.x, enemy.global_position.z - cloud.at.z).length() < cloud.radius + enemy.radius:
 			enemy.take_hit(CLOUD_BLAST, (enemy.global_position - cloud.at).normalized() * 2.0, false, false, "blast")
-	if (not first_person or absf(game.player.global_position.y-cloud.at.y)<=1.8) and Vector2(game.player.global_position.x - cloud.at.x, game.player.global_position.z - cloud.at.z).length() < cloud.radius:
-		game.player.hurt(1.0, cloud.at)
+	for body in NetHooks.bodies(game):
+		if (not first_person or absf(body.global_position.y-cloud.at.y)<=1.8) and Vector2(body.global_position.x - cloud.at.x, body.global_position.z - cloud.at.z).length() < cloud.radius:
+			body.hurt(1.0, cloud.at)
 	ignite(cloud.at, cloud.radius * .8)
 
 func update_sim(delta: float) -> void:
@@ -581,8 +594,9 @@ func update_sim(delta: float) -> void:
 			if under == "fire": enemy.apply_status({"burn": 1.2})
 			# Water puts a burning foe out.
 			elif under == "water": enemy.burn_time = 0.0
-		if (not first_person or touches_floor(game.player.global_position)) and kind_at(game.player.global_position) == "fire":
-			game.player.hurt(1.0, game.player.global_position)
+		for body in NetHooks.bodies(game):
+			if (not first_person or touches_floor(body.global_position)) and kind_at(body.global_position) == "fire":
+				body.hurt(1.0, body.global_position)
 	for kind in dirty.keys():
 		if views.has(kind): rebuild(kind)
 	dirty.clear()
@@ -603,3 +617,49 @@ func rebuild(kind: String) -> void:
 	entry.texture.update(image)
 	entry.view.visible = count > 0
 	entry.count = count
+
+## Co-op host: what changed on the floor since last asked, for the guests.
+func take_changes() -> Dictionary:
+	var result := {}
+	var tiles_out: Array = []
+	for layer in 2:
+		var field: ResidueField = self if layer == 0 else upper_field
+		if not is_instance_valid(field): continue
+		for tile in field.net_tiles:
+			tiles_out.append([tile, field.net_tiles[tile][0], field.net_tiles[tile][1], layer])
+		field.net_tiles.clear()
+	if not tiles_out.is_empty(): result["t"] = tiles_out
+	if clouds_changed or (is_instance_valid(upper_field) and upper_field.clouds_changed):
+		var list: Array = []
+		for layer in 2:
+			var field: ResidueField = self if layer == 0 else upper_field
+			if not is_instance_valid(field): continue
+			field.clouds_changed = false
+			for cloud in field.clouds: list.append([cloud.at, cloud.radius, cloud.kind, cloud.poisoned, cloud.age, cloud.life, layer])
+		result["c"] = list
+	return result
+
+## Co-op guest: the host's floor, tile by tile; this field never runs its own.
+func apply_net(data: Dictionary) -> void:
+	for entry in data.get("t", []):
+		if not entry is Array or entry.size() < 4 or not entry[0] is Vector2i: continue
+		var field: ResidueField = self if int(entry[3]) == 0 else upper()
+		field.set_tile(entry[0], str(entry[1]), bool(entry[2]))
+	if data.get("c") is Array:
+		for field in [self, upper_field]:
+			if not is_instance_valid(field): continue
+			while not field.clouds.is_empty(): field.remove_cloud(field.clouds.size() - 1)
+		for entry in data.c:
+			if not entry is Array or entry.size() < 7 or not entry[0] is Vector3: continue
+			var field: ResidueField = self if int(entry[6]) == 0 else upper()
+			field.add_cloud(entry[0], float(entry[1]), str(entry[2]))
+			var cloud: Dictionary = field.clouds.back()
+			cloud.poisoned = bool(entry[3])
+			cloud.age = float(entry[4])
+			cloud.life = float(entry[5])
+	for field in [self, upper_field]:
+		if not is_instance_valid(field): continue
+		for kind in field.dirty.keys():
+			if field.views.has(kind): field.rebuild(kind)
+		field.dirty.clear()
+		field.refresh_cloud_surface()

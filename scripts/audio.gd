@@ -54,6 +54,7 @@ func refresh() -> void:
 		music_player.stop()
 
 func play_sound(id: String, pitch := 1.0) -> void:
+	NetHooks.sound(id, pitch)
 	if DisplayServer.get_name() == "headless": return
 	if not Settings.values.sound or not sounds.has(id):
 		return
@@ -154,6 +155,7 @@ func make_ambient() -> AudioStreamWAV:
 	return stream
 
 func play_at(id: String, parent: Node3D, at: Vector3, pitch := 1.0) -> void:
+	NetHooks.sound(id, pitch, at)
 	if DisplayServer.get_name() == "headless" or not Settings.values.sound or not sounds.has(id): return
 	if spatial_players.is_empty():
 		for i in 8:

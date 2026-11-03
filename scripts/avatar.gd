@@ -18,6 +18,7 @@ var walk_time = 0.0
 var recoil = 0.0
 var orbit_meshes: Array[MeshInstance3D] = []
 var shelter: MeshInstance3D
+var floor_ring: MeshInstance3D
 const ROOM_MARGIN := .3
 const RUN_SPEED := 5.2
 # A dash covers about 2.9 units, then leaves at running speed: no long glide.
@@ -64,7 +65,7 @@ func setup(owner_game: Node3D) -> void:
 	Geo.box(visual, Vector3(.12, 1.0, -.36), Vector3(.055, .075, .035), Color("32383a"))
 	Geo.box(visual, Vector3(-.16, .12, 0), Vector3(.21, .22, .3), Color("645b4e"))
 	Geo.box(visual, Vector3(.16, .12, 0), Vector3(.21, .22, .3), Color("645b4e"))
-	Geo.ring(self, Vector3(0, .045, 0), .47, Color("e9ca8e"), .025)
+	floor_ring = Geo.ring(self, Vector3(0, .045, 0), .47, Color("e9ca8e"), .025)
 	glow_halo = Geo.halo(self, Vector3(0, .025, 0), 4.2, Color(1, .64, .25, .16))
 	glow_halo.visible = not game.first_person
 	glow_light = Geo.light(self, Vector3(0, 1.5, 0), Color("ffcb88"), .65, 3.8)
@@ -370,7 +371,10 @@ func dash() -> void:
 			launch_shot(global_position + Vector3(0, .5, 0), direction, 5.0 * Run.stats.dash_nova, 10.0, effects, Color("b6e2e5"), true)
 
 func hurt(amount: float, source: Vector3) -> void:
-	if invulnerability > 0 or not Run.active or Run.has_flag("invulnerable"):
+	# A foe's blow on the co-op host can catch a teammate beside this player.
+	var net = NetHooks.party(game)
+	if net: net.splash(self, amount, source)
+	if invulnerability > 0 or not Run.active or Run.has_flag("invulnerable") or NetHooks.downed(game):
 		return
 	# Relic guard refreshes each room and is spent first; wards persist.
 	if shield > 0 or Run.wards > 0:
@@ -400,4 +404,4 @@ func hurt(amount: float, source: Vector3) -> void:
 	velocity += (global_position - source).normalized() * 5
 	Run.changed.emit()
 	if Run.hp <= 0:
-		game.end_run(false)
+		game.player_fell()

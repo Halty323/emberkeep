@@ -18,6 +18,11 @@ var staged_id := ""
 # An armed doorway stays armed until the player is this far from it, so
 # pacing along the arming edge never rebuilds the corridor and its neighbour.
 const DISARM_DISTANCE := 5.5
+# In co-op the passage's turn is a gate: nobody passes it before the party
+# is all in the passage, and nobody walks back past it once moved on.
+const GATE := .35
+# Co-op: this player stands at the gate, waiting for the others.
+var coop_held := false
 
 func setup(owner_game) -> void: game=owner_game
 
@@ -54,6 +59,7 @@ func reset() -> void:
 	active=null
 	portal_id=""
 	left_room=false
+	coop_held=false
 	if game and is_instance_valid(game.room):
 		game.room.entry_portal=""
 		game.room.set_open(game.room.open)
@@ -139,7 +145,17 @@ func hide_preview() -> void:
 		break
 
 func contains_point(point: Vector2, margin := .0) -> bool:
-	return is_instance_valid(active) and active.contains_point(point-Vector2(active.position.x,active.position.z),margin)
+	if not is_instance_valid(active): return false
+	var local := point-Vector2(active.position.x,active.position.z)
+	if not active.contains_point(local,margin): return false
+	if gated():
+		var along := CorridorPlan.project(active.path,local)
+		if Run.current_room==source_room and along>handoff+GATE: return false
+		if Run.current_room==destination_room and along<handoff-GATE: return false
+	return true
+
+func gated() -> bool:
+	return game!=null and game.get("party")!=null and game.party.climbing()
 
 func walking() -> bool:
 	return is_instance_valid(active) and is_instance_valid(game.player) and not game.room.geometry.contains(Vector2(game.player.position.x,game.player.position.z),.1)
@@ -150,13 +166,16 @@ func advance() -> void:
 	var local_point:=point-Vector2(active.position.x,active.position.z)
 	var along:=CorridorPlan.project(active.path,local_point)
 	if walking(): left_room=true
-	if Run.current_room==source_room and along>handoff+.25:
+	if gated():
+		# The party moves on together (Party.gather), never one player alone.
+		coop_held=Run.current_room==source_room and along>=handoff-.05
+	elif Run.current_room==source_room and along>handoff+.25:
 		rebase(destination_room,destination_offset)
 	elif Run.current_room==destination_room and along<handoff-.25:
 		rebase(source_room,-destination_offset)
 	if left_room and game.room.geometry.contains(Vector2(game.player.position.x,game.player.position.z),1.05):
 		reset()
-		game.activate_corridor_encounter()
+		if not gated(): game.activate_corridor_encounter()
 
 func rebase(destination: String, offset: Vector2) -> void:
 	FrameWatch.mark("room handoff")

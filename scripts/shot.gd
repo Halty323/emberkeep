@@ -43,6 +43,12 @@ var vanish = -1.0
 var base_speed = 15.0
 var trail_timer = 0.0
 var forked = false
+# Co-op: a guest draws spells the host really casts. A drawn spell flies and
+# stops where it would, but strikes nothing; the host's copy decides.
+var cosmetic := false
+var net_id := 0
+# Whose spell this is (0 alone): their hit marker, heal and returning book.
+var owner_peer := 0
 
 func setup(owner_game: Node3D, at: Vector3, travel: Vector3, power: float, velocity_value: float, effects: Dictionary, color: Color, is_friendly: bool) -> void:
 	game = owner_game
@@ -147,6 +153,9 @@ func _process(delta: float) -> void:
 func update_sim(delta: float) -> void:
 	if not alive:
 		return
+	if cosmetic:
+		update_cosmetic(delta)
+		return
 	age += delta
 	if age >= lifetime:
 		finish()
@@ -156,7 +165,7 @@ func update_sim(delta: float) -> void:
 			if not returning:
 				returning = true
 				hit_ids.clear()
-			var back: Vector3 = game.player.global_position + Vector3.UP * .65 - global_position
+			var back: Vector3 = caster().global_position + Vector3.UP * .65 - global_position
 			if back.length() < .5:
 				remove()
 				return
@@ -168,7 +177,8 @@ func update_sim(delta: float) -> void:
 				direction = direction.lerp(desired.normalized(), minf(.85, delta * stats.homing)).normalized()
 	elif stats.get("homing", 0) > 0:
 		# A mirrored volley seeks the player, more gently.
-		var desired: Vector3 = game.player.global_position + Vector3.UP * .65 - global_position
+		var quarry: Node3D = game.nearest_body(global_position) if game.has_method("nearest_body") else game.player
+		var desired: Vector3 = quarry.global_position + Vector3.UP * .65 - global_position
 		if not game.first_person: desired.y = 0
 		direction = direction.lerp(desired.normalized(), minf(.5, delta * float(stats.homing) * .5)).normalized()
 	if friendly: shape_flight(delta)
@@ -208,14 +218,16 @@ func update_sim(delta: float) -> void:
 			var copy = game.spawn_shot(global_position, direction.rotated(Vector3.UP, side * .32), damage * (.6 if friendly else 1.0), speed, stats, tint, friendly)
 			if copy: copy.hit_ids = hit_ids.duplicate()
 	if not friendly and game.first_person:
-		var low: Vector3 = game.player.global_position + Vector3.UP * .32
-		var high: Vector3 = game.player.global_position + Vector3.UP * 1.38
-		var pair = Geometry3D.get_closest_points_between_segments(global_position, target_position, low, high)
 		var wall_distance = global_position.distance_to(hit.position) if not hit.is_empty() else INF
-		if pair[0].distance_to(pair[1]) < .32 + radius and global_position.distance_to(pair[0]) < wall_distance:
-			game.player.hurt(damage, pair[0])
-			remove()
-			return
+		# Any teammate standing in its way, not only the one it was aimed at.
+		for body in NetHooks.bodies(game):
+			var low: Vector3 = body.global_position + Vector3.UP * .32
+			var high: Vector3 = body.global_position + Vector3.UP * 1.38
+			var pair = Geometry3D.get_closest_points_between_segments(global_position, target_position, low, high)
+			if pair[0].distance_to(pair[1]) < .32 + radius and global_position.distance_to(pair[0]) < wall_distance:
+				body.hurt(damage, pair[0])
+				remove()
+				return
 	if friendly and game.first_person:
 		# Resolve swept body hits in distance order before a later wall hit.
 		var start = global_position
@@ -356,10 +368,14 @@ func hit_enemy(enemy: DungeonEnemy) -> void:
 		power *= 1.0 + float(stats.get("execute", 0))
 	enemy.apply_status(stats)
 	if game.residue: game.residue.react(enemy.global_position, .7, stats)
-	if game.first_person: game.fps.hit_time = .13
+	var own: bool = owner_peer == 0 or NetHooks.party(game) == null or game.party.spell_owner_local(self)
+	if game.first_person:
+		if own: game.fps.hit_time = .13
+		else: game.party.tell(owner_peer, "hitmark")
 	enemy.take_hit(power, direction * float(stats.get("knockback", 1)) * 2.0, critical, false, "shot")
 	if Run.rng.randf() < minf(.25, float(stats.get("lifesteal", 0))):
-		Run.heal(.5)
+		if own: Run.heal(.5)
+		else: game.party.tell(owner_peer, "heal", .5)
 	if stats.get("chain", 0) > 0:
 		var previous: Vector3 = enemy.global_position + Vector3.UP * .65
 		var chained = hit_ids.duplicate()
@@ -396,3 +412,79 @@ func remove() -> void:
 	if alive:
 		alive = false
 		vanish = 0.0
+		if net_id != 0: game.party.shot_gone(self)
+
+## Who cast it: this player, or (on the co-op host) a teammate's figure.
+func caster() -> Node3D:
+	return game.party.body_of(owner_peer) if owner_peer != 0 else game.player
+
+## A drawn spell (co-op guest): the same flight, stopping at walls and at the
+## foes it meets, but striking nothing and leaving nothing behind.
+func update_cosmetic(delta: float) -> void:
+	age += delta
+	if age >= lifetime:
+		remove()
+		return
+	if friendly:
+		if stats.get("returning", 0) > 0 and age > lifetime * .48:
+			if not returning:
+				returning = true
+				hit_ids.clear()
+			var back: Vector3 = caster().global_position + Vector3.UP * .65 - global_position
+			if back.length() < .5:
+				remove()
+				return
+			direction = direction.lerp(back.normalized(), minf(1, delta * 8)).normalized()
+		elif stats.get("homing", 0) > 0:
+			var target = game.nearest_enemy(global_position, 7.0, hit_ids)
+			if target:
+				var desired: Vector3 = target.global_position + Vector3.UP * .65 - global_position
+				direction = direction.lerp(desired.normalized(), minf(.85, delta * stats.homing)).normalized()
+		var flown = age / lifetime
+		if float(stats.get("accel", 0)) > 0: speed = minf(base_speed * 2.6, speed * (1.0 + 1.6 * delta))
+		if float(stats.get("linger", 0)) > 0: speed = base_speed * clampf(1.0 - (flown - .2) / .2, 0.0, 1.0)
+		if float(stats.get("grow", 0)) > 0:
+			scale = Vector3.ONE * (1.0 + flown)
+			radius = (.12 * float(stats.get("size", 1))) * (1.0 + flown)
+	elif stats.get("homing", 0) > 0:
+		var desired: Vector3 = game.player.global_position + Vector3.UP * .65 - global_position
+		direction = direction.lerp(desired.normalized(), minf(.5, delta * float(stats.homing) * .5)).normalized()
+	var movement = direction * speed * delta + game.wind * delta
+	if stats.get("wave", 0) > 0:
+		movement += direction.cross(Vector3.UP) * cos(age * 15) * delta * 3.0
+	var target_position = global_position + movement
+	var hit = get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(global_position, target_position, 1 | PropVisuals.FURNITURE_LAYER))
+	if friendly:
+		var wall_distance = global_position.distance_to(hit.position) if not hit.is_empty() else INF
+		for enemy in game.enemies:
+			if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable or hit_ids.has(enemy.entity_id): continue
+			var low: Vector3 = enemy.global_position + Vector3.UP * enemy.radius
+			var high: Vector3 = enemy.global_position + Vector3.UP * (enemy.hit_height - enemy.radius)
+			var pair = Geometry3D.get_closest_points_between_segments(global_position, target_position, low, high)
+			if pair[0].distance_to(pair[1]) < enemy.radius + radius and global_position.distance_to(pair[0]) < wall_distance:
+				hit_ids[enemy.entity_id] = true
+				if pierces > 0: pierces -= 1
+				else:
+					global_position = pair[0]
+					remove()
+					return
+	elif is_instance_valid(game.player):
+		# A foe's spell reaching this player stops here; the host decides the blow.
+		var low: Vector3 = game.player.global_position + Vector3.UP * .32
+		var high: Vector3 = game.player.global_position + Vector3.UP * 1.38
+		var pair = Geometry3D.get_closest_points_between_segments(global_position, target_position, low, high)
+		if pair[0].distance_to(pair[1]) < .32 + radius:
+			remove()
+			return
+	var boundary = not game.walkable_at(Vector2(target_position.x, target_position.z), .1)
+	if not hit.is_empty() or boundary:
+		if bounces > 0:
+			bounces -= 1
+			var normal: Vector3 = hit.normal if not hit.is_empty() else -direction
+			direction = direction.bounce(normal.normalized()).normalized()
+			if not hit.is_empty(): global_position = hit.position + normal * .12
+		else:
+			if not hit.is_empty(): global_position = hit.position
+			remove()
+	else:
+		global_position = target_position

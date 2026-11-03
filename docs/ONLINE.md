@@ -1,30 +1,25 @@
-# Planned online features
+# Online features
 
-The current game is **single-player and offline**. There is no networking transport, matchmaking, authentication, remote storage or score submission. The daily seed and lifetime counters are local. The Android preset does not request internet access.
+Local-network co-op is implemented: two to four players on the same network, each on their own device. See [co-op](COOP.md). There is no internet play, matchmaking, authentication, remote storage or score submission. The daily seed and lifetime counters are local. The Android preset requests network permissions for local co-op only.
 
-## Foundations already present
+## What co-op is built on
 
-- Floor graphs use a seeded generator separated from cosmetic randomness. Save data preserves the gameplay RNG state as a string to avoid JSON integer precision loss.
-- Entities have runtime IDs; the player also has an owner peer ID.
-- `Run.snapshot()` produces versioned run data for local saves.
-- `Session` exposes command and snapshot signals and an authority check. The main scene publishes a small player/room snapshot at 10 Hz while playing. These signals are local only.
-- Discrete player actions — use item, place bomb, interact, inspect painting, collect pickup and enter a doorway — already travel as commands through `Session.submit` to one validated handler (`scripts/interactions/game_actions.gd`). Each command carries an event id and the issuing peer; the handler checks ownership, range and resources, applies once, persists the result with its debit, and ignores duplicate event ids. A future host can run the same handlers for remote players. Movement and firing are still read locally.
-- Rewards are credited once per stable source id (`<room>:e<n>`, splitter children derived from their parent), stored with the room, so restarting an encounter never pays twice. Client-side collection counts are not proof for any future leaderboard.
+- `Session` (`scripts/session.gd`) is the transport: ENet on the local network, one host and up to three guests. Its handshake checks the protocol version and the content revision. `LanDiscovery` finds parties by broadcast query and announcement.
+- Each device runs its own player and keeps its own run state (`Run`): health, wallet, relics, spellbook, pickups and rewards. Discrete actions still travel as commands through `Session.submit` to one validated handler (`scripts/interactions/game_actions.gd`), which runs on the player's own device.
+- The host runs the shared world: foes, spells in flight, residue, hazards, bombs, props, doors and lanterns (`scripts/coop/party.gd`). Guests draw it and send back what their player did to it. Foes are credited once per stable source id (`<room>:e<n>`), on the host. Every player then receives their own drops for each credited kill.
+- Floors are built by the host from the seed and sent to the guests, so the party walks the same rooms even if generation ever differed between devices.
+- Co-op climbs are not saved. A solo save is never overwritten or deleted by a co-op climb.
 
-These are extension points, not an implementation of authoritative multiplayer or deterministic lockstep. Simulation uses physics and frame timing, so sharing a seed alone cannot synchronize two clients.
+## What remains
 
-## Suggested co-op implementation order
-
-1. Define two-player rules: shared or individual loot, health/revival, room transitions, camera framing and pause behavior.
-2. Route player input through validated per-peer commands. Run all spawning, damage, loot and room progression on a single host authority.
-3. Add an ENet transport and explicit replicated entity schemas, reliable spawn/despawn events and sequenced state snapshots. Add client interpolation and local-player prediction/reconciliation.
-4. Build LAN join/host and disconnect/rejoin behavior before internet matchmaking. Include content and protocol versions in the handshake.
-5. Add an authenticated relay or supported hosting service if internet connectivity requires it. Test latency, packet loss, reconnects and mobile app suspension.
+1. Rejoining a climb in progress after a dropped connection, and handing the host's world to a guest if the host leaves.
+2. An authenticated relay or supported hosting service for play beyond the local network. Test latency, packet loss, reconnects and mobile app suspension over real internet links.
+3. Saving a co-op climb. That needs the party roster, the shared world and every player's own state, which the solo save format does not hold.
 
 ## Leaderboards and cloud saves
 
 Use a backend rather than trusting client-written score documents. Issue daily challenge IDs and seeds server-side; attach game/content versions and validate submissions. Unverified local runs should not enter ranked boards.
 
-Cloud saves need accounts, schema migration and an explicit conflict policy. Sync profile progress separately from active run checkpoints. For concurrent devices, preserve the losing branch or present a choice rather than silently overwriting an active run. A co-op session checkpoint will need the party roster and shared state, which the present solo save format does not contain.
+Cloud saves need accounts, schema migration and an explicit conflict policy. Sync profile progress separately from active run checkpoints. For concurrent devices, preserve the losing branch or present a choice rather than silently overwriting an active run.
 
-No backend vendor or account system has been chosen. Enable Android internet permission only when the online implementation is introduced.
+No backend vendor or account system has been chosen.

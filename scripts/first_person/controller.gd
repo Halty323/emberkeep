@@ -98,7 +98,7 @@ func update_view(delta: float, snap := false) -> void:
 	hit_time = maxf(0, hit_time - delta)
 	damage_time = maxf(0, damage_time - delta)
 	var active: bool = not game.in_menu and is_instance_valid(game.player)
-	weapon.visible = active and game.ui.mode == "play"
+	weapon.visible = active and game.ui.mode == "play" and not NetHooks.downed(game)
 	if active and view_weapon_id != Run.weapon_id:
 		view_weapon_id = Run.weapon_id
 		SpellbookView.tint(weapon_shape, Color(Run.weapon().color))
@@ -136,11 +136,14 @@ func update_view(delta: float, snap := false) -> void:
 	if playing:
 		look(game.ui.look_delta * float(Settings.values.touch_sensitivity))
 		game.ui.look_delta = Vector2.ZERO
-	game.camera.global_position = view_position(player, snap) + Vector3(0, EYE + bob, 0)
+	# A fallen player sees the room from the floor.
+	game.camera.global_position = view_position(player, snap) + Vector3(0, (EYE * .3 if NetHooks.downed(game) else EYE) + bob, 0)
 	game.camera.rotation = Vector3(pitch, yaw, 0)
 	player.visual.visible = false
 	player.gun.visible = false
 	player.shelter.visible = false
+	# Lying fallen, the eye is too low for the ring at the feet.
+	if player.floor_ring: player.floor_ring.visible = not NetHooks.downed(game)
 	var tucked := .25 if near_wall else 0.0
 	# A cast thrusts the open book forward and lifts it a little.
 	var wanted = Vector3(0, player.recoil * .05 - tucked, -player.recoil * .14 + tucked)

@@ -73,9 +73,18 @@ func place_bomb() -> Dictionary:
 	if Run.pending_bombs.filter(func(bomb): return bomb.room == Run.current_room).size() >= MAX_PENDING_BOMBS:
 		return result(false, "Too many lit bombs")
 	var at: Vector3 = game.player.position
+	var net = NetHooks.party(game)
+	if net and net.client():
+		# A guest's bomb is the host's to light: it breaks the shared world.
+		Run.bombs -= 1
+		Run.changed.emit()
+		net.place_bomb(at, game.room.floor_height(at))
+		Audio.play_sound("dash", .7)
+		return result(true)
 	var record = {"id": Run.next_instance("b"), "room": Run.current_room, "position": [snappedf(at.x, .001), snappedf(at.z, .001)], "fuse": BOMB_FUSE, "height": game.room.floor_height(at) if game.first_person else 0.0}
 	Run.bombs -= 1
 	Run.pending_bombs.append(record)
+	if net: net.share("bomb", record)
 	# The debit and the lit fuse are saved together: a reload neither refunds
 	# the bomb nor forgets that it is about to go off.
 	Run.save_run()
@@ -83,6 +92,16 @@ func place_bomb() -> Dictionary:
 	game.spawn_bomb_view(record)
 	Audio.play_sound("dash", .7)
 	return result(true)
+
+## Co-op host: a guest's bomb, lit where they stood (their own count is
+## already spent on their device).
+func place_guest_bomb(peer_id: int, at: Vector3, height: float) -> void:
+	if Run.pending_bombs.filter(func(bomb): return bomb.room == Run.current_room).size() >= MAX_PENDING_BOMBS * 2: return
+	if not is_instance_valid(game.room) or not game.room.geometry.contains(Vector2(at.x, at.z), .1): return
+	var record = {"id": "%s:%d" % [Run.next_instance("b"), peer_id], "room": Run.current_room, "position": [snappedf(at.x, .001), snappedf(at.z, .001)], "fuse": BOMB_FUSE, "height": height}
+	Run.pending_bombs.append(record)
+	game.spawn_bomb_view(record)
+	game.party.share("bomb", record)
 
 ## Resolves a bomb whose fuse ran out, whether or not its room is on screen.
 ## Walls, props and drops change in saved state; effects play only on screen.
@@ -97,8 +116,10 @@ func detonate(bomb: Dictionary) -> void:
 		for enemy in game.enemies.duplicate():
 			if is_instance_valid(enemy) and enemy.alive and enemy.targetable and (enemy.position.distance_to(at) if game.first_person else Vector2(enemy.position.x, enemy.position.z).distance_to(Vector2(at.x, at.z))) < BOMB_RADIUS + enemy.radius:
 				enemy.take_hit(BOMB_DAMAGE, (enemy.position - at).normalized() * 3.0, false, false, "blast")
-		if is_instance_valid(game.player) and (game.player.position.distance_to(at) if game.first_person else Vector2(game.player.position.x, game.player.position.z).distance_to(Vector2(at.x, at.z))) < BOMB_RADIUS:
-			game.player.hurt(BOMB_SELF_DAMAGE, at)
+		for body in NetHooks.bodies(game):
+			if (body.position.distance_to(at) if game.first_person else Vector2(body.position.x, body.position.z).distance_to(Vector2(at.x, at.z))) < BOMB_RADIUS:
+				body.hurt(BOMB_SELF_DAMAGE, at)
+	if NetHooks.party(game): game.party.share("bomb_gone", bomb.id)
 	game.breach(bomb.room, at, BOMB_RADIUS, live)
 	if Run.active:
 		Run.save_run()
