@@ -35,7 +35,9 @@ func update_sim(delta: float) -> void:
 		goal = target.global_position + Vector3(0, .6, 0)
 		if global_position.distance_to(goal) < target.radius + .3 and bite_cooldown <= 0:
 			bite_cooldown = .45
-			target.take_hit(damage * Run.stats.damage, Vector3.ZERO, false)
+			# A moth's bite carries the spellbook's element.
+			target.apply_status({"element": Synergies.weapon_element(Run.weapon()), "hit": damage * Run.stats.damage})
+			if is_instance_valid(target) and target.alive: target.take_hit(damage * Run.stats.damage, Vector3.ZERO, false)
 	global_position = global_position.move_toward(goal, delta * 7.5)
 	for i in wings.size():
 		wings[i].rotation.z = sin(age * 30.0) * .7 * (-1 if i == 0 else 1)

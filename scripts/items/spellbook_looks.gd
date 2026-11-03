@@ -114,6 +114,28 @@ static func dress(rig: Node3D, inventory: Array) -> void:
 	if drew:
 		commit(marks, lit, lit_mat(), "LitMarks")
 		commit(marks, glow, glow_mat(), "GlowingMarks")
+	pair_sigils(marks, inventory)
+
+## Each pairing the relics complete turns as a small sigil of its own colour
+## above the book's head.
+static func pair_sigils(marks: Node3D, inventory: Array) -> void:
+	var pairs: Array = Synergies.pairings_for(inventory)
+	for i in mini(pairs.size(), 6):
+		var torus := TorusMesh.new()
+		torus.inner_radius = .011
+		torus.outer_radius = .016
+		torus.rings = 12
+		torus.ring_segments = 4
+		var node := MeshInstance3D.new()
+		node.name = "Pairing_" + str(pairs[i])
+		node.mesh = torus
+		node.material_override = Geo.material(Synergies.PAIRINGS[pairs[i]][3], .8)
+		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var rest := Transform3D(SpellbookView.frame.basis, SpellbookView.on_book(Vector3(-.1 + i * .04, .05, -.135)))
+		node.transform = rest
+		node.set_meta("rest", rest)
+		node.set_meta("spin", 1.4 + i * .3)
+		marks.add_child(node)
 
 static func commit(marks: Node3D, tool: SurfaceTool, material: Material, label: String) -> void:
 	var mesh := tool.commit()

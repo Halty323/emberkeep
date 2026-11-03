@@ -91,6 +91,23 @@ var flash = 0.0
 # Co-op guest: the host's foe, drawn here. It never thinks for itself; every
 # blow, status and shove it takes is sent to the host, which owns the foe.
 var puppet := false
+# Elements this foe carries (element -> seconds left) and when each landed.
+# A different element landing on it sets off a reaction (Synergies).
+var marks: Dictionary = {}
+var marked_at: Dictionary = {}
+var reaction_wait := 0.0
+var frozen := 0.0
+var brittle := 0.0
+var flared := 0.0
+var soak_bonus := 0.0
+var frost_hits: Array = []
+# Pairings and resonance riding on the statuses players put on it.
+var keg := false
+var jelly_owner := -1
+var fire_leaps := 0
+var mark_view: Node3D
+var ice_shell: MeshInstance3D
+static var pip_mesh: SphereMesh
 
 func setup(owner_game: Node3D, type: String, id: int) -> void:
 	game = owner_game
@@ -104,6 +121,8 @@ func setup(owner_game: Node3D, type: String, id: int) -> void:
 	# A swarming floor sends more foes, each a little frailer.
 	if Run.has_twist("swarming") and not boss: max_hp *= .8
 	if ExpeditionBalance.active_new_run(): max_hp *= ExpeditionBalance.foe_health(Run.floor_number,boss)
+	# Combinations make players stronger; the upper floors answer.
+	max_hp *= Synergies.TOUGHNESS[clampi(Run.floor_number, 0, Synergies.TOUGHNESS.size() - 1)]
 	hp = max_hp
 	restless = Run.has_twist("restless")
 	speed = spec[1] * (1.0 + (Run.floor_number - 1) * .08) * (1.15 if restless else 1.0)
@@ -274,6 +293,10 @@ func update_sim(delta: float) -> void:
 	burn_time = maxf(0, burn_time - delta)
 	chill_time = maxf(0, chill_time - delta)
 	poison_time = maxf(0, poison_time - delta)
+	reaction_wait = maxf(0, reaction_wait - delta)
+	brittle = maxf(0, brittle - delta)
+	flared = maxf(0, flared - delta)
+	fade_marks(delta)
 	dot_tick -= delta
 	if dot_tick <= 0:
 		dot_tick = .4
@@ -282,6 +305,19 @@ func update_sim(delta: float) -> void:
 			take_hit(damage, Vector3.ZERO, false, true)
 			if not alive:
 				return
+		# What it stands in clings to it: water soaks, wax coats, ice chills.
+		if game.residue and (not game.first_person or game.residue.touches_floor(global_position)):
+			match game.residue.kind_at(global_position):
+				"water": mark("tide", 1.2)
+				"wax": mark("wax", 1.2)
+				"ice": mark("frost", 1.2)
+	if frozen > 0:
+		# Frozen solid: it neither moves nor strikes until it thaws.
+		frozen -= delta
+		velocity = Vector3.ZERO
+		knock_velocity = Vector3.ZERO
+		if frozen <= 0: thaw()
+		return
 	if not thrown.is_empty():
 		fly(delta)
 		return
@@ -485,7 +521,12 @@ func apply_status(stats: Dictionary) -> void:
 		chill_power = maxf(chill_power, stats.chill)
 	if stats.get("poison", 0) > 0:
 		poison_time = 4.0
-		poison_power = maxf(poison_power, stats.poison * 2.1)
+		var dose: float = stats.poison * 2.1
+		# Virulence: a venom book's resonance lets poison build.
+		if str(stats.get("element", "")) == "venom" and float(stats.get("resonance", 0)) > 0:
+			poison_power = minf(poison_power + dose * .5, dose * (1.0 + float(stats.resonance)))
+		poison_power = maxf(poison_power, dose)
+	touch(stats)
 
 ## A friendly shot reaching this foe. Returns true when the foe dealt with it
 ## (absorbed or turned it); otherwise the shot hits as usual.
@@ -523,6 +564,11 @@ func receive_hit(damage: float, impulse: Vector3, critical: bool, dot: bool, cau
 			return
 	damage *= damage_scale(cause)
 	if exposed and not dot: damage *= EXPOSED_DAMAGE
+	# Reactions that leave a foe open: frozen, brittle, laid bare, soaked.
+	if frozen > 0: damage *= 1.5
+	if brittle > 0: damage *= 1.4
+	if flared > 0: damage *= 1.3
+	if soak_bonus > 0 and marks.has("tide"): damage *= 1.0 + soak_bonus
 	if damage <= 0: return
 	if elite == "twinned" and is_instance_valid(twin) and twin.alive:
 		twin.hp -= damage
@@ -568,6 +614,7 @@ func die() -> void:
 	if elite == "twinned" and is_instance_valid(twin) and twin.alive:
 		twin.die()
 	if is_instance_valid(thread): thread.queue_free()
+	last_rites()
 	on_death()
 	game.on_enemy_killed(self)
 	queue_free()
@@ -717,3 +764,223 @@ func seek_sibling(delta: float, move_direction: Vector3) -> Vector3:
 			wisp.queue_free()
 		return Vector3.ZERO
 	return to.normalized() * 1.6
+
+# ---------------------------------------------------------------- combinations
+
+## A status, spell or blast lands: it leaves its elements on the foe, or, if
+## the foe already carries a different one, sets off their reaction.
+func touch(stats: Dictionary) -> void:
+	if not alive: return
+	var element := str(stats.get("element", ""))
+	var resonance := float(stats.get("resonance", 0))
+	if float(stats.get("keg", 0)) > 0 and float(stats.get("burn", 0)) > 0: keg = true
+	if float(stats.get("jelly", 0)) > 0 and float(stats.get("poison", 0)) > 0: jelly_owner = int(stats.get("owner", 0))
+	if float(stats.get("burn", 0)) > 0 and element == "ember" and resonance > 0: fire_leaps = maxi(fire_leaps, int(resonance))
+	if float(stats.get("freeze", 0)) > 0: freeze(1.6)
+	if resonance > 0:
+		match element:
+			"radiance": flared = maxf(flared, 1.5 + resonance)
+			"wax": slow(1.5, minf(.5, .15 * resonance))
+			"tide": soak_bonus = maxf(soak_bonus, .12 * resonance)
+			"frost":
+				# Deep Cold: frost hits in quick succession freeze solid.
+				frost_hits = frost_hits.filter(func(at): return age - at < 3.0)
+				frost_hits.append(age)
+				if frost_hits.size() >= maxi(2, 4 - int(resonance)):
+					frost_hits.clear()
+					freeze(1.4)
+	var incoming: Array = Synergies.elements_of(stats)
+	if incoming.is_empty(): return
+	if reaction_wait <= 0:
+		for arriving in incoming:
+			for carried in marks.keys():
+				# Elements that landed together in one blow never react.
+				if carried == arriving or age - float(marked_at.get(carried, -9.0)) < .05: continue
+				var reaction := Synergies.reaction(arriving, carried)
+				if reaction == "": continue
+				marks.erase(carried)
+				show_marks()
+				react(reaction, arriving, float(stats.get("hit", 0)), stats)
+				return
+	for arriving in incoming: mark(arriving, Synergies.MARK_TIME)
+
+func mark(element: String, seconds: float) -> void:
+	var fresh := not marks.has(element)
+	if fresh: marked_at[element] = age
+	marks[element] = maxf(float(marks.get(element, 0.0)), seconds)
+	if fresh: show_marks()
+
+func fade_marks(delta: float) -> void:
+	if marks.is_empty(): return
+	var changed := false
+	for element in marks.keys():
+		marks[element] = float(marks[element]) - delta
+		if marks[element] <= 0:
+			marks.erase(element)
+			changed = true
+	if changed: show_marks()
+
+## A small glint above the foe for each element it carries.
+func show_marks() -> void:
+	if not is_instance_valid(mark_view):
+		mark_view = Node3D.new()
+		mark_view.name = "ElementMarks"
+		add_child(mark_view)
+		mark_view.position.y = maxf(hit_height, radius * 2.5) + .25
+	for child in mark_view.get_children(): child.queue_free()
+	var shown: Array = Synergies.ELEMENT_ORDER.filter(func(element): return marks.has(element))
+	if pip_mesh == null:
+		pip_mesh = SphereMesh.new()
+		pip_mesh.radius = .07
+		pip_mesh.height = .14
+		pip_mesh.radial_segments = 8
+		pip_mesh.rings = 4
+	for i in shown.size():
+		var pip := MeshInstance3D.new()
+		pip.mesh = pip_mesh
+		pip.material_override = Geo.material(Synergies.element_color(shown[i]), .9)
+		pip.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		pip.position = Vector3((i - (shown.size() - 1) / 2.0) * .2, 0, 0)
+		mark_view.add_child(pip)
+
+## The elements carried, as bits for the co-op snapshot.
+func mark_bits() -> int:
+	var bits := 0
+	for i in Synergies.ELEMENT_ORDER.size():
+		if marks.has(Synergies.ELEMENT_ORDER[i]): bits |= 1 << i
+	return bits
+
+func show_mark_bits(bits: int) -> void:
+	var before := mark_bits()
+	if before == bits: return
+	marks.clear()
+	for i in Synergies.ELEMENT_ORDER.size():
+		if bits & (1 << i): marks[Synergies.ELEMENT_ORDER[i]] = Synergies.MARK_TIME
+	show_marks()
+
+## Two elements meet on this foe.
+func react(id: String, arriving: String, power: float, stats: Dictionary) -> void:
+	reaction_wait = Synergies.BOSS_REACTION_COOLDOWN if boss else Synergies.REACTION_COOLDOWN
+	var blow := maxf(power, 6.0 + 3.0 * Run.floor_number)
+	var center := global_position + Vector3.UP * minf(hit_height * .5, 1.2)
+	var color := Synergies.reaction_color(id)
+	game.reaction_word(center + Vector3.UP * .8, id)
+	Effects.ring_burst(game.scene_root, global_position + Vector3.UP * .05, color, 1.5)
+	Effects.burst(game.scene_root, center, color, 12, 1.4)
+	match id:
+		"shatter":
+			for foe in nearby(2.0): foe.take_hit(blow, (foe.global_position - global_position).normalized() * 2.0, false, false, "reaction")
+			take_hit(blow * 3.0, Vector3.ZERO, true, false, "reaction")
+		"steam":
+			if game.residue: game.residue.add_cloud(global_position, 1.8, "steam")
+			for foe in nearby(2.6, true):
+				foe.slow(2.0, .5)
+				foe.take_hit(blow * 1.5, Vector3.ZERO, false, false, "reaction")
+		"blight":
+			for foe in nearby(3.2, true):
+				foe.burn_time = maxf(foe.burn_time, 3.0)
+				foe.burn_power = maxf(foe.burn_power, 2.4)
+				foe.poison_time = maxf(foe.poison_time, 4.0)
+				foe.poison_power = maxf(foe.poison_power, 2.4)
+				foe.take_hit(blow * 1.2, Vector3.ZERO, false, false, "reaction")
+		"overload":
+			game.blast(center, 2.8, blow * 2.4, true, null)
+		"wildfire":
+			burn_time = 6.0
+			burn_power = maxf(burn_power * 2.0, 4.0)
+			if game.residue:
+				game.residue.add("wax", global_position, 1.3)
+				game.residue.ignite(global_position, 1.3)
+			take_hit(blow, Vector3.ZERO, false, false, "reaction")
+		"freeze": freeze(2.6)
+		"brittle":
+			brittle = 5.0
+			take_hit(blow * .5, Vector3.ZERO, false, false, "reaction")
+		"set": slow(2.2, .4 if boss else 1.0)
+		"surge":
+			var struck := 0
+			for foe in game.enemies.duplicate():
+				if not is_instance_valid(foe) or not foe.alive or not foe.targetable or foe == self: continue
+				var soaked: bool = foe.marks.has("tide") or (game.residue and game.residue.kind_at(foe.global_position) == "water")
+				if not soaked: continue
+				struck += 1
+				Effects.beam(game.scene_root, center, foe.global_position + Vector3.UP * .8, Color("c4c2ff"))
+				foe.take_hit(blow * 1.8, Vector3.ZERO, false, false, "reaction")
+			take_hit(blow * (1.8 + .2 * struck), Vector3.ZERO, false, false, "reaction")
+		"flare":
+			flared = 5.0
+			take_hit(blow * .6, Vector3.ZERO, false, false, "reaction")
+		"refract": shards(4, Synergies.element_stats(arriving), blow * .7, .55)
+		"prism":
+			var beams := Synergies.element_stats("radiance")
+			beams.homing = 4.0
+			shards(6, beams, blow * .8, TAU / 6.0)
+	if float(stats.get("northern", 0)) > 0 and id in ["surge", "overload"]: freeze(1.2)
+
+## Foes within reach of this one (and this one too, if asked).
+func nearby(reach: float, include_self := false) -> Array:
+	var result: Array = []
+	for foe in game.enemies.duplicate():
+		if not is_instance_valid(foe) or not foe.alive or not foe.targetable: continue
+		if foe == self and not include_self: continue
+		if foe.global_position.distance_to(global_position) <= reach + foe.radius: result.append(foe)
+	return result
+
+## Shards burst outward from this foe, carrying an element on.
+func shards(count: int, stats: Dictionary, power: float, step: float) -> void:
+	var start := randf() * TAU
+	for i in count:
+		var direction := Vector3.FORWARD.rotated(Vector3.UP, start + i * step)
+		var at: Vector3 = global_position + Vector3.UP * minf(hit_height * .5, 1.1) + direction * (radius + .25)
+		var shot = game.spawn_shot(at, direction, power, 13.0, stats, Synergies.element_color(str(stats.get("element", "glass"))), true)
+		if shot: shot.hit_ids[entity_id] = true
+
+## Frozen solid: no movement, no attacks, more damage taken.
+func freeze(seconds: float) -> void:
+	if not alive: return
+	frozen = maxf(frozen, seconds * (.3 if boss else 1.0))
+	windup = 0.0
+	charge_time = 0.0
+	if is_instance_valid(warning): warning.queue_free()
+	show_ice(true)
+
+func thaw() -> void:
+	frozen = 0.0
+	show_ice(false)
+
+func show_ice(on: bool) -> void:
+	if on and not is_instance_valid(ice_shell):
+		var mesh := SphereMesh.new()
+		mesh.radius = maxf(radius * 1.5, .5)
+		mesh.height = maxf(hit_height * 1.1, mesh.radius * 2.0)
+		ice_shell = MeshInstance3D.new()
+		ice_shell.mesh = mesh
+		var glass := StandardMaterial3D.new()
+		glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		glass.albedo_color = Color(.75, .93, 1.0, .38)
+		glass.emission_enabled = true
+		glass.emission = Color("9fdcf0")
+		glass.emission_energy_multiplier = .4
+		glass.roughness = .1
+		ice_shell.material_override = glass
+		ice_shell.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		ice_shell.position.y = mesh.height * .5
+		add_child(ice_shell)
+	elif not on and is_instance_valid(ice_shell):
+		ice_shell.queue_free()
+		ice_shell = null
+
+## What a foe's fall sets off: Powder Keg, Spreading Fire, Royal Jelly.
+func last_rites() -> void:
+	if inert: return
+	var center := global_position + Vector3.UP * .5
+	if keg and burn_time > 0:
+		game.reaction_word(center + Vector3.UP * .8, "p:powder_keg")
+		game.blast(center, 2.6, maxf(16.0, 8.0 + 4.0 * Run.floor_number), true, self)
+	if fire_leaps > 0 and burn_time > 0:
+		var near := nearby(4.5)
+		near.sort_custom(func(a, b): return a.global_position.distance_to(global_position) < b.global_position.distance_to(global_position))
+		for foe in near.slice(0, fire_leaps):
+			Effects.beam(game.scene_root, center, foe.global_position + Vector3.UP * .6, Color("ff9a5a"))
+			foe.apply_status({"burn": burn_power / 1.8, "element": "ember"})
+	if jelly_owner >= 0 and poison_time > 0: game.heal_player(jelly_owner, .5)

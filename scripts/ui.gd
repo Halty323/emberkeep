@@ -290,6 +290,7 @@ func journal_rect(slot: int) -> Rect2:
 
 func journal_page_count() -> int:
 	if journal_tab == "floors": return maxi(1, ceili(float(Content.families.floors.size()) / FLOOR_PAGE_SIZE))
+	if journal_tab == "combos": return maxi(1, ceili(float(Synergies.all_ids().size()) / JOURNAL_PAGE_SIZE))
 	return maxi(1, ceili(float(Content.items.size()) / JOURNAL_PAGE_SIZE))
 
 func floor_rect(slot: int) -> Rect2:
@@ -323,6 +324,12 @@ func build_surfaces() -> void:
 				var index = journal_page * FLOOR_PAGE_SIZE + slot
 				if index >= Content.families.floors.size(): break
 				make_surface(floor_rect(slot), PANEL, GOLD if Content.families.floors[index].id in Run.profile.floors else EDGE)
+		"journal" when journal_tab == "combos":
+			var ids: Array = Synergies.all_ids()
+			for slot in JOURNAL_PAGE_SIZE:
+				var index = journal_page * JOURNAL_PAGE_SIZE + slot
+				if index >= ids.size(): break
+				make_surface(journal_rect(slot), PANEL, Synergies.entry(ids[index])[4] if ids[index] in Run.profile.combos else EDGE)
 		"journal" when journal_tab == "paintings":
 			var required = gallery_ids()
 			for i in required.size():
@@ -611,7 +618,8 @@ func build_journal() -> void:
 	button("Relics", Rect2(232, 36, 150, 56), func(): set_journal_tab("relics"), journal_tab == "relics")
 	button("Paintings", Rect2(394, 36, 190, 56), func(): set_journal_tab("paintings"), journal_tab == "paintings")
 	button("Floors", Rect2(596, 36, 160, 56), func(): set_journal_tab("floors"), journal_tab == "floors")
-	if journal_tab in ["relics", "floors"]:
+	button("Combos", Rect2(768, 36, 170, 56), func(): set_journal_tab("combos"), journal_tab == "combos")
+	if journal_tab in ["relics", "floors", "combos"]:
 		button("←", Rect2(1044, 626, 76, 58), func(): change_journal_page(-1))
 		button("→", Rect2(1136, 626, 76, 58), func(): change_journal_page(1))
 		return
@@ -817,6 +825,11 @@ func damage_number(at: Vector2, amount: float, critical: bool) -> void:
 		return
 	floating_numbers.append({"at": local_point(at), "text": str(maxi(1, roundi(amount))) + ("!" if critical else ""), "critical": critical, "age": 0.0})
 
+## A reaction's or pairing's name rising where it happened.
+func word(at: Vector2, label: String, color: Color) -> void:
+	if label == "" or floating_numbers.size() > 40: return
+	floating_numbers.append({"at": local_point(at) - Vector2(heading.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 24).x / 2.0, 0), "text": label, "critical": false, "age": 0.0, "life": 1.2, "color": color})
+
 func _process(delta: float) -> void:
 	elapsed_ui += delta
 	fps_frames += 1
@@ -830,7 +843,7 @@ func _process(delta: float) -> void:
 		if elapsed_ui - scribbles[cell] > SCRIBBLE_TIME: scribbles.erase(cell)
 	for number in floating_numbers:
 		number.age += delta
-	floating_numbers = floating_numbers.filter(func(n): return n.age < .65)
+	floating_numbers = floating_numbers.filter(func(n): return n.age < n.get("life", .65))
 	sync_lighting()
 	update_surface_visibility()
 	queue_redraw()
@@ -984,6 +997,7 @@ func _draw() -> void:
 		"journal":
 			match journal_tab:
 				"relics": draw_journal()
+				"combos": draw_combos()
 				"floors": draw_floors()
 				_: draw_gallery()
 		"painting": draw_painting()
@@ -992,6 +1006,11 @@ func _draw() -> void:
 	if mode == "play":
 		anchor(0)
 		for number in floating_numbers:
+			if number.has("color"):
+				var tint: Color = number.color
+				tint.a = minf(1, (float(number.life) - number.age) * 3)
+				text(number.text, number.at + Vector2(0, -number.age * 40), 24, tint, heading)
+				continue
 			var c = GOLD if number.critical else INK
 			c.a = minf(1, (0.65 - number.age) * 4)
 			text(number.text, number.at + Vector2(0, -number.age * 65), 26 if number.critical else 21, c, bold)
@@ -1544,6 +1563,8 @@ func draw_rewards() -> void:
 		divider(Vector2(x + 28, 379), Vector2(x + REWARD_WIDTH - 28, 379))
 		draw_multiline_string(body, Vector2(x + 26, 409), item.description, HORIZONTAL_ALIGNMENT_CENTER, REWARD_WIDTH - 52, 18, 3, MUTED)
 		centered(item.tag, middle, 465, 13, color, bold)
+		var hint := combination_hint(offers[i])
+		if hint != "": centered(hint, middle, 556, 12, GOLD, bold)
 	centered("What you give stays given until the run ends." if dark else "Relics stack. Find something beautifully strange.", 640, 692, 17, MUTED)
 
 func draw_journal() -> void:
@@ -1565,6 +1586,46 @@ func draw_journal() -> void:
 		if owned: text("×%d" % Run.inventory.count(item.id), Vector2(x + 504, y + 41), 18, GOLD)
 		draw_multiline_string(body, Vector2(x + 27, y + 73), item.description, HORIZONTAL_ALIGNMENT_LEFT, 510, 18, 2, MUTED)
 	text("%d / %d found  ·  Filled diamonds are discovered relics" % [Run.profile.discovered.size(), Content.items.size()], Vector2(66, 664), 17, MUTED)
+	centered("%d / %d" % [journal_page + 1, journal_page_count()], 976, 664, 20, GOLD)
+
+## What an offer would combine with: a pairing it completes (named once
+## found, hinted before), or the spellbook's element it sings with.
+func combination_hint(offer: Dictionary) -> String:
+	var element := Synergies.weapon_element(Run.weapon())
+	if offer.get("kind", "item") == "weapon":
+		var count := Synergies.resonance(Run.inventory, Synergies.weapon_element(Forge.lookup(offer.id)))
+		return "%d OF YOUR RELICS SING WITH IT" % count if count > 0 else ""
+	if offer.get("kind", "item") != "item": return ""
+	var completed := Synergies.completes(Run.inventory, str(offer.id))
+	if not completed.is_empty():
+		var id: String = completed[0]
+		return "COMPLETES " + Synergies.PAIRINGS[id][2].to_upper() if "p:" + id in Run.profile.combos else "SOMETHING YOU CARRY ANSWERS THIS"
+	return "SINGS WITH YOUR SPELLBOOK" if Synergies.resonates(str(offer.id), element) else ""
+
+## Reactions, pairings and resonance: named once found, a riddle before.
+func draw_combos() -> void:
+	text("What meets, and what it makes", Vector2(64, 146), 40, INK, heading)
+	var ids: Array = Synergies.all_ids()
+	var found = ids.filter(func(id): return id in Run.profile.combos).size()
+	text("%d / %d found  ·  Elements meet on foes, relics pair, relics sing with a spellbook" % [found, ids.size()], Vector2(66, 184), 19, MUTED)
+	for slot in JOURNAL_PAGE_SIZE:
+		var index = journal_page * JOURNAL_PAGE_SIZE + slot
+		if index >= ids.size(): break
+		var id: String = ids[index]
+		var info: Array = Synergies.entry(id)
+		var rect = journal_rect(slot)
+		var x = rect.position.x
+		var y = rect.position.y
+		var known: bool = id in Run.profile.combos
+		var kind: String = {"r": "REACTION", "p": "PAIRING", "e": "RESONANCE"}[id.get_slice(":", 0)]
+		var recipe: String = info[1]
+		if id.begins_with("p:"):
+			var pair: Array = Synergies.PAIRINGS[id.get_slice(":", 1)]
+			recipe = "%s + %s" % [Content.item_by_id[pair[0]].name, Content.item_by_id[pair[1]].name]
+		diamond(Vector2(x + 31, y + 34), 11, info[4], known)
+		text(info[0] if known else "???", Vector2(x + 57, y + 41), 21, info[4] if known else MUTED, bold)
+		right_text(kind + ("  ·  " + recipe.to_upper() if known else ""), Vector2(x + 540, y + 38), 12, Color(GOLD, .8), bold)
+		draw_multiline_string(body, Vector2(x + 27, y + 73), info[2] if known else "“%s”" % info[3], HORIZONTAL_ALIGNMENT_LEFT, 510, 17, 2, INK if known else MUTED)
 	centered("%d / %d" % [journal_page + 1, journal_page_count()], 976, 664, 20, GOLD)
 
 ## Every floor theme of the tower, its words revealed once reached.

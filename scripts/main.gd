@@ -1239,6 +1239,47 @@ func on_enemy_killed(enemy: DungeonEnemy) -> void:
 			if is_instance_valid(shot) and not shot.friendly: shot.remove()
 	award_kill(event)
 
+## Pairings this player carries that answer any foe falling.
+func kill_pairings(at: Vector3) -> void:
+	if Run.has_pairing("frenzy"): Run.add_modifier("frenzy", 2.0, {"rate": 1.0})
+	if Run.has_pairing("last_stand") and Run.hp <= Run.stats.max_hp / 2.0: Run.heal(.5)
+	if Run.has_pairing("glass_cannon"):
+		var stats := Run.projectile_stats()
+		stats.element = "glass"
+		for i in 4:
+			var direction := Vector3.FORWARD.rotated(Vector3.UP, TAU * i / 4.0 + randf())
+			spawn_shot(at + Vector3.UP * .8 + direction * .3, direction, 6.0 * float(Run.stats.damage), 13.0, stats, Color("e0f8ff"), true)
+
+## A reaction's name where it happened (or a pairing's, when it acts). A
+## reaction seen for the first time is written into the journal.
+func reaction_word(at: Vector3, id: String) -> void:
+	if party.recording > 0: party.share("word", [at, id])
+	var combo := id if ":" in id else "r:" + id
+	var info: Array = Synergies.entry(combo)
+	if not camera.is_position_behind(at): ui.word(camera.unproject_position(at), info[0], info[4])
+	if combo.begins_with("r:") and Run.discover(combo):
+		ui.notify("New reaction · %s" % info[0], info[2], info[4])
+
+## A heal a pairing pays to whoever earned it (this player, or a teammate).
+func heal_player(owner: int, amount: float) -> void:
+	if owner == 0 or owner == Session.local_peer_id: Run.heal(amount)
+	else: party.tell(owner, "heal", amount)
+
+## Announces the pairings and resonance a relic or spellbook brings.
+func announce_combinations(relic := "") -> void:
+	var element := Synergies.weapon_element(Run.weapon())
+	for id in Synergies.pairings_for(Run.inventory):
+		if relic != "" and relic not in [Synergies.PAIRINGS[id][0], Synergies.PAIRINGS[id][1]]: continue
+		if relic != "" and Run.inventory.count(relic) > 1: continue
+		Run.discover("p:" + id)
+		var pairing: Array = Synergies.entry("p:" + id)
+		ui.notify("Pairing · %s" % pairing[0], pairing[2], pairing[4])
+		return
+	if element != "" and Synergies.resonance(Run.inventory, element) > 0 and (relic == "" or Synergies.resonates(relic, element)):
+		var first := Run.discover("e:" + element)
+		var resonance: Array = Synergies.entry("e:" + element)
+		if first or relic == "": ui.notify("Resonance · %s" % resonance[0], resonance[2], resonance[4])
+
 ## This player's share of a fallen foe: the kill's warmth and, once per foe,
 ## their own drops.
 func award_kill(event: Dictionary) -> void:
@@ -1248,6 +1289,7 @@ func award_kill(event: Dictionary) -> void:
 		hitstop = .11
 		shake = .3
 		ScreenFx.wave(at, 7.0, 1.6)
+	if not bool(event.get("inert", false)) and is_instance_valid(player): kill_pairings(at)
 	if not bool(event.get("loot", false)) or not is_instance_valid(room): return
 	Run.kills += 1
 	var drops = Drops.roll("boss" if bool(event.get("boss", false)) else "enemy_common", Run.rng, Run.stats.luck, Run.coin_bonus())
@@ -1353,6 +1395,10 @@ func clear_room() -> void:
 	if data.type == "boss":
 		# The exit assembles in the background while the player keeps control.
 		raise_stairs(true)
+	# Hearthkeeper: a ward for every room won.
+	if Run.has_pairing("hearthkeeper"):
+		Run.wards += 1
+		Run.changed.emit()
 	if ExpeditionBalance.active_new_run():
 		resolve_expedition_clear(data)
 	elif data.type == "boss" or Run.cleared % 2 == 0:
@@ -1605,6 +1651,7 @@ func choose_offer(index: int) -> void:
 		Run.changed.emit()
 		ui.notify(Forge.lookup(offer.id).name, "A new way to carry the light.")
 		Audio.play_sound("item")
+		announce_combinations()
 	elif offer.kind == "active":
 		# The new item goes into the slot; the one in hand is set beside the
 		# pedestal, keeping its instance and its running cooldown.
@@ -1789,6 +1836,8 @@ func on_item_gained(item: Dictionary) -> void:
 	if player and is_instance_valid(player): player.refresh_orbitals()
 	Audio.play_sound("item")
 	ui.notify(item.name, item.description, Content.RARITY_COLORS[item.rarity])
+	# A pairing completed or a resonance found outshines the relic's own line.
+	announce_combinations(item.id)
 
 func redeem_secret_code(code: String) -> bool:
 	if not Run.active or in_menu:

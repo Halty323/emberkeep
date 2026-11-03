@@ -37,7 +37,7 @@ const SHOT_KEYS := ["returning", "homing", "wave", "accel", "linger", "grow", "s
 const SHARED_SOUNDS := ["hit", "kill"]
 # Sights and sounds: sent unreliably, since a lost one is only a missed spark
 # and must never hold up the world's changes behind it.
-const LOOSE := ["fx", "snd", "dmg"]
+const LOOSE := ["fx", "snd", "dmg", "word"]
 const LOOSE_PER_TICK := 48
 var game
 var figures: Node3D
@@ -420,8 +420,10 @@ func foe_hit(enemy: DungeonEnemy, damage: float, impulse: Vector3, critical: boo
 
 func foe_status(enemy: DungeonEnemy, stats: Dictionary) -> void:
 	var status := {}
-	for key in ["burn", "chill", "poison"]:
+	# Statuses, the elements they carry, and the combinations riding on them.
+	for key in ["burn", "chill", "poison", "chain", "wet", "waxen", "resonance", "hit", "keg", "jelly", "freeze", "northern"]:
 		if float(stats.get(key, 0)) > 0: status[key] = float(stats[key])
+	if str(stats.get("element", "")) != "": status["element"] = str(stats.element)
 	if client() and not status.is_empty(): acts.append(["status", [enemy.entity_id, status]])
 
 func foe_slow(enemy: DungeonEnemy, duration: float, factor: float) -> void:
@@ -619,7 +621,8 @@ func send_snapshot() -> void:
 	for chunk in chunks: Session.stream(0, "snap", chunk)
 
 func foe_frame(enemy: DungeonEnemy, keyframe: bool) -> Array:
-	var flags := (1 if enemy.targetable else 0) | (2 if enemy.inert else 0) | (4 if enemy.shrouded else 0) | (8 if enemy.ward_up else 0)
+	var flags := (1 if enemy.targetable else 0) | (2 if enemy.inert else 0) | (4 if enemy.shrouded else 0) | (8 if enemy.ward_up else 0) \
+		| (enemy.mark_bits() << 4) | (4096 if enemy.frozen > 0 else 0)
 	var changes: Array = []
 	var parts: Array = enemy.get_meta("net_parts", [])
 	var sent: Dictionary = foe_sent.get(enemy.entity_id, {})
@@ -930,7 +933,9 @@ func take_acts(from: int, data) -> void:
 					game.player = own
 			"status":
 				var foe: DungeonEnemy = host_foe(value[0]) if value is Array and value.size() >= 2 else null
-				if foe and value[1] is Dictionary: foe.apply_status(value[1])
+				if foe and value[1] is Dictionary:
+					value[1]["owner"] = from
+					foe.apply_status(value[1])
 			"slow":
 				var foe: DungeonEnemy = host_foe(value[0]) if value is Array and value.size() >= 3 else null
 				if foe: foe.slow(float(value[1]), float(value[2]))
@@ -987,6 +992,7 @@ func on_event(kind: String, data) -> void:
 			if data[2] is Vector3: Audio.play_at(str(data[0]), game, data[2], float(data[1]))
 			else: Audio.play_sound(str(data[0]), float(data[1]))
 		"dmg": if data[0] is Vector3: game.damage_number(data[0], float(data[1]), bool(data[2]))
+		"word": if data is Array and data.size() >= 2 and data[0] is Vector3: game.reaction_word(data[0], str(data[1]))
 		"shot": draw_shot(data)
 		"shot_end":
 			var shot = net_shots.get(int(data))
@@ -1100,6 +1106,8 @@ func take_snapshot(data: Dictionary) -> void:
 			foe.targetable = flags & 1 != 0
 			foe.inert = flags & 2 != 0
 			foe.ward_up = flags & 8 != 0
+			foe.show_mark_bits((flags >> 4) & 255)
+			foe.show_ice(flags & 4096 != 0)
 			if is_instance_valid(foe.ward_mesh): foe.ward_mesh.visible = foe.ward_up
 			foe.flash = maxf(foe.flash, float(entry[5]))
 			var parts: Array = foe.get_meta("net_parts", [])

@@ -165,6 +165,8 @@ func update_sim(delta: float) -> void:
 			if not returning:
 				returning = true
 				hit_ids.clear()
+				# Homecoming: the way home strikes twice as hard.
+				if float(stats.get("homecoming", 0)) > 0: damage *= 2.0
 			var back: Vector3 = caster().global_position + Vector3.UP * .65 - global_position
 			if back.length() < .5:
 				remove()
@@ -274,6 +276,7 @@ func update_sim(delta: float) -> void:
 			direction = direction.bounce(normal.normalized()).normalized()
 			if not hit.is_empty():
 				global_position = hit.position + normal * .12
+			if friendly: ricochet()
 		else:
 			if game.first_person and not hit.is_empty(): global_position = hit.position
 			Effects.play("impact", global_position, tint)
@@ -366,6 +369,20 @@ func hit_enemy(enemy: DungeonEnemy) -> void:
 	if float(stats.get("grow", 0)) > 0: power *= 1.0 + .5 * age / lifetime
 	if enemy.hp < enemy.max_hp * .35:
 		power *= 1.0 + float(stats.get("execute", 0))
+	# Hunter's Moon: weaving spells finish the badly wounded.
+	if float(stats.get("moon", 0)) > 0 and float(stats.get("wave", 0)) > 0 and not enemy.boss and enemy.hp - power < enemy.max_hp * .25:
+		power = enemy.hp * 2.0 + 1.0
+		game.reaction_word(enemy.global_position + Vector3.UP * 1.8, "p:hunters_moon")
+	# What a reaction on this foe is measured by, and whose heal a pairing pays.
+	stats["hit"] = power
+	stats["owner"] = owner_peer
+	# Icicle: a piercing spell shatters a chilled foe as it passes through.
+	if float(stats.get("icicle", 0)) > 0 and pierces > 0 and enemy.marks.has("frost") and enemy.reaction_wait <= 0:
+		enemy.marks.erase("frost")
+		enemy.react("shatter", "ember", power, stats)
+		if not enemy.alive:
+			pierces -= 1
+			return
 	enemy.apply_status(stats)
 	if game.residue: game.residue.react(enemy.global_position, .7, stats)
 	var own: bool = owner_peer == 0 or NetHooks.party(game) == null or game.party.spell_owner_local(self)
@@ -373,6 +390,13 @@ func hit_enemy(enemy: DungeonEnemy) -> void:
 		if own: game.fps.hit_time = .13
 		else: game.party.tell(owner_peer, "hitmark")
 	enemy.take_hit(power, direction * float(stats.get("knockback", 1)) * 2.0, critical, false, "shot")
+	# Lucky Star: a critical hit leaps to a second foe at full strength.
+	if critical and float(stats.get("lucky", 0)) > 0:
+		var second = game.nearest_enemy(enemy.global_position + Vector3.UP * .65, 6.0, hit_ids)
+		if second:
+			Effects.beam(game, enemy.global_position + Vector3.UP * .65, second.global_position + Vector3.UP * .65, Color("ffe08a"))
+			second.apply_status(stats)
+			second.take_hit(power, Vector3.ZERO, true, false, "shot")
 	if Run.rng.randf() < minf(.25, float(stats.get("lifesteal", 0))):
 		if own: Run.heal(.5)
 		else: game.party.tell(owner_peer, "heal", .5)
@@ -388,6 +412,8 @@ func hit_enemy(enemy: DungeonEnemy) -> void:
 			Effects.beam(game, previous, at, Color("c4c2ff"))
 			target.apply_status(stats)
 			target.take_hit(power * .6, Vector3.ZERO, false, false, "shot")
+			# Northern Lights: lightning freezes the foes it leaps to.
+			if float(stats.get("northern", 0)) > 0 and is_instance_valid(target) and target.alive: target.freeze(1.2)
 			previous = at
 		# Standing in water, the struck foe carries the lightning to the rest of the pool.
 		if game.residue: game.residue.shock(enemy.global_position, power * .5, chained)
@@ -398,8 +424,11 @@ func hit_enemy(enemy: DungeonEnemy) -> void:
 		child_stats.split = 0
 		child_stats.chain = 0
 		child_stats.size = float(child_stats.get("size", 1)) * .65
+		# Starfall: every shard bursts; Facets: a glass book's shards cut deep.
+		if float(stats.get("starfall", 0)) > 0: child_stats.explosion = maxf(float(child_stats.get("explosion", 0)), 1.3)
+		var share := .8 if str(stats.get("element", "")) == "glass" and float(stats.get("resonance", 0)) > 0 else .45
 		for side in [-1, 1]:
-			var shot = game.spawn_shot(global_position + direction * .2, direction.rotated(Vector3.UP, side * .65), damage * .45, speed * .85, child_stats, tint, true)
+			var shot = game.spawn_shot(global_position + direction * .2, direction.rotated(Vector3.UP, side * .65), damage * share, speed * .85, child_stats, tint, true)
 			if shot:
 				shot.hit_ids[enemy.entity_id] = true
 	if pierces > 0:
@@ -488,3 +517,16 @@ func update_cosmetic(delta: float) -> void:
 			remove()
 	else:
 		global_position = target_position
+
+## A friendly spell glancing off a wall: Mirror Maze makes it stronger,
+## Ricochet Arc throws lightning at the nearest foe.
+func ricochet() -> void:
+	if cosmetic: return
+	if float(stats.get("maze", 0)) > 0: damage *= 1.3
+	if float(stats.get("arc", 0)) > 0:
+		var target = game.nearest_enemy(global_position, 6.0, {})
+		if target:
+			Effects.beam(game, global_position, target.global_position + Vector3.UP * .65, Color("c4c2ff"))
+			var spark := {"chain": 1.0, "element": "storm", "hit": damage * .6, "owner": owner_peer}
+			target.apply_status(spark)
+			target.take_hit(damage * .6, Vector3.ZERO, false, false, "shot")

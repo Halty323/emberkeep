@@ -64,7 +64,9 @@ var daily = false
 # Device preferences live in the Settings service, never in the profile.
 const PROFILE_VERSION := 2
 var profile = {"version": PROFILE_VERSION, "runs": 0, "wins": 0, "kills": 0, "best_floor": 0, "discovered": [],
-	"paintings": [], "unlocks": [], "floors": [], "fps_tutorial_seen": false, "coop_name": "", "coop_address": ""}
+	"paintings": [], "unlocks": [], "floors": [], "fps_tutorial_seen": false, "coop_name": "", "coop_address": "",
+	# Combinations found at least once ("r:shatter", "p:powder_keg", "e:ember").
+	"combos": []}
 # A floor the co-op host built, used instead of generating it here, so every
 # player in the party walks exactly the same rooms.
 var incoming_floor: Dictionary = {}
@@ -144,7 +146,23 @@ func projectile_stats() -> Dictionary:
 	var held: Dictionary = weapon()
 	for key in held.effects:
 		result[key] = float(result.get(key, 0)) + float(held.effects[key])
+	# The book's element, its resonance with the relics carried, and the
+	# pairings its spells apply (scripts/items/synergies.gd).
+	var extra := Synergies.spell_stats(inventory, Synergies.weapon_element(held))
+	for key in extra:
+		if extra[key] is float: result[key] = float(result.get(key, 0)) + extra[key]
+		else: result[key] = extra[key]
 	return result
+
+func has_pairing(id: String) -> bool:
+	return Synergies.has_pairing(inventory, id)
+
+## Records a combination as found; true the first time ever.
+func discover(combo: String) -> bool:
+	if combo in profile.combos: return false
+	profile.combos.append(combo)
+	save_profile()
+	return true
 
 func gain_item(id: String) -> void:
 	var old_max: float = stats.max_hp

@@ -197,6 +197,8 @@ func move_player(player, delta: float, move_input: Vector2) -> void:
 		if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable: continue
 		if player.dash_time > 0 and player.global_position.distance_to(enemy.global_position) < enemy.radius + .7:
 			enemy.dashed_through()
+			# Ember Dash: set it burning, and mark it with the book's element.
+			if Run.has_pairing("ember_dash"): enemy.apply_status({"burn": 1.5, "element": Synergies.weapon_element(Run.weapon()), "hit": 8.0 * float(Run.stats.damage)})
 			if Run.stats.dash_damage > 0: enemy.take_hit(float(Run.stats.dash_damage) * delta * 8, Vector3.ZERO, false, false, "dash")
 	if player.dash_time > 0 or player.graze_grace > 0:
 		for shot in game.shots.duplicate():

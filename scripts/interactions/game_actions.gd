@@ -237,6 +237,10 @@ func collect_pickup(drop_id: String) -> Dictionary:
 		return result(false, "not needed")
 	data.pickups.erase(record)
 	PickupRules.apply(definition, float(record.get("value", definition.value)))
+	# Magpie: every coin is a little more fight, three at most at once.
+	if definition.kind == "coin" and Run.has_pairing("magpie"):
+		var held := Run.modifiers.filter(func(modifier): return str(modifier.source).begins_with("magpie")).size()
+		Run.add_modifier("magpie%d" % (Run.instance_counter % 3 if held >= 3 else held), 5.0, {"damage": .2})
 	node.collected = true
 	node.queue_free()
 	Audio.play_sound("coin" if definition.kind == "coin" else "item", 1.0 + float(record.get("value", 1)) * .05 if definition.kind == "coin" else 1.2)
