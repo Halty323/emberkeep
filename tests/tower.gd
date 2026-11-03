@@ -480,11 +480,23 @@ func test_bosses() -> void:
 	check(chilled < (keeper.minute - before) * .7, "chill slows its hands")
 
 func test_twists() -> void:
-	await arena("cellar", 3, "combat", "swarming", true)
-	var swarm = game.enemies.filter(func(e): return not e.inert and e.kind == "mote")
-	if not swarm.is_empty():
-		var reference = Enemy.KINDS.mote[0] * (1.0 + 2 * Enemy.FLOOR_HEALTH)
-		check(is_equal_approx(swarm[0].max_hp, reference * .8), "a swarming floor's foes are frailer")
+	await arena("cellar", 3)
+	# Compare otherwise identical foes. Depth, expedition and synergy scaling
+	# all belong in the baseline; encounter composition and elite rolls do not.
+	for version in [Generator.PREVIOUS_VERSION, Generator.VERSION]:
+		run.generator_version = version
+		for depth in [1, 3, 5]:
+			run.floor_number = depth
+			run.floor_twists = ["", "", "", "", ""]
+			var reference = spawn("mote")
+			var boss_reference = spawn("warden")
+			run.floor_twists[depth - 1] = "swarming"
+			var swarm = spawn("mote")
+			var swarm_boss = spawn("warden")
+			check(is_equal_approx(swarm.max_hp, reference.max_hp * .8),
+				"swarming foes have 20%% less health at depth %d, generator %d (%.3f vs %.3f)" % [depth, version, swarm.max_hp, reference.max_hp])
+			check(is_equal_approx(swarm_boss.max_hp, boss_reference.max_hp),
+				"swarming leaves boss health unchanged at depth %d, generator %d" % [depth, version])
 	await arena("cellar", 3, "combat", "restless")
 	var restless = spawn("mote")
 	check(restless.tempo() > 1.1 and restless.speed > Enemy.KINDS.mote[1] * 1.2, "a restless floor's foes are quicker")
