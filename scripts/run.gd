@@ -47,10 +47,15 @@ var instance_counter = 0
 var processed_events: Array = []
 # Paint Sprayer's red-blue-green position: gameplay state, saved with the run.
 var pigment = 0
-# Maximum health given to the dark store, in half-hearts: gone for the run.
+# Maximum health the old dark store took, in half-hearts. Only runs saved
+# before Death's bargains carry it; nothing adds to it now.
 var blood_debt = 0
-# The dark store never takes the last heart.
 const LIFE_FLOOR := 2.0
+# Death's curses, for the rest of the run: [{"id", "amount"}]
+# (scripts/items/death_bargain.gd).
+var curses: Array = []
+# A trial owed to Death: {"kind", "curse", "room", "state"} (DeathTrials).
+var trial: Dictionary = {}
 # Paintings this run has placed in guaranteed slots, so each floor offers a
 # different unseen work.
 var painting_slots: Array = []
@@ -92,6 +97,8 @@ func start_run(chosen_weapon: String, seed_input := 0, is_daily := false) -> voi
 	weapon_id = chosen_weapon if Collection.weapon_available(chosen_weapon) else Forge.id_for(seed_value, 0)
 	pigment = 0
 	blood_debt = 0
+	curses = []
+	trial = {}
 	painting_slots = []
 	coins = ExpeditionBalance.START_COINS if generator_version >= 3 else 8
 	keys = 0
@@ -131,7 +138,10 @@ func rebuild_stats() -> void:
 	for modifier in modifiers:
 		for key in modifier.get("effects", {}):
 			stats[key] += float(modifier.effects[key])
+	for curse in curses:
+		stats[DeathBargain.curse_stat(curse)] += float(curse.amount)
 	stats.max_hp = maxf(LIFE_FLOOR, stats.max_hp - blood_debt)
+	stats.range = maxf(.35, stats.range)
 	stats.damage = maxf(0.3, stats.damage)
 	stats.rate = clampf(stats.rate, 0.35, 5.0)
 	stats.speed = clampf(stats.speed, 0.55, 2.2)
@@ -381,18 +391,13 @@ func draw_twist(gen: RandomNumberGenerator, depth: int, theme: Dictionary) -> St
 		if roll <= 0: return twist.id
 	return pool.back().id
 
-## Whether the dark store can take this much maximum health and leave a heart.
-func can_pay_life(price: int) -> bool:
-	return active and stats.max_hp - price >= LIFE_FLOOR
-
-## Pays the dark store in maximum health, for the rest of the run.
-func pay_life(price: int) -> bool:
-	if not can_pay_life(price): return false
-	blood_debt += price
+## A curse of Death's, for the rest of the run.
+func add_curse(curse: Dictionary) -> void:
+	if not DeathBargain.known_curse(curse): return
+	curses.append({"id": str(curse.id), "amount": float(curse.amount)})
 	rebuild_stats()
 	hp = minf(hp, stats.max_hp)
 	changed.emit()
-	return true
 
 ## Gilded floors pay out more, on top of the relics' bonus.
 func coin_bonus() -> float:
@@ -533,7 +538,7 @@ func snapshot() -> Dictionary:
 		"current_room": current_room, "entry": entry, "view_angles": view_angles, "inventory": inventory, "weapon": weapon_id, "hp": hp,
 		"coins": coins, "keys": keys, "bombs": bombs, "wards": wards, "active": active_item, "cooldowns": cooldowns,
 		"modifiers": modifiers, "pending_bombs": pending_bombs, "instance_counter": instance_counter,
-		"events": processed_events, "pigment": pigment, "blood_debt": blood_debt, "painting_slots": painting_slots, "kills": kills, "cleared": cleared, "elapsed": elapsed, "daily": daily,
+		"events": processed_events, "pigment": pigment, "blood_debt": blood_debt, "curses": curses, "trial": trial, "painting_slots": painting_slots, "kills": kills, "cleared": cleared, "elapsed": elapsed, "daily": daily,
 		"rng_state": str(rng.state), "camera_mode": "first_person" if OS.get_environment("EMBERKEEP_LEGACY_TEST") != "1" else "isometric"}
 
 ## Drop records name a pickup definition. Version 1 records used a bare kind;
@@ -642,6 +647,18 @@ func load_run() -> bool:
 	processed_events = d.get("events", [])
 	pigment = int(d.get("pigment", 0))
 	blood_debt = maxi(0, int(d.get("blood_debt", 0)))
+	curses = (d.get("curses", []) if d.get("curses", []) is Array else []).filter(func(curse): return DeathBargain.known_curse(curse))
+	trial = d.get("trial", {}) if d.get("trial", {}) is Dictionary else {}
+	# A trial left in the middle is a trial failed: the curse falls, and
+	# health Last breath took returns. No dashing waits for the next fight.
+	var fled_hp := -1.0
+	if trial.get("state", "") == "running":
+		if trial.get("kind", "") in DeathBargain.AT_ONCE:
+			if DeathBargain.known_curse(trial.get("curse")): curses.append(trial.curse)
+			fled_hp = float(trial.get("hp", -1.0))
+			trial = {}
+		else: trial.state = "waiting"
+	if not trial.is_empty() and not (DeathBargain.TRIALS.has(str(trial.get("kind", ""))) and DeathBargain.known_curse(trial.get("curse"))): trial = {}
 	painting_slots = d.get("painting_slots", [])
 	kills = int(d.kills)
 	cleared = int(d.cleared)
@@ -650,7 +667,7 @@ func load_run() -> bool:
 	rng.seed = seed_value
 	rng.state = int(d.get("rng_state", str(rng.state)))
 	rebuild_stats()
-	hp = clampf(float(d.hp), 0.5, stats.max_hp)
+	hp = clampf(fled_hp if fled_hp > 0 else float(d.hp), 0.5, stats.max_hp)
 	# Floors saved before galleries existed gain their paintings once.
 	assign_paintings()
 	active = true

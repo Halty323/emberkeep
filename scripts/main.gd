@@ -19,6 +19,9 @@ var ui: GameInterface
 var scene_root: Node3D
 var marker: Node3D
 var marker_visual: Node3D
+# Death, behind a dark altar not yet bargained with.
+var death_figure: DeathFigure
+var trials: DeathTrials
 var enemies: Array = []
 var shots: Array = []
 var pickups: Array = []
@@ -188,6 +191,9 @@ func _ready() -> void:
 		for kind in 3: DungeonStyle.surface_maps(kind)
 	Run.item_gained.connect(on_item_gained)
 	actions = GameActions.new(self)
+	trials = DeathTrials.new()
+	add_child(trials)
+	trials.setup(self)
 	party = Party.new()
 	add_child(party)
 	party.setup(self)
@@ -223,6 +229,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif ui.mode in ["journal", "settings", "map"]: ui.close_subscreen()
 		elif ui.mode == "painting": ui.close_painting()
 		elif ui.mode == "secret": ui.close_secret_code()
+		elif ui.mode == "bargain": close_reward()
 	elif event.is_action_pressed("map") and not in_menu and Run.active:
 		if ui.mode == "map": ui.close_subscreen()
 		elif is_playing(): ui.open_map("play")
@@ -280,6 +287,7 @@ func _notification(what: int) -> void:
 		if is_instance_valid(ui) and not in_menu:
 			if ui.mode == "play": pause_game()
 			elif ui.mode == "pause": resume_game()
+			elif ui.mode == "bargain": close_reward()
 			elif ui.mode in ["settings", "journal", "map"]: ui.close_subscreen()
 			elif ui.mode == "painting": ui.close_painting()
 			elif ui.mode == "secret": ui.close_secret_code()
@@ -318,6 +326,8 @@ func dispel(shot: EmberShot) -> void:
 
 ## The last heart is gone: the end of a lone climb, a fall in co-op.
 func player_fell() -> void:
+	# Last breath: falling in the trial fails it instead.
+	if trials.catch_fall(): return
 	if party.climbing(): party.fall()
 	else: end_run(false)
 
@@ -397,6 +407,7 @@ func _physics_process(delta: float) -> void:
 		for enemy in enemies.duplicate():
 			if is_instance_valid(enemy) and is_playing() and enemy.alive: enemy.update_sim(delta)
 	enemies = enemies.filter(func(e): return is_instance_valid(e) and e.alive)
+	if is_playing() or party.climbing(): trials.update(delta)
 	party.begin_world()
 	for shot in shots.duplicate():
 		if is_instance_valid(shot) and sim_live():
@@ -425,7 +436,7 @@ func _physics_process(delta: float) -> void:
 	track_exploration()
 	# Posts and dropped lanterns never hold a room shut. A guest's room opens
 	# when the host says its fight is won.
-	if not party.client() and not room.open and deferred_encounter.is_empty() and enemies.all(func(e): return e.inert):
+	if not party.client() and not room.open and deferred_encounter.is_empty() and not trials.seals_room() and enemies.all(func(e): return e.inert):
 		for enemy in enemies:
 			enemy.alive = false
 			enemy.queue_free()
@@ -1522,6 +1533,7 @@ func clear_room() -> void:
 	if data.cleared: return
 	# Every player's own rewards follow on their own device.
 	party.share("clear", Run.current_room)
+	trials.on_room_cleared()
 	room.set_open(true)
 	# New expeditions persist clear credit and its reward together, so a
 	# reload cannot lose or duplicate the chest/relic between two writes.
@@ -1605,6 +1617,7 @@ func ensure_offers(premium := false, persist := true) -> void:
 func make_marker(kind: String, at := Vector3.ZERO) -> void:
 	if marker and is_instance_valid(marker): marker.queue_free()
 	marker_visual = null
+	death_figure = null
 	marker = Node3D.new()
 	scene_root.add_child(marker)
 	marker.position = at
@@ -1619,11 +1632,20 @@ func make_marker(kind: String, at := Vector3.ZERO) -> void:
 		if first_person:
 			altar_body.material_override = DungeonStyle.wall_material(Color("37303e"))
 			altar_cap.material_override = DungeonStyle.wall_material(Color("4f4053"),true)
-		var flame = Geo.sphere(marker, Vector3(0, 1.05, 0), .2, Color("b98ae0"), 2.4)
+		# A small cold flame, low enough not to hide Death behind it.
+		var flame = Geo.sphere(marker, Vector3(0, .94, 0), .11, Color("9b74c9"), 1.3)
 		flame.scale = Vector3(.8, 1.5, .8)
 		marker_visual = flame
 		Geo.halo(marker, Vector3(0, .03, 0), 4.5, Color(.55, .3, .8, .3))
 		Geo.light(marker, Vector3(0, 1.4, 0), Color("b98ae0"), .9, 5.0)
+		# Death waits behind the altar, on the side away from the way in.
+		death_figure = DeathFigure.new()
+		marker.add_child(death_figure)
+		var away: Vector3 = at - player.position if is_instance_valid(player) else Vector3.FORWARD
+		away.y = 0
+		death_figure.position = (away.normalized() if away.length_squared() > .01 else Vector3.FORWARD) * 1.3
+		death_figure.rotation.y = atan2(-away.x, -away.z)
+		death_figure.setup(self)
 	elif kind == "rest":
 		var rest_base = Geo.cylinder(marker, Vector3(0, .2, 0), .65, .4, Color("86775f"))
 		if first_person: rest_base.material_override = DungeonStyle.wall_material(Color("86775f"))
@@ -1649,7 +1671,7 @@ func prompt_for(target: Dictionary) -> String:
 	match target.kind:
 		"treasure": return "Choose a little treasure"
 		"shop": return "Browse the merchant’s wares"
-		"dark": return "Bargain with the dark · pay in life"
+		"dark": return "Bargain with Death"
 		"rest": return "Warm your hands · heal %d" % (1 if ExpeditionBalance.active_new_run() else 3)
 		"exit":
 			if party.climbing(): return "Waiting for the party…" if party.waiting_at_stair else "Climb with the party"
@@ -1713,14 +1735,14 @@ func interact() -> void:
 func use_pedestal(target: Dictionary) -> Dictionary:
 	var data: Dictionary = Run.rooms[Run.current_room]
 	match target.kind:
-		"treasure", "shop", "dark":
-			if target.kind == "dark": ensure_dark_offers()
-			else: ensure_offers(data.type == "treasure")
+		"dark": open_bargain()
+		"treasure", "shop":
+			ensure_offers(data.type == "treasure")
 			chosen_reward_shop = target.kind == "shop"
-			chosen_reward_dark = target.kind == "dark"
+			chosen_reward_dark = false
 			ui.offers = data.offers
 			ui.shop = chosen_reward_shop
-			ui.dark = chosen_reward_dark
+			ui.dark = false
 			paused = true
 			ui.show_screen("reward")
 		"rest":
@@ -1769,21 +1791,12 @@ func choose_offer(index: int) -> void:
 	data.offers = ExpeditionBalance.sanitize_offers(data.offers,int(data.seed))
 	if data.claimed or index < 0 or index >= data.offers.size(): return
 	var offer: Dictionary = data.offers[index]
-	if chosen_reward_dark:
-		# Each bargain once; each costs maximum health for the rest of the run.
-		if offer.get("sold", false) or not Run.pay_life(int(offer.price)):
-			Audio.play_sound("hurt", 1.5)
-			if not offer.get("sold", false): ui.notify("Too little life left to give", "The dark never takes your last heart.", Color("b98ae0"))
-			return
-		offer["sold"] = true
-		game_shake_dark()
-	elif chosen_reward_shop:
+	if chosen_reward_shop:
 		if Run.coins < int(offer.price):
 			Audio.play_sound("hurt", 1.5)
 			return
 		Run.coins -= int(offer.price)
-	if not chosen_reward_dark or data.offers.all(func(entry): return entry.get("sold", false)):
-		data.claimed = true
+	data.claimed = true
 	if offer.kind == "weapon":
 		Run.weapon_id = offer.id
 		Run.changed.emit()
@@ -1801,26 +1814,80 @@ func choose_offer(index: int) -> void:
 		Run.gain_item(offer.id)
 	if data.claimed: remove_marker()
 	Run.save_run()
-	if chosen_reward_dark and not data.claimed:
-		ui.offers = data.offers
-		ui.show_screen("reward")
-	else:
-		close_reward()
+	close_reward()
 
 func game_shake_dark() -> void:
 	shake = maxf(shake, .12)
 	Effects.burst(scene_root, player.global_position + Vector3.UP * .8, Color("b98ae0"), 12, 1.4)
 
-## The dark store's bargains: a dark relic, a dark-forged weapon or a
-## precious relic, and something small. Prices are half-hearts of maximum
-## health, 2 to 5 by how much each is worth.
+## Death rises behind its altar.
+func death_rises(figure: DeathFigure) -> void:
+	Audio.play_sound("door", .45)
+	Effects.play("death_puff", figure.global_position + Vector3.UP * .4, DeathBargain.COLOR, 14, 1.6)
+
+## Death's bargain: one thing from its right hand, paid for with its left.
+func open_bargain() -> void:
+	var data: Dictionary = Run.rooms[Run.current_room]
+	if data.claimed: return
+	ensure_dark_offers()
+	if is_instance_valid(death_figure):
+		death_figure.appear()
+		# Face Death across its altar.
+		if first_person and fps:
+			var towards: Vector3 = death_figure.global_position - player.global_position
+			if towards.length_squared() > .01: fps.yaw = atan2(-towards.x, -towards.z)
+	chosen_reward_shop = false
+	chosen_reward_dark = true
+	ui.offers = data.offers
+	ui.bargain_pick = -1
+	ui.bargain_price = ""
+	paused = true
+	ui.show_screen("bargain")
+
+## Seals one bargain per altar: what is taken is the player's at once; the
+## price is a curse now, or a trial that holds the curse back.
+func seal_bargain(index: int, price: String) -> Dictionary:
+	var data: Dictionary = Run.rooms[Run.current_room]
+	if data.type != "dark" or data.claimed or not data.has("offers"): return GameActions.result(false, "no bargain here")
+	if index < 0 or index >= data.offers.size() or price not in ["curse", "trial"]: return GameActions.result(false, "no such bargain")
+	var offer: Dictionary = data.offers[index]
+	data.claimed = true
+	offer["sealed"] = price
+	interactions.unregister(PEDESTAL_ID)
+	if is_instance_valid(death_figure): death_figure.vanish()
+	if is_instance_valid(marker_visual): marker_visual.visible = false
+	close_reward()
+	game_shake_dark()
+	if offer.kind == "weapon":
+		Run.weapon_id = offer.id
+		Run.changed.emit()
+		announce_combinations()
+	else:
+		Run.gain_item(offer.id)
+	var taken: String = Forge.lookup(offer.id).name if offer.kind == "weapon" else Content.item_by_id[offer.id].name
+	if price == "curse":
+		Run.add_curse(offer.curse)
+		ui.notify("%s · %s" % [taken, DeathBargain.curse_name(offer.curse)], DeathBargain.curse_text(offer.curse) + " For the rest of the run.", DeathBargain.COLOR)
+		Audio.play_sound("hurt", .5)
+		Run.save_run()
+	else:
+		trials.begin(str(offer.trial), offer.curse)
+	return GameActions.result(true)
+
+## Death's offers: a dark relic, a dark-forged spellbook or a precious relic,
+## and a second dark relic. Each carries its terms: a curse as heavy as the
+## offer is strong, and a trial (scripts/items/death_bargain.gd).
 func ensure_dark_offers() -> void:
 	var data: Dictionary = Run.rooms[Run.current_room]
-	if data.has("offers"):
-		data.offers = ExpeditionBalance.sanitize_offers(data.offers,int(data.seed))
-		return
 	var gen = RandomNumberGenerator.new()
 	gen.seed = int(data.seed) + 6661 + party.loot_salt()
+	if data.has("offers"):
+		data.offers = ExpeditionBalance.sanitize_offers(data.offers,int(data.seed))
+		# Offers saved by the old dark store gain Death's terms.
+		if data.offers.any(func(offer): return not offer.has("curse")):
+			gen.seed = int(data.seed) + 6662 + party.loot_salt()
+			for offer in data.offers: DeathBargain.terms(offer, gen, party.climbing())
+		return
 	var dark: Array = Content.items.filter(func(item): return item.rarity == "dark")
 	var relic: Dictionary = dark[gen.randi_range(0, dark.size() - 1)]
 	var offers: Array = [{"kind": "item", "id": relic.id, "price": int(relic.cost)}]
@@ -1832,6 +1899,7 @@ func ensure_dark_offers() -> void:
 	var others: Array = dark.filter(func(item): return item.id != relic.id)
 	var second: Dictionary = others[gen.randi_range(0, others.size() - 1)]
 	offers.append({"kind": "item", "id": second.id, "price": int(second.cost)})
+	for offer in offers: DeathBargain.terms(offer, gen, party.climbing())
 	data.offers = offers
 	Run.save_run()
 

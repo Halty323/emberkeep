@@ -368,8 +368,11 @@ func dash() -> void:
 		return
 	dash_direction = last_move
 	dash_time = DASH_TIME
-	dash_cooldown = 1.35 * (1.0 - clampf(Run.stats.dash_cd, 0, .75))
+	# Relics shorten the cooldown; Death's Heavy Chains lengthen it.
+	dash_cooldown = 1.35 * (1.0 - clampf(Run.stats.dash_cd, -1.0, .75))
 	invulnerability = .32
+	var trials = game.get("trials")
+	if trials and game.get("player") == self: trials.on_dash()
 	Audio.play_sound("dash")
 	game.make_noise(global_position, 2.0)
 	Effects.ring_burst(game, global_position, Color("efd1a0"), 1.1)

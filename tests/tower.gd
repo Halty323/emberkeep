@@ -483,7 +483,8 @@ func test_twists() -> void:
 	await arena("cellar", 3, "combat", "swarming", true)
 	var swarm = game.enemies.filter(func(e): return not e.inert and e.kind == "mote")
 	if not swarm.is_empty():
-		var reference = Enemy.KINDS.mote[0] * (1.0 + 2 * Enemy.FLOOR_HEALTH)
+		# Floors 3 to 5 also make every foe tougher (scripts/items/synergies.gd).
+		var reference = Enemy.KINDS.mote[0] * (1.0 + 2 * Enemy.FLOOR_HEALTH) * load("res://scripts/items/synergies.gd").TOUGHNESS[3]
 		check(is_equal_approx(swarm[0].max_hp, reference * .8), "a swarming floor's foes are frailer")
 	await arena("cellar", 3, "combat", "restless")
 	var restless = spawn("mote")
@@ -597,46 +598,147 @@ func test_dark_store() -> void:
 			check(floor_data.rooms.values().filter(func(r): return r.type == "dark").size() == 1, "seed %d floor %d has one dark store" % [seed_value, depth])
 			check(Generator.validate(floor_data).is_empty(), "seed %d floor %d with a dark store validates" % [seed_value, depth])
 	check(Generator.validate(Generator.fallback_floor(5, 2)).is_empty(), "the fallback floor needs no dark store")
+	var Bargain = load("res://scripts/items/death_bargain.gd")
 	game.start_run("candle", 7070, false)
 	run.floor_plan = ["cellar", "halls", "crypt", "kiln", "hearth"]
 	var dark_id = run.rooms.keys().filter(func(id): return run.rooms[id].type == "dark")[0]
 	run.current_room = dark_id
 	game.enter_room(Vector3(0, 0, 2))
-	check(game.marker != null and game.marker.get_meta("kind") == "dark", "the dark store keeps its altar")
-	check(game.room.burning_indices().is_empty(), "the dark store's lanterns are dead")
+	check(game.marker != null and game.marker.get_meta("kind") == "dark", "the dark room keeps its altar")
+	check(game.room.burning_indices().is_empty(), "the dark room's lanterns are dead")
+	check(is_instance_valid(game.death_figure) and game.death_figure.state == "hidden", "Death waits unseen behind its altar")
 	game.use_pedestal({"kind": "dark"})
 	var offers: Array = run.rooms[dark_id].offers
-	check(game.ui.mode == "reward" and game.ui.dark, "bargaining opens the dark merchant")
-	check(offers.size() == 3 and offers.all(func(o): return int(o.price) >= 2 and int(o.price) <= 5), "three bargains, each 2-5 half-hearts")
+	check(game.ui.mode == "bargain" and game.paused, "bargaining opens Death's bargain")
+	check(game.death_figure.state == "rising", "Death rises out of the dark when the bargain opens")
+	game.death_figure._process(1.0)
+	check(game.death_figure.eyes.all(func(eye): return eye.material_override.albedo_color.a == 0.0), "its eyes come last")
+	game.death_figure._process(4.0)
+	check(game.death_figure.present() and game.death_figure.eyes.all(func(eye): return eye.material_override.albedo_color.a > .5), "then its small white eyes")
+	check(offers.size() == 3 and offers.all(func(o): return int(o.power) >= 2 and int(o.power) <= 5 and Bargain.known_curse(o.curse) and Bargain.TRIALS.has(o.trial)), "three offers, each with a curse and a trial")
+	check(offers.all(func(o): return is_equal_approx(absf(float(o.curse.amount)), Bargain.STEP * int(o.power) * absf(float(Bargain.CURSES[o.curse.id][2])))), "each curse is as heavy as its offer is strong")
 	check(offers[0].kind == "item" and catalog.item_by_id[offers[0].id].rarity == "dark", "a dark relic is always on offer")
 	var copy = offers.duplicate(true)
 	run.rooms[dark_id].erase("offers")
 	game.ensure_dark_offers()
 	check(JSON.stringify(run.rooms[dark_id].offers) == JSON.stringify(copy), "the bargains come from the room's seed")
 	offers = run.rooms[dark_id].offers
-	run.stats.max_hp = 6.0
-	run.blood_debt = 0
-	run.rebuild_stats()
-	run.hp = run.stats.max_hp
+	game.ui.offers = offers
+	game.ui.pick_bargain(0, "curse")
+	check(game.ui.content.get_node_or_null("Take_0") != null and game.ui.bargain_pick == 0, "an offer is chosen from Death's right hand")
+	offers[0].curse = {"id": "withering", "amount": -.18}
 	var max_before: float = run.stats.max_hp
 	var coins: int = run.coins
-	game.choose_offer(0)
-	check(offers[0].sold and is_equal_approx(run.stats.max_hp, max_before - int(offers[0].price)), "a bargain costs its price in maximum health")
-	check(run.coins == coins and run.hp <= run.stats.max_hp, "the dark store takes no coins, and health never exceeds the new maximum")
-	check(offers[0].id in run.inventory, "a bought dark relic is carried")
-	check(not run.rooms[dark_id].claimed and game.ui.mode == "reward", "the merchant stays open for more")
-	var debt: int = run.blood_debt
+	check(game.seal_bargain(0, "curse").ok, "the bargain is sealed")
+	check(offers[0].id in run.inventory and run.curses.size() == 1 and run.blood_debt == 0, "what is taken is carried, and its curse falls")
+	check(run.coins == coins and run.stats.max_hp >= max_before - catalog.base_stats().max_hp, "Death takes no coins and no health")
+	var cursed: float = run.stats.damage
+	run.curses = []
+	run.rebuild_stats()
+	check(is_equal_approx(run.stats.damage - .18, cursed), "Withering weakens spells for the rest of the run")
+	run.curses = [{"id": "withering", "amount": -.18}]
+	run.rebuild_stats()
+	check(run.rooms[dark_id].claimed and game.ui.mode == "play" and not game.paused, "Death deals once per altar")
+	check(game.death_figure.state == "fading", "Death fades once the bargain is struck")
+	check(not game.seal_bargain(1, "curse").ok and run.curses.size() == 1, "a second bargain is refused")
+	check(Bargain.curse_text({"id": "withering", "amount": -.3}) == "Your spells strike 30% weaker.", "a curse says how heavy it is")
 	run.save_run()
-	run.blood_debt = 0
+	run.curses = []
 	run.load_run()
-	check(run.blood_debt == debt and is_equal_approx(run.stats.max_hp, max_before - debt), "the debt survives save and load")
-	game.choose_offer(0)
-	check(run.blood_debt == debt, "a bargain can be taken only once")
+	check(run.curses.size() == 1 and is_equal_approx(run.stats.damage, cursed), "curses survive save and load")
+	var curse := {"id": "leaden_feet", "amount": -.12}
+	var before: int = run.curses.size()
+	# Waves against the clock: three waves, each cleared before the next.
+	game.trials.begin("waves", curse)
+	check(run.trial.state == "running" and not game.room.open, "a trial fought now seals Death's room")
+	step(110)
+	check(game.trials.wave == 1 and game.trials.foes.size() >= 3, "Death raises the first wave")
+	for w in 3:
+		for foe in game.trials.foes.duplicate():
+			for blow in 4:
+				if is_instance_valid(foe) and foe.alive: foe.take_hit(1.0e6, Vector3.ZERO, false, false, "shot")
+		step(2)
+	check(run.trial.is_empty() and game.room.open and run.curses.size() == before, "clearing every wave in time keeps the curse away")
+	# Reaper's quarry, out of time.
+	game.trials.begin("quarry", curse)
+	step(110)
+	var champion = game.trials.foes[0] if not game.trials.foes.is_empty() else null
+	check(game.trials.foes.size() == 1 and champion.elite != "", "Reaper's quarry summons one elite champion")
+	game.trials.clock = .05
+	step(5)
+	check(run.trial.is_empty() and run.curses.size() == before + 1 and game.room.open, "out of time, the curse falls anyway and the doors open")
+	check(not is_instance_valid(champion) or not champion.alive, "the champion goes back into the dark")
+	before = run.curses.size()
+	# Soul harvest: walk through every wisp.
+	game.trials.begin("harvest", curse)
+	step(110)
+	check(game.trials.wisps.size() == 7, "Soul harvest scatters seven wisps")
+	for wisp in game.trials.wisps.duplicate():
+		if not is_instance_valid(wisp): continue
+		game.player.place(Vector3(wisp.position.x, game.player.position.y, wisp.position.z))
+		step(1)
+	check(run.trial.is_empty() and run.curses.size() == before, "catching every wisp wins the harvest")
+	# Last breath: a fall fails the trial instead of the run.
+	clear_combat(false)
 	run.hp = run.stats.max_hp
-	game.choose_offer(1)
-	game.choose_offer(2)
-	check(run.stats.max_hp >= run.LIFE_FLOOR, "the dark never takes the last heart")
-	check(not run.can_pay_life(int(run.stats.max_hp)), "a price that would leave no heart is refused")
+	var full: float = run.hp
+	game.trials.begin("last_breath", curse)
+	check(is_equal_approx(run.hp, 1.0), "Last breath leaves half a heart")
+	step(110)
+	run.wards = 0
+	game.player.shield = 0
+	game.player.invulnerability = 0
+	game.player.hurt(1.0, game.player.position + Vector3(1, 0, 0))
+	check(run.active and run.trial.is_empty() and is_equal_approx(run.hp, full) and run.curses.size() == before + 1, "falling in Last breath fails it, health returns and the run goes on")
+	clear_combat(false)
+	before = run.curses.size()
+	# Leaving a trial halfway is failing it; No dashing goes on waiting.
+	run.trial = {"kind": "waves", "curse": curse, "room": dark_id, "state": "running"}
+	run.save_run()
+	run.load_run()
+	check(run.trial.is_empty() and run.curses.size() == before + 1, "leaving a trial halfway lets its curse fall")
+	run.curses.pop_back()
+	run.rebuild_stats()
+	before = run.curses.size()
+	# No dashing: the next fight, won without a dash.
+	game.trials.begin("no_dash", curse)
+	check(run.trial.state == "waiting" and game.ui.toast_text == "No dashing", "No dashing waits for the next fight")
+	var fight_id = run.rooms.keys().filter(func(id): return run.rooms[id].type == "combat" and not run.rooms[id].cleared)[0]
+	run.current_room = fight_id
+	game.enter_room(Vector3(0, 0, 2))
+	step(2)
+	check(run.trial.state == "running", "the trial begins when a fight shuts its doors")
+	run.save_run()
+	run.load_run()
+	check(run.trial.state == "waiting", "a reload puts No dashing back to waiting")
+	step(2)
+	game.player.dash_cooldown = 0
+	game.player.dash_time = 0
+	game.player.dash()
+	check(run.trial.is_empty() and run.curses.size() == before + 1, "a dash fails it")
+	game.trials.begin("no_dash", curse)
+	step(2)
+	game.clear_room()
+	check(run.trial.is_empty() and run.curses.size() == before + 1, "winning the fight without a dash keeps the curse away")
+	# Heavy Chains lengthen the dash's return.
+	run.inventory = []
+	run.curses = [{"id": "heavy_chains", "amount": -.45}]
+	run.rebuild_stats()
+	game.player.dash_cooldown = 0
+	game.player.dash_time = 0
+	game.player.dash()
+	check(is_equal_approx(game.player.dash_cooldown, 1.35 * 1.45), "Heavy Chains make the dash return 45% slower")
+	run.curses = []
+	run.rebuild_stats()
+	# In co-op Death sets only the trial that raises no foes of its own.
+	var party_gen = RandomNumberGenerator.new()
+	var party_trials := {}
+	for i in 30:
+		party_gen.seed = i
+		var offer := {"price": 3}
+		Bargain.terms(offer, party_gen, true)
+		party_trials[offer.trial] = true
+	check(party_trials.keys() == ["no_dash"], "co-op bargains set only No dashing")
 	for i in 400:
 		var gen = RandomNumberGenerator.new()
 		gen.seed = i
