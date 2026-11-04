@@ -39,6 +39,10 @@ func test_policy() -> void:
 		check(policy.msaa == fixture[4], name + ": MSAA follows the renderer policy")
 		check(policy.post_processing == fixture[5] and policy.reflections == fixture[5], name + ": unrelated renderers retain their passes")
 		check(policy.lightweight_surfaces == not fixture[5], name + ": surface fallback follows the affected device")
+	var exynos := RenderPolicy.for_device("Android", "ARM", "Mali-G78", "gl_compatibility")
+	check(exynos.relaxable and exynos.ambient_occlusion and not affected.get("relaxable", false), "Exynos starts light but keeps SSAO; PowerVR's safeguard stays")
+	var chosen := RenderPolicy.relaxed(exynos)
+	check(chosen.glow and chosen.post_processing and chosen.reflections and not chosen.lightweight_surfaces, "High effects detail restores every pass on Exynos")
 	check(RenderPolicy.for_device("Linux", "Mesa", "llvmpipe", "gl_compatibility").reflection_limit == Vector2i(1280, 720), "desktop reflection target is bounded separately")
 	check(int(ProjectSettings.get_setting("rendering/anti_aliasing/quality/msaa_3d.mobile", -1)) == 0, "project disables mobile MSAA before the first frame")
 
