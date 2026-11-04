@@ -5,6 +5,12 @@ extends Node
 ## curse it holds back falls. Run.trial keeps it, so "No dashing" can wait
 ## across rooms and floors. A trial fought at once seals Death's room, and
 ## leaving the run in the middle of one counts as failing it (Run.load_run).
+##
+## The challenger's own device keeps the trial: its clock, its waves, its
+## wisps. Whatever it raises is raised where foes live: here alone, on the
+## host in co-op, which tells the challenger when each wave has fallen. While
+## a teammate faces Death everyone else spectates: they cannot act or be
+## touched, foes see only the challenger, and they show pale and translucent.
 const WAVES := 3
 const WISPS := 7
 # Seconds between the bargain and the first foe, while the doors close.
@@ -12,12 +18,18 @@ const GRACE := 1.6
 const CATCH := 1.05
 
 var game: Node
-var foes: Array = []
+# The challenger's side.
 var wisps: Array = []
 var wave := 0
 var clock := 0.0
 var grace := 0.0
 var caught := 0
+# Where foes live: what was raised, for whom, and whether its fall is owed.
+var foes: Array = []
+var foe_peer := -1
+var foe_pending := false
+# The teammate this device last saw facing Death (0 for none).
+var watched := 0
 
 func setup(owner_game: Node) -> void:
 	game = owner_game
@@ -28,9 +40,22 @@ func kind() -> String:
 func running() -> bool:
 	return Run.trial.get("state", "") == "running"
 
-## A trial fought now holds Death's room shut; the room-clear check waits.
+## This player's own trial, fought now, holds Death's room shut.
 func seals_room() -> bool:
 	return running() and kind() in DeathBargain.AT_ONCE
+
+## Anyone's trial holds the room: the room-clear check and the passage wait.
+func holds_room() -> bool:
+	return seals_room() or watched != 0
+
+## Watching a teammate's trial: no acting, no harm, no foe's notice.
+func spectating() -> bool:
+	if seals_room() or not party_on(): return false
+	var now: int = game.party.challenger()
+	return now != 0 and now != Session.local_peer_id
+
+func party_on() -> bool:
+	return game.party != null and game.party.climbing()
 
 ## Sets the trial owed for a bargain, holding back its curse.
 func begin(trial_kind: String, curse: Dictionary) -> void:
@@ -55,21 +80,25 @@ func start() -> void:
 		Run.changed.emit()
 	game.room.set_open(false)
 	Audio.play_sound("door", .55)
-	game.ui.notify(DeathBargain.trial_name(kind()), DeathBargain.trial_text(kind()), DeathBargain.COLOR)
+	var detail := DeathBargain.trial_text(kind())
+	if party_on(): detail += " Your friends watch from the edge of the dark."
+	game.ui.notify(DeathBargain.trial_name(kind()), detail, DeathBargain.COLOR)
 
 ## The room's foes, wisps and champions arrive once the doors have shut.
 func arrive() -> void:
 	match kind():
 		"waves": next_wave()
-		"quarry": summon_champion()
+		"quarry": ask("champion")
 		"harvest":
 			scatter_wisps()
-			raise(2 + Run.floor_number / 2)
-		"last_breath": raise(wave_size())
+			ask("hunters")
+		"last_breath": ask("wave")
 
 func update(delta: float) -> void:
+	watch_party()
+	if not (game.party and game.party.client()): tend_foes()
 	if Run.trial.is_empty():
-		if not foes.is_empty() or not wisps.is_empty(): reset()
+		if not wisps.is_empty(): reset()
 		return
 	if not running():
 		# No dashing waits for the next fight to shut its doors.
@@ -83,64 +112,134 @@ func update(delta: float) -> void:
 		grace -= delta
 		if grace <= 0: arrive()
 		return
-	foes = foes.filter(func(foe): return is_instance_valid(foe) and foe.alive)
 	if DeathBargain.trial_time(kind()) > 0:
 		clock -= delta
 		if clock <= 0:
 			fail("Time ran out.")
 			return
+	if kind() == "harvest":
+		collect(delta)
+		if caught >= WISPS: succeed()
+
+## Everything this trial raised has fallen (sent by whoever runs the foes).
+func on_cleared() -> void:
+	if not running(): return
 	match kind():
 		"waves":
-			if foes.is_empty():
-				if wave >= WAVES: succeed()
-				else: next_wave()
-		"quarry", "last_breath":
-			if foes.is_empty(): succeed()
-		"harvest":
-			collect(delta)
-			if caught >= WISPS: succeed()
+			if wave >= WAVES: succeed()
+			else: next_wave()
+		"quarry", "last_breath": succeed()
 
 func wave_size() -> int:
 	return 3 + Run.floor_number / 2
 
 func next_wave() -> void:
 	wave += 1
-	raise(wave_size())
+	ask("wave")
 	if wave > 1: game.ui.notify("Wave %d of %d" % [wave, WAVES], "Death raises more.", DeathBargain.COLOR)
 
-## Foes Death raises from this floor's own roster. They carry no loot.
-func raise(count: int) -> void:
-	var gen := RandomNumberGenerator.new()
-	gen.seed = Content.stable_hash("trial:%d:%s:%s:%d" % [Run.seed_value, Run.current_room, kind(), wave])
-	var roster: Array = Foes.roster_for(Run.theme_id(), Run.floor_number, Run.floor_plan).filter(func(entry): return entry[0] != "rootling")
-	for entry in Foes.compose(roster, Foes.elite_chance(Run.floor_number), count, gen):
-		var foe: DungeonEnemy = game.spawn_enemy(around(gen, 3.5, 6.5), entry.kind, "")
-		if entry.elite not in ["", "twinned"]: foe.make_elite(entry.elite)
-		Effects.play("death_puff", foe.global_position + Vector3.UP * .5, DeathBargain.COLOR, 10, 1.2)
-		foes.append(foe)
+## Asks for foes (or their end) where foes live: here, or the host.
+func ask(op: String) -> void:
+	if game.party and game.party.client():
+		game.party.acts.append(["trial", [op, kind(), wave]])
+	else:
+		raise_for(Session.local_peer_id, op, kind(), wave)
 
-## One champion: a foe of this floor, made elite, with far more health.
-func summon_champion() -> void:
-	var gen := RandomNumberGenerator.new()
-	gen.seed = Content.stable_hash("quarry:%d:%s" % [Run.seed_value, Run.current_room])
-	var roster: Array = Foes.roster_for(Run.theme_id(), Run.floor_number, Run.floor_plan).filter(func(entry): return entry[0] != "rootling")
-	var pick: Array = roster[gen.randi_range(0, roster.size() - 1)] if not roster.is_empty() else ["brute"]
-	var foe: DungeonEnemy = game.spawn_enemy(around(gen, 4.5, 6.5), pick[0], "")
-	foe.make_elite(["gilded", "volatile", "warded"][gen.randi_range(0, 2)])
-	foe.max_hp *= 2.6 + .3 * Run.floor_number
-	foe.hp = foe.max_hp
-	Geo.ring(foe, Vector3(0, .05, 0), foe.radius + .5, DeathBargain.COLOR, .05)
-	Effects.play("death_puff", foe.global_position + Vector3.UP * .6, DeathBargain.COLOR, 16, 1.6)
-	foes.append(foe)
+# ---------------------------------------------------------------- where foes live
 
-## A point a few steps from the player, inside the room.
-func around(gen: RandomNumberGenerator, near: float, far: float) -> Vector3:
-	var base: Vector3 = game.player.global_position
+## Raises a trial's foes around its challenger, or sends them back.
+func raise_for(peer: int, op: String, trial_kind: String, at_wave: int) -> void:
+	if op == "end":
+		if peer == foe_peer: banish()
+		return
+	if foe_peer != peer: banish()
+	var body: Node3D = game.party.body_of(peer) if game.party and peer != Session.local_peer_id else game.player
+	if not is_instance_valid(body): return
+	var center: Vector3 = body.global_position
+	var gen := RandomNumberGenerator.new()
+	gen.seed = Content.stable_hash("trial:%d:%s:%d:%s:%d" % [Run.seed_value, Run.current_room, peer, trial_kind, at_wave])
+	var roster: Array = Foes.roster_for(Run.theme_id(), Run.floor_number, Run.floor_plan).filter(func(entry): return entry[0] != "rootling")
+	if game.party: game.party.begin_world()
+	foe_peer = peer
+	match op:
+		"wave", "hunters":
+			var count: int = wave_size() if op == "wave" else 2 + Run.floor_number / 2
+			for entry in Foes.compose(roster, Foes.elite_chance(Run.floor_number), count, gen):
+				var foe: DungeonEnemy = game.spawn_enemy(around(gen, center, 3.5, 6.5), entry.kind, "")
+				if entry.elite not in ["", "twinned"]: foe.make_elite(entry.elite)
+				Effects.play("death_puff", foe.global_position + Vector3.UP * .5, DeathBargain.COLOR, 10, 1.2)
+				foes.append(foe)
+		"champion":
+			# One foe of this floor, made elite, with far more health.
+			var pick: Array = roster[gen.randi_range(0, roster.size() - 1)] if not roster.is_empty() else ["brute"]
+			var foe: DungeonEnemy = game.spawn_enemy(around(gen, center, 4.5, 6.5), pick[0], "")
+			foe.make_elite(["gilded", "volatile", "warded"][gen.randi_range(0, 2)])
+			foe.max_hp *= 2.6 + .3 * Run.floor_number
+			foe.hp = foe.max_hp
+			Geo.ring(foe, Vector3(0, .05, 0), foe.radius + .5, DeathBargain.COLOR, .05)
+			Effects.play("death_puff", foe.global_position + Vector3.UP * .6, DeathBargain.COLOR, 16, 1.6)
+			foes.append(foe)
+	# Hunters only hunt; a wave or a champion owes its fall to the challenger.
+	foe_pending = op != "hunters"
+	if game.party: game.party.end_world()
+
+## Each tick where foes live: has the challenger's wave fallen, or have they gone?
+func tend_foes() -> void:
+	if foe_peer < 0: return
+	foes = foes.filter(func(foe): return is_instance_valid(foe) and foe.alive)
+	if game.party and game.party.host() and foe_peer != Session.local_peer_id and not game.party.members.has(foe_peer):
+		banish()
+		return
+	if foe_pending and foes.is_empty():
+		foe_pending = false
+		if foe_peer == Session.local_peer_id or not (game.party and game.party.host()): on_cleared()
+		else: game.party.tell(foe_peer, "trial", "cleared")
+
+## Whatever Death raised goes back into the dark.
+func banish() -> void:
+	if game.party: game.party.begin_world()
+	for foe in foes:
+		if is_instance_valid(foe) and foe.alive:
+			Effects.play("death_puff", foe.global_position + Vector3.UP * .5, DeathBargain.COLOR, 8)
+			foe.alive = false
+			foe.queue_free()
+	if game.party: game.party.end_world()
+	game.enemies = game.enemies.filter(func(foe): return is_instance_valid(foe) and foe.alive)
+	foes.clear()
+	foe_peer = -1
+	foe_pending = false
+
+## A point a few steps from the challenger, inside the room.
+func around(gen: RandomNumberGenerator, base: Vector3, near: float, far: float) -> Vector3:
 	for attempt in 8:
 		var p := base + Vector3.FORWARD.rotated(Vector3.UP, gen.randf() * TAU) * gen.randf_range(near, far)
 		var safe: Vector2 = game.room.geometry.safe_point(Vector2(p.x, p.z), .7, game.room.blocked_at)
 		if safe.distance_to(Vector2(base.x, base.z)) > 2.5: return Vector3(safe.x, base.y, safe.y)
 	return base + Vector3(3, 0, 0)
+
+# ---------------------------------------------------------------- spectating
+
+## Follows whether a teammate faces Death: their doors shut for everyone, and
+## whoever is not fighting watches until it is done.
+func watch_party() -> void:
+	var now: int = game.party.challenger() if party_on() else 0
+	if now == watched: return
+	var before := watched
+	watched = now
+	if now != 0 and now != Session.local_peer_id:
+		game.room.set_open(false)
+		if game.ui.mode == "bargain": game.close_reward()
+		game.ui.notify("%s faces Death" % Session.name_of(now), "You watch from the edge of the dark, untouched, until it is done.", DeathBargain.COLOR)
+	elif now == 0 and before != Session.local_peer_id and is_instance_valid(game.room):
+		if Run.rooms.get(Run.current_room, {}).get("cleared", false): game.room.set_open(true)
+
+## The line spectators see: whose trial, and how it stands.
+func watching_line() -> String:
+	if not spectating(): return ""
+	var now: int = game.party.challenger()
+	return "WATCHING %s · %s" % [Session.name_of(now).to_upper(), game.party.trial_line(now)]
+
+# ---------------------------------------------------------------- the challenger's side
 
 ## Soul-wisps drift through the room until the player walks through them.
 func scatter_wisps() -> void:
@@ -176,10 +275,15 @@ func collect(delta: float) -> void:
 			wisp.queue_free()
 			wisps.erase(wisp)
 
-## Last breath: a fall in the trial fails it instead of ending the run.
+## Last breath, or any trial fought before friends: a fall fails the trial
+## instead of ending the run (alone) or leaving the challenger down (co-op).
 func catch_fall() -> bool:
-	if not (running() and kind() == "last_breath"): return false
-	fail("Your last breath ran out.")
+	if not running(): return false
+	if not (kind() == "last_breath" or (seals_room() and party_on())): return false
+	var rekindle := not Run.trial.has("hp")
+	fail("You fell.")
+	if rekindle: Run.hp = minf(float(Run.stats.max_hp), Party.REVIVE_HP)
+	Run.changed.emit()
 	game.player.invulnerability = 2.0
 	return true
 
@@ -211,15 +315,10 @@ func fail(reason: String) -> void:
 	game.shake = maxf(game.shake, .15)
 	Run.save_run()
 
-## Whatever Death raised goes back into the dark, and its doors open.
+## The trial is over: its foes go back into the dark and its doors open.
 func finish() -> void:
 	var sealed := seals_room()
-	for foe in foes:
-		if is_instance_valid(foe) and foe.alive:
-			Effects.play("death_puff", foe.global_position + Vector3.UP * .5, DeathBargain.COLOR, 8)
-			foe.alive = false
-			foe.queue_free()
-	game.enemies = game.enemies.filter(func(foe): return is_instance_valid(foe) and foe.alive)
+	if sealed: ask("end")
 	Run.trial = {}
 	reset()
 	if sealed:
@@ -230,7 +329,6 @@ func reset() -> void:
 	for wisp in wisps:
 		if is_instance_valid(wisp): wisp.queue_free()
 	wisps.clear()
-	foes.clear()
 	wave = 0
 	caught = 0
 	grace = 0.0
@@ -238,6 +336,8 @@ func reset() -> void:
 
 ## The trial's line under the top of the screen, or nothing.
 func hud_line() -> String:
+	var watching := watching_line()
+	if watching != "": return watching
 	if Run.trial.is_empty(): return ""
 	var title := DeathBargain.trial_name(kind()).to_upper()
 	if not running(): return "%s · AT YOUR NEXT FIGHT" % title

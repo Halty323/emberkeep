@@ -112,6 +112,17 @@ func build(owner_game: Node3D, room: Dictionary, preview := false, staged := fal
 		geometry.terrain = terrain
 	await pace()
 	build_floor()
+	# The first two floors are damp and low: mist lingers over the stones.
+	# It stays on the ground: off sunken ledges and stairwell openings.
+	if first_person_room and FloorMist.wanted():
+		for cell in geometry.cells:
+			var areas: Array[Rect2] = terrain.floor_sections(Rect2(RoomGeometry.cell_center(cell) - RoomGeometry.HALF, RoomGeometry.CELL))
+			for key in ["stairs", "stairwell"]:
+				if not data.has(key): continue
+				var at := FloorGenerator.vec2(data[key])
+				var radius := Staircase.OUTER + .65
+				areas = FirstPersonTerrain.subtract_rects(areas, Rect2(at - Vector2.ONE * radius, Vector2.ONE * radius * 2.0))
+			for area in areas: FloorMist.cover(self, area, light)
 	await pace()
 	await build_walls()
 	if first_person_room:

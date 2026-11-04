@@ -57,17 +57,17 @@ Every trial except No dashing is fought at once in Death's room, with the doors 
 
 Your curses are listed under your relics, and in full on the pause screen.
 
-In co-op Death sets only No dashing, the trial that raises no foes of its own.
+In co-op every player bargains at their own altar. Trials are fought one at a time: while one player faces Death, everyone else spectates. Spectators cannot cast, dash, interact or be harmed, foes see only the challenger, and the challenger sees them pale and translucent. Their screens read "WATCHING" and the challenger's progress. The next player can face their own trial once it is over. In co-op a fall during a trial fails it and leaves the challenger on one heart, rather than leaving them down with nobody free to rekindle them.
 
 Runs saved before this update keep the maximum health they gave the old dark store.
 
 ## Code
 
 - `scripts/items/death_bargain.gd`: the curses and trials, and the terms each offer gets.
-- `scripts/items/death_trials.gd`: trials being fought, won and lost.
+- `scripts/items/death_trials.gd`: trials being fought, won and lost; in co-op, raising a guest's foes on the host, and spectating.
 - `scripts/presentation/death_figure.gd`: Death's figure and how it rises and fades.
 - `main.gd`: `open_bargain()`, `seal_bargain()` and `ensure_dark_offers()`.
 - `Run`: `curses` (applied in `rebuild_stats()`), `trial`, `add_curse()`, and both saved with the run.
 - `ui.gd`: the bargain screen, the trial line in the HUD and the curse list.
 
-`tests/tower.gd` checks the offers, curses, every trial won or lost, saves and co-op. `tests/render_death.gd` is an opt-in capture; set `EMBERKEEP_DEATH_CAPTURE`.
+`tests/tower.gd` checks the offers, curses, every trial won or lost, and saves. `tests/coop.gd` has a guest face Reaper's quarry while the host and the other guest spectate. `tests/render_death.gd` is an opt-in capture; set `EMBERKEEP_DEATH_CAPTURE`.

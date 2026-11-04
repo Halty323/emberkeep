@@ -26,15 +26,14 @@ const TRIALS := {
 const AT_ONCE := ["waves", "quarry", "harvest", "last_breath"]
 const COLOR := Color("cdb6ef")
 
-## Gives an offer its price: a curse sized to its power and a trial.
-## In co-op only the trial that raises no foes of its own is set.
-static func terms(offer: Dictionary, gen: RandomNumberGenerator, party := false) -> void:
+## Gives an offer its price: a curse sized to its power and a trial. In
+## co-op the party watches while each challenger faces their own trial.
+static func terms(offer: Dictionary, gen: RandomNumberGenerator) -> void:
 	var power := clampi(int(offer.get("price", 3)), 2, 5)
 	var curse: String = CURSES.keys()[gen.randi_range(0, CURSES.size() - 1)]
 	offer["power"] = power
 	offer["curse"] = {"id": curse, "amount": snappedf(STEP * power * float(CURSES[curse][2]), .001)}
-	var pool: Array = ["no_dash"] if party else TRIALS.keys()
-	offer["trial"] = pool[gen.randi_range(0, pool.size() - 1)]
+	offer["trial"] = TRIALS.keys()[gen.randi_range(0, TRIALS.size() - 1)]
 
 static func known_curse(curse) -> bool:
 	return curse is Dictionary and CURSES.has(str(curse.get("id", ""))) and float(curse.get("amount", 0)) < 0

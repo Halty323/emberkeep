@@ -33,6 +33,8 @@ func build(points: Array[Vector2], preview := false, look: Dictionary = {}) -> v
 		var at := rect.get_center()
 		append_box("floor",Vector3(at.x,-.08,at.y),Vector3(rect.size.x,.16,rect.size.y))
 		append_box("stone",Vector3(at.x,HEIGHT+.08,at.y),Vector3(rect.size.x,.16,rect.size.y))
+		# The rooms' mist runs on through the passages between them.
+		if not preview and FloorMist.wanted(): FloorMist.cover(self,rect,{},Geo.CORRIDOR_LAYER)
 		tile_count+=1
 		for normal in [Vector2i.LEFT,Vector2i.RIGHT,Vector2i.UP,Vector2i.DOWN]:
 			if occupied.has(tile+normal): continue

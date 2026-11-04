@@ -1232,6 +1232,9 @@ func draw_legacy_menu() -> void:
 
 func draw_hud() -> void:
 	anchor(0)
+	# Watching a teammate's trial: the world a little paler, out of reach.
+	var trials = game.get("trials")
+	if trials and trials.spectating(): draw_rect(Rect2(-offset.x / scale_value, 0, view_width + offset.x * 2.0 / scale_value, 720), Color(.8, .86, .96, .08))
 	draw_hud_left()
 	anchor(widen() / 2.0)
 	draw_hud_middle()

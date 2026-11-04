@@ -63,6 +63,16 @@ func arena(theme: String, depth := 2, kind := "combat", twist := "", keep_foes :
 		return id
 	return ""
 
+## Fells a foe whatever it is doing (hanging, submerged or warded).
+func slay(foe) -> void:
+	for blow in 4:
+		if is_instance_valid(foe) and foe.alive:
+			foe.targetable = true
+			foe.take_hit(1.0e6, Vector3.ZERO, false, false, "shot")
+	if is_instance_valid(foe) and foe.alive:
+		foe.hp = 0.0
+		foe.die()
+
 func spawn(kind: String, at := Vector3(0, 0, -2)):
 	var foe = game.spawn_enemy(at, kind)
 	foe.place(at)
@@ -648,15 +658,16 @@ func test_dark_store() -> void:
 	check(run.curses.size() == 1 and is_equal_approx(run.stats.damage, cursed), "curses survive save and load")
 	var curse := {"id": "leaden_feet", "amount": -.12}
 	var before: int = run.curses.size()
+	# Relics that strike on their own would fight the trials for the test.
+	run.inventory = []
+	run.rebuild_stats()
 	# Waves against the clock: three waves, each cleared before the next.
 	game.trials.begin("waves", curse)
 	check(run.trial.state == "running" and not game.room.open, "a trial fought now seals Death's room")
-	step(110)
+	step(100)
 	check(game.trials.wave == 1 and game.trials.foes.size() >= 3, "Death raises the first wave")
 	for w in 3:
-		for foe in game.trials.foes.duplicate():
-			for blow in 4:
-				if is_instance_valid(foe) and foe.alive: foe.take_hit(1.0e6, Vector3.ZERO, false, false, "shot")
+		for foe in game.trials.foes.duplicate(): slay(foe)
 		step(2)
 	check(run.trial.is_empty() and game.room.open and run.curses.size() == before, "clearing every wave in time keeps the curse away")
 	# Reaper's quarry, out of time.
@@ -684,6 +695,7 @@ func test_dark_store() -> void:
 	var full: float = run.hp
 	game.trials.begin("last_breath", curse)
 	check(is_equal_approx(run.hp, 1.0), "Last breath leaves half a heart")
+	game.player.invulnerability = 5.0
 	step(110)
 	run.wards = 0
 	game.player.shield = 0
@@ -730,15 +742,15 @@ func test_dark_store() -> void:
 	check(is_equal_approx(game.player.dash_cooldown, 1.35 * 1.45), "Heavy Chains make the dash return 45% slower")
 	run.curses = []
 	run.rebuild_stats()
-	# In co-op Death sets only the trial that raises no foes of its own.
+	# Every trial can come up, co-op included (the party watches).
 	var party_gen = RandomNumberGenerator.new()
 	var party_trials := {}
 	for i in 30:
 		party_gen.seed = i
 		var offer := {"price": 3}
-		Bargain.terms(offer, party_gen, true)
+		Bargain.terms(offer, party_gen)
 		party_trials[offer.trial] = true
-	check(party_trials.keys() == ["no_dash"], "co-op bargains set only No dashing")
+	check(party_trials.size() == Bargain.TRIALS.size(), "every trial can be set, alone or in co-op")
 	for i in 400:
 		var gen = RandomNumberGenerator.new()
 		gen.seed = i

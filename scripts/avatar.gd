@@ -392,6 +392,9 @@ func hurt(amount: float, source: Vector3) -> void:
 	if net: net.splash(self, amount, source)
 	if invulnerability > 0 or not Run.active or Run.has_flag("invulnerable") or NetHooks.downed(game):
 		return
+	# Watching a teammate's trial from the edge of the dark: untouchable.
+	var trials = game.get("trials")
+	if trials and trials.spectating(): return
 	# Relic guard refreshes each room and is spent first; wards persist.
 	if shield > 0 or Run.wards > 0:
 		if shield > 0:

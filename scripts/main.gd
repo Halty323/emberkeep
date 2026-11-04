@@ -393,6 +393,10 @@ func _physics_process(delta: float) -> void:
 				aim.y = 0
 			# A click that pressed an on-screen action button never becomes fire.
 			shooting = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not ui.mouse_on_action
+	# Watching a teammate's trial: no spells, no dash.
+	if trials.spectating():
+		shooting = false
+		request_dash = false
 	if request_dash:
 		if first_person:
 			var dash_input = screen_direction(move_input)
@@ -436,7 +440,7 @@ func _physics_process(delta: float) -> void:
 	track_exploration()
 	# Posts and dropped lanterns never hold a room shut. A guest's room opens
 	# when the host says its fight is won.
-	if not party.client() and not room.open and deferred_encounter.is_empty() and not trials.seals_room() and enemies.all(func(e): return e.inert):
+	if not party.client() and not room.open and deferred_encounter.is_empty() and not trials.holds_room() and enemies.all(func(e): return e.inert):
 		for enemy in enemies:
 			enemy.alive = false
 			enemy.queue_free()
@@ -1716,7 +1720,7 @@ func interaction_eligible(target: Dictionary) -> bool:
 	return true
 
 func update_interaction() -> void:
-	if in_transition():
+	if in_transition() or trials.spectating():
 		interaction_text = ""
 		interaction_kind = ""
 		return
@@ -1850,6 +1854,11 @@ func seal_bargain(index: int, price: String) -> Dictionary:
 	var data: Dictionary = Run.rooms[Run.current_room]
 	if data.type != "dark" or data.claimed or not data.has("offers"): return GameActions.result(false, "no bargain here")
 	if index < 0 or index >= data.offers.size() or price not in ["curse", "trial"]: return GameActions.result(false, "no such bargain")
+	# Death faces one challenger at a time.
+	var other: int = party.challenger()
+	if price == "trial" and other != 0 and other != Session.local_peer_id and str(data.offers[index].get("trial", "")) in DeathBargain.AT_ONCE:
+		ui.notify("Death is busy", "Wait until %s's trial is done." % Session.name_of(other), DeathBargain.COLOR)
+		return GameActions.result(false, "another trial is under way")
 	var offer: Dictionary = data.offers[index]
 	data.claimed = true
 	offer["sealed"] = price
@@ -1886,7 +1895,7 @@ func ensure_dark_offers() -> void:
 		# Offers saved by the old dark store gain Death's terms.
 		if data.offers.any(func(offer): return not offer.has("curse")):
 			gen.seed = int(data.seed) + 6662 + party.loot_salt()
-			for offer in data.offers: DeathBargain.terms(offer, gen, party.climbing())
+			for offer in data.offers: DeathBargain.terms(offer, gen)
 		return
 	var dark: Array = Content.items.filter(func(item): return item.rarity == "dark")
 	var relic: Dictionary = dark[gen.randi_range(0, dark.size() - 1)]
@@ -1899,7 +1908,7 @@ func ensure_dark_offers() -> void:
 	var others: Array = dark.filter(func(item): return item.id != relic.id)
 	var second: Dictionary = others[gen.randi_range(0, others.size() - 1)]
 	offers.append({"kind": "item", "id": second.id, "price": int(second.cost)})
-	for offer in offers: DeathBargain.terms(offer, gen, party.climbing())
+	for offer in offers: DeathBargain.terms(offer, gen)
 	data.offers = offers
 	Run.save_run()
 
