@@ -95,6 +95,6 @@ Not yet verified on a phone: Pixel frame times, how much each warmed shader save
 
 ## Loading screen and first draws (November 2026)
 
-A new or continued run now opens on a loading screen (*The tower stirs*, with a tip and a progress bar). Behind it the floor is generated, the first room is built a slice per frame, and the floor's shaders are compiled before play shows, so the start no longer sits frozen on the title. `tests/render_loading.gd` checks this under a display.
+Every new floor now opens on a loading screen: a new or continued run, and each climb to the next floor. The screen shows the floor's name, a tip and a progress bar. Behind it the floor is generated and the arrival room is built a slice per frame. Every other room of the floor is also built once and drawn for two frames in front of the camera, so each of its materials meets the graphics driver during loading rather than on the step into that room. The floor's shader warm-up finishes before play shows. `tests/render_loading.gd` checks this under a display.
 
 A neighbour room built while you walk its corridor used to stay hidden until the step into it, so the driver met its materials for the first time on that frame. Once built, it is now drawn for two frames where it stands, out of sight behind the corridor's walls, which moves its shader compiles and uploads off the moment you enter. On desktop the processor side of entering a room stays about 10 ms; the shader stall this targets happens only on the phone's driver, and still needs measuring there.

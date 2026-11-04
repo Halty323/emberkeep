@@ -39,6 +39,22 @@ func go() -> void:
 	check(seen >= 1.0 and frames > 3, "the bar fills across several frames")
 	check(is_instance_valid(game.player) and game.room.data == game.get_node("/root/Run").rooms[game.get_node("/root/Run").current_room], "the first room is the one built behind the screen")
 	check(game.prebuilt == null, "the built room was adopted, not left aside")
+	game.fps.yaw = .8
+	for i in 8: await process_frame
+	if out != "": root.get_viewport().get_texture().get_image().save_png(out.path_join("play.png"))
+	check(game.ui.minimap_view.visible, "the minimap turns with the view in first person")
+	# Climbing to the next floor loads it behind its own screen.
+	var run = game.get_node("/root/Run")
+	game.raise_stairs(false)
+	game.begin_climb()
+	var saw_loading := false
+	frames = 0
+	while (run.floor_number < 2 or game.loading or not game.transition.is_empty()) and frames < 6000:
+		await process_frame
+		frames += 1
+		saw_loading = saw_loading or (game.loading and game.ui.mode == "loading")
+	check(saw_loading, "a new floor loads behind its own screen")
+	check(run.floor_number == 2 and game.ui.mode == "play" and is_instance_valid(game.player), "the climb arrives on the next floor and play resumes (%d frames)" % frames)
 	game.queue_free()
 	for i in 3: await process_frame
 	print("LOADING: %d checks, %d failures" % [checks, failures])

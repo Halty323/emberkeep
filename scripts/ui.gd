@@ -44,6 +44,9 @@ const LOADING_TIPS := ["Frost on a soaked foe freezes it solid.", "Some relics a
 	"A spellbook sings with relics of its own element.", "Shoot a dead lantern to light it again.",
 	"Dash past an enemy ember to catch it as a spark.", "Foes standing in lantern light take more damage.",
 	"Water carries lightning to every foe standing in it.", "Fire meeting a chilled foe cracks it open."]
+# Where the map helpers draw: this control, or the turning minimap view.
+var canvas: CanvasItem
+var minimap_view: MinimapView
 var loading_title := "The tower stirs"
 var loading_progress := 0.0
 # Screens laid out against the edges rather than centred whole.
@@ -121,6 +124,7 @@ var floor_title_start = -100.0
 
 func setup(owner_game: Node3D) -> void:
 	game = owner_game
+	canvas = self
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	backdrop = ColorRect.new()
@@ -135,6 +139,9 @@ func setup(owner_game: Node3D) -> void:
 	content = Control.new()
 	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(content)
+	minimap_view = MinimapView.new()
+	add_child(minimap_view)
+	minimap_view.setup(self)
 	get_viewport().size_changed.connect(resize)
 	resize()
 	show_screen("menu")
@@ -856,7 +863,17 @@ func _process(delta: float) -> void:
 	floating_numbers = floating_numbers.filter(func(n): return n.age < n.get("life", .65))
 	sync_lighting()
 	update_surface_visibility()
+	place_minimap()
 	queue_redraw()
+
+func place_minimap() -> void:
+	var on: bool = mode == "play" and game.first_person and Run.active and not game.in_menu and is_instance_valid(game.player)
+	minimap_view.visible = on
+	if not on: return
+	minimap_view.position = offset + (MINIMAP_AREA.position + Vector2(widen(), 0)) * scale_value
+	minimap_view.size = MINIMAP_AREA.size
+	minimap_view.scale = Vector2.ONE * scale_value
+	minimap_view.queue_redraw()
 
 func _input(event: InputEvent) -> void:
 	if game.first_person and game.in_menu and event.is_action_pressed("ui_cancel") and handle_title_back():
@@ -1353,10 +1370,12 @@ func draw_stick(at: Vector2, value: Vector2, label: String, active_touch: bool) 
 	centered(label, at.x, at.y + 91, 14, Color(INK, .8), bold)
 
 func draw_minimap() -> void:
-	var cells = FloorGenerator.room_cells(Run.rooms[Run.current_room])
-	var focus = Vector2.ZERO
-	for cell in cells: focus += Vector2(cell)
-	draw_floor_map(MINIMAP_AREA, focus / cells.size(), 22.0)
+	# First person: the minimap view turns with the player (MinimapView).
+	if not game.first_person:
+		var cells = FloorGenerator.room_cells(Run.rooms[Run.current_room])
+		var focus = Vector2.ZERO
+		for cell in cells: focus += Vector2(cell)
+		draw_floor_map(MINIMAP_AREA, focus / cells.size(), 22.0)
 	if not touch_hud_visible():
 		right_text("M", MINIMAP_RECT.end - Vector2(20, 11), 12, MUTED)
 
@@ -1394,7 +1413,7 @@ func draw_floor_map(area: Rect2, focus: Vector2, cell_size: float) -> void:
 		var start = origin + (a + direction * (.5 - inset / cell_size)) * cell_size
 		var end = origin + (a + direction * (.5 + inset / cell_size)) * cell_size
 		if area.has_point(start) and area.has_point(end):
-			draw_line(start, end, Color("9d9878"), maxf(2.0, cell_size * .12), true)
+			canvas.draw_line(start, end, Color("9d9878"), maxf(2.0, cell_size * .12), true)
 	for id in known:
 		var data: Dictionary = Run.rooms[id]
 		var cells = FloorGenerator.room_cells(data)
@@ -1405,7 +1424,7 @@ func draw_floor_map(area: Rect2, focus: Vector2, cell_size: float) -> void:
 			var rect = Rect2(origin + (Vector2(cell) - Vector2(.5, .5)) * cell_size + low, Vector2.ONE * cell_size - low - high)
 			if Run.is_seen(data, cell):
 				var shadow = Rect2(rect.position + Vector2(0, 2), rect.size).intersection(area)
-				if shadow.has_area(): draw_rect(shadow, Color("262e28"))
+				if shadow.has_area(): canvas.draw_rect(shadow, Color("262e28"))
 				draw_scribbled(rect, area, cell, color, cell_size)
 			else:
 				# Known but not yet walked: a faint pencil outline, merged across
@@ -1415,13 +1434,13 @@ func draw_floor_map(area: Rect2, focus: Vector2, cell_size: float) -> void:
 					if cells.has(next) and not Run.is_seen(data, next): continue
 					var edge = ghost_edge(rect, direction)
 					if area.has_point(edge[0]) and area.has_point(edge[1]):
-						draw_dashed_line(edge[0], edge[1], Color(color, .5), maxf(1.0, cell_size * .05), maxf(2.5, cell_size * .12), true, true)
+						canvas.draw_dashed_line(edge[0], edge[1], Color(color, .5), maxf(1.0, cell_size * .05), maxf(2.5, cell_size * .12), true, true)
 		if data.get("fps_terrain",{}).get("kind","")=="loft":
 			var mark: Vector2=origin+Vector2(FloorGenerator.vec(data.anchor))*cell_size+Vector2(2,-2)
 			if area.grow(-5).has_point(mark):
-				draw_rect(Rect2(mark-Vector2(4,4),Vector2(8,8)),Color("202724"))
-				for y in [-2,2]: draw_line(mark+Vector2(-3,y),mark+Vector2(3,y),GOLD,1.0,true)
-				draw_line(mark+Vector2(-2,2),mark+Vector2(2,-2),GOLD,1.0,true)
+				canvas.draw_rect(Rect2(mark-Vector2(4,4),Vector2(8,8)),Color("202724"))
+				for y in [-2,2]: canvas.draw_line(mark+Vector2(-3,y),mark+Vector2(3,y),GOLD,1.0,true)
+				canvas.draw_line(mark+Vector2(-2,2),mark+Vector2(2,-2),GOLD,1.0,true)
 		if id == Run.current_room:
 			# One outline around the whole footprint, drawn on exposed edges only.
 			var reach = cell_size * .5 - inset + 2.5
@@ -1434,7 +1453,7 @@ func draw_floor_map(area: Rect2, focus: Vector2, cell_size: float) -> void:
 					var start = mid - Vector2(across) * (cell_size * .5 if cells.has(cell - across) else reach)
 					var end = mid + Vector2(across) * (cell_size * .5 if cells.has(cell + across) else reach)
 					if area.has_point(start) and area.has_point(end):
-						draw_line(start, end, GOLD, 1.5, true)
+						canvas.draw_line(start, end, GOLD, 1.5, true)
 
 func scribble(cell: Vector2i) -> void:
 	scribbles[cell] = elapsed_ui
@@ -1451,13 +1470,13 @@ func draw_scribbled(rect: Rect2, area: Rect2, cell: Vector2i, color: Color, cell
 	var shown = rect.intersection(area)
 	if not shown.has_area(): return
 	var progress = scribble_progress(cell)
-	draw_rect(shown, Color(color.darkened(.5), .45 * progress))
+	canvas.draw_rect(shown, Color(color.darkened(.5), .45 * progress))
 	var inner = rect.grow(-cell_size * .08)
 	var points = scribble_path(inner, cell, Run.floor_number)
 	for i in points.size(): points[i] = points[i].clamp(area.position, area.end)
 	var drawn = partial_path(points, progress)
 	# About a third of their spacing, so each line of the zig-zag stands apart.
-	if drawn.size() >= 2: draw_polyline(drawn, Color(color, .85), scribble_spacing(inner) * .37, true)
+	if drawn.size() >= 2: canvas.draw_polyline(drawn, Color(color, .85), scribble_spacing(inner) * .37, true)
 
 static func ghost_edge(rect: Rect2, direction: Vector2i) -> Array:
 	match direction:

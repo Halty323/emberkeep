@@ -466,6 +466,8 @@ func begin_transition(portal_id: String) -> void:
 	interaction_kind = ""
 
 func advance_transition(delta: float) -> void:
+	# A floor loading behind its screen holds the arrival until it is ready.
+	if loading: return
 	transition.time += delta
 	if transition.get("kind", "") == "fps_floor":
 		light_veil.color.a = clampf(transition.time / .35, 0, 1)
@@ -543,7 +545,29 @@ func reach_next_floor() -> void:
 		light_veil.color.a = 0.0
 		end_run(true)
 		return
+	if first_person and DisplayServer.get_name() != "headless" and not loading:
+		# Every new floor loads behind its own screen: generated, its rooms
+		# built and drawn once, its shaders compiled, before the arrival.
+		transition = {"kind": "loading"}
+		loading = true
+		ui.loading_title = "The stair climbs on"
+		ui.loading_progress = .05
+		ui.show_screen("loading")
+		for frame in 2: await get_tree().process_frame
+		Run.next_floor()
+		ui.loading_title = str(Run.theme().name)
+		await prebuild_room()
+		await warm_floor_rooms(Run.current_room)
+		arrive_on_floor()
+		await close_loading()
+		ui.show_screen("play")
+		ui.announce_floor()
+		return
 	Run.next_floor()
+	arrive_on_floor()
+
+## The new floor opens: the figure rises from its stairwell into the light.
+func arrive_on_floor() -> void:
 	enter_room(Vector3(0, 0, 2.0))
 	party.floor_changed()
 	var pedestal = Vector2(room.pedestal.x, room.pedestal.z)
@@ -564,7 +588,8 @@ func reach_next_floor() -> void:
 	if first_person: stair_cinematic.begin(self,true)
 	warm_shaders()
 	Run.save_run()
-	ui.announce_floor()
+	# Behind a loading screen, the floor's name waits until it lifts.
+	if not loading: ui.announce_floor()
 
 ## Position along a path of segments with their own durations.
 static func path_point(path: Array, times: Array, time: float) -> Vector3:
@@ -909,8 +934,10 @@ func begin_run(weapon: String, seed_input: int, is_daily: bool) -> void:
 		if not loading: start_run(weapon, seed_input, is_daily)
 		return
 	Run.start_run(weapon, seed_input, is_daily)
-	ui.loading_progress = .2
+	ui.loading_title = str(Run.theme().name)
+	ui.loading_progress = .1
 	await prebuild_room()
+	await warm_floor_rooms(Run.current_room)
 	start_run(weapon, seed_input, is_daily, true)
 	await close_loading()
 	greet_run()
@@ -924,8 +951,9 @@ func begin_continue() -> void:
 		ui.show_screen("menu")
 		ui.notify("This save could not be loaded", "Start a fresh run.")
 		return
-	ui.loading_progress = .2
+	ui.loading_progress = .1
 	await prebuild_room()
+	await warm_floor_rooms(Run.current_room)
 	continue_run(true)
 	await close_loading()
 	greet_continue()
@@ -951,11 +979,36 @@ func prebuild_room() -> void:
 	while staged.building:
 		await get_tree().process_frame
 		staged.resume_build()
-		ui.loading_progress = minf(.65, ui.loading_progress + .025)
+		ui.loading_progress = minf(.3, ui.loading_progress + .02)
 	remove_child(staged)
 	staged.visible = true
 	staged.process_mode = Node.PROCESS_MODE_INHERIT
 	prebuilt = staged
+
+## Every other room of the floor, built once and drawn for two frames in
+## front of the camera under the loading screen: each of its materials
+## meets the graphics driver now, not on the step into that room.
+func warm_floor_rooms(skip: String) -> void:
+	var ids: Array = Run.rooms.keys().filter(func(id): return id != skip)
+	var start: float = ui.loading_progress
+	for i in ids.size():
+		var staged := DungeonRoom.new()
+		staged.prepare_entry = false
+		staged.visible = false
+		staged.process_mode = Node.PROCESS_MODE_DISABLED
+		add_child(staged)
+		staged.build(self, Run.rooms[ids[i]], false, true)
+		while staged.building:
+			await get_tree().process_frame
+			staged.resume_build()
+		var ahead := -camera.global_basis.z
+		staged.global_position = camera.global_position + ahead * 55.0 + Vector3.DOWN * 3.0
+		staged.visible = true
+		FrameWatch.mark("loading: first draw of a room")
+		for frame in 2: await get_tree().process_frame
+		reaper.reap(staged)
+		ui.loading_progress = lerpf(start, .9, float(i + 1) / ids.size())
+	if is_instance_valid(room) and is_instance_valid(room.effects): EffectsPool.current = room.effects
 
 ## Waits for the floor's shaders to compile, then lets play begin.
 func close_loading() -> void:
