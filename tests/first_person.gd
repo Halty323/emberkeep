@@ -33,9 +33,12 @@ func exercise() -> void:
 	check(not game.player.visual.visible, "local body does not obscure the view")
 	check(game.player.is_on_floor(), "player settles onto a physical floor")
 	check(game.player.get_child(0).shape is CapsuleShape3D, "player uses upright capsule collision")
-	# Mist lingers over the first two floors' rooms, low and lit by fixtures.
-	var mist: Array = game.room.find_children("*", "MeshInstance3D", true, false).filter(func(node): return node.get_meta("surface_role", "") == "mist")
-	check(run.floor_number == 1 and mist.size() >= game.room.geometry.cells.size() and mist.all(func(sheet): return sheet.position.y < .5 and sheet.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF), "mist lingers low over the first floor")
+	# Fog lingers over the first two floors' rooms: puffs on the floor below them.
+	var mist: Array = game.room.find_children("*", "MultiMeshInstance3D", true, false).filter(func(node): return node.get_meta("surface_role", "") == "mist")
+	check(run.floor_number == 1 and mist.size() == 1 and mist[0].multimesh.instance_count >= 30 * game.room.geometry.cells.size() and mist[0].cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF, "fog puffs fill the first floor's rooms")
+	if not mist.is_empty():
+		var puff: Transform3D = mist[0].multimesh.get_instance_transform(0)
+		check(is_equal_approx(puff.origin.y, game.room.floor_height(puff.origin)), "each puff sits on the floor below it")
 	run.floor_number = 3
 	check(not load("res://scripts/graphics/floor_mist.gd").wanted(), "the third floor is clear of it")
 	run.floor_number = 1

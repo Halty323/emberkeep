@@ -41,7 +41,7 @@ func go() -> void:
 	game.fps.pitch = -.12
 	await frames(8)
 	shot(out, "room")
-	var sheets: Array = game.room.find_children("*", "MeshInstance3D", true, false).filter(func(node): return node.get_meta("surface_role", "") == "mist")
+	var sheets: Array = game.room.find_children("*", "GeometryInstance3D", true, false).filter(func(node): return node.get_meta("surface_role", "") == "mist")
 	print("MIST SHEETS %d" % sheets.size())
 	for sheet in sheets: sheet.visible = false
 	await frames(4)
