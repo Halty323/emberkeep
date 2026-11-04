@@ -92,3 +92,9 @@ The new `frame_pacing` suite passes **41 checks**:
 All 35 suites pass with Godot 4.7.2, 167,592 checks. `dungeon` has a pre-existing camera-focus check that reads the engine's live tick fraction. It failed once while a software-rendered profile loaded the same CPU, and it passes when run alone, on this branch and on `main`.
 
 Not yet verified on a phone: Pixel frame times, how much each warmed shader saves on PowerVR, and whether the 60 FPS cap paces evenly on a 120 Hz panel. If motion still judders at a steady 60, try Settings → FPS limit → Unlimited, which lets the display's VSync pace the frames.
+
+## Loading screen and first draws (November 2026)
+
+A new or continued run now opens on a loading screen (*The tower stirs*, with a tip and a progress bar). Behind it the floor is generated, the first room is built a slice per frame, and the floor's shaders are compiled before play shows, so the start no longer sits frozen on the title. `tests/render_loading.gd` checks this under a display.
+
+A neighbour room built while you walk its corridor used to stay hidden until the step into it, so the driver met its materials for the first time on that frame. Once built, it is now drawn for two frames where it stands, out of sight behind the corridor's walls, which moves its shader compiles and uploads off the moment you enter. On desktop the processor side of entering a room stays about 10 ms; the shader stall this targets happens only on the phone's driver, and still needs measuring there.

@@ -163,7 +163,7 @@ func begin(seed_value: int) -> void:
 func start_local(seed_value: int, floor_data: Dictionary) -> void:
 	reset()
 	Run.incoming_floor = floor_data
-	game.start_run(Session.local_weapon, seed_value, false)
+	game.begin_run(Session.local_weapon, seed_value, false)
 	for id in Session.others(): ensure_member(id)
 	game.ui.notify("The party sets out", "%d little lights climb together." % Session.roster.size(), Color("f1cc8a"))
 

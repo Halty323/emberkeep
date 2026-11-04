@@ -837,10 +837,10 @@ func show_title_room() -> void:
 	apply_floor_light()
 	update_camera(0.0, true)
 
-func start_run(weapon: String, seed_input: int, is_daily: bool) -> void:
-	Run.start_run(weapon, seed_input, is_daily)
+func start_run(weapon: String, seed_input: int, is_daily: bool, prepared := false) -> void:
+	if not prepared: Run.start_run(weapon, seed_input, is_daily)
 	in_menu = false
-	paused = false
+	paused = prepared
 	if first_person:
 		fps.yaw = float(Run.view_angles[0])
 		fps.pitch = float(Run.view_angles[1])
@@ -853,6 +853,10 @@ func start_run(weapon: String, seed_input: int, is_daily: bool) -> void:
 	# A party spreads out a little rather than standing in one spot.
 	enter_room(Vector3((Session.local_slot() - 1.5) * .9, 0, 2.0) if party.online() else Vector3(0, 0, 2.0))
 	warm_shaders()
+	if not prepared: greet_run()
+
+## The first words of a new run, once it can be seen.
+func greet_run() -> void:
 	ui.show_screen("play")
 	var arrival: Array = Run.theme().arrival
 	if first_person and not Run.profile.get("fps_tutorial_seen", false):
@@ -871,13 +875,13 @@ func warm_shaders() -> void:
 	prewarm = ShaderPrewarm.begin(self)
 	light_veil.color.a = 1.0
 
-func continue_run() -> void:
-	if not Run.load_run():
+func continue_run(prepared := false) -> void:
+	if not prepared and not Run.load_run():
 		ui.notify("This save could not be loaded", "Start a fresh run.")
 		return
 	if first_person and VerticalPlans.upgrade_unvisited(Run.rooms,Run.portals,Run.floor_number): Run.save_run()
 	in_menu = false
-	paused = false
+	paused = prepared
 	if first_person:
 		fps.yaw = float(Run.view_angles[0])
 		fps.pitch = float(Run.view_angles[1])
@@ -886,9 +890,84 @@ func continue_run() -> void:
 	reset_combat()
 	enter_room(saved_entry())
 	warm_shaders()
+	if not prepared: greet_continue()
+
+func greet_continue() -> void:
 	ui.show_screen("play")
 	ui.notify("Welcome back, little light", "Your last safe room remembers you.")
 	ui.announce_floor()
+
+# ---------------------------------------------------------------- loading
+# A run begins behind a loading screen: the floor is generated, its first
+# room built a slice per frame and its shaders compiled before play shows,
+# so nothing freezes on an unexplained frame.
+var loading := false
+var prebuilt: DungeonRoom
+
+func begin_run(weapon: String, seed_input: int, is_daily: bool) -> void:
+	if not await open_loading("The tower stirs"):
+		if not loading: start_run(weapon, seed_input, is_daily)
+		return
+	Run.start_run(weapon, seed_input, is_daily)
+	ui.loading_progress = .2
+	await prebuild_room()
+	start_run(weapon, seed_input, is_daily, true)
+	await close_loading()
+	greet_run()
+
+func begin_continue() -> void:
+	if not await open_loading("Your light returns"):
+		if not loading: continue_run()
+		return
+	if not Run.load_run():
+		loading = false
+		ui.show_screen("menu")
+		ui.notify("This save could not be loaded", "Start a fresh run.")
+		return
+	ui.loading_progress = .2
+	await prebuild_room()
+	continue_run(true)
+	await close_loading()
+	greet_continue()
+
+## Shows the loading screen and lets it draw; false where there is nothing
+## to show (headless, the old overhead view) or a load is already under way.
+func open_loading(title: String) -> bool:
+	if loading or not first_person or DisplayServer.get_name() == "headless": return false
+	loading = true
+	ui.loading_title = title
+	ui.loading_progress = .05
+	ui.show_screen("loading")
+	for i in 2: await get_tree().process_frame
+	return true
+
+## The first room, built hidden a slice per frame.
+func prebuild_room() -> void:
+	var staged := DungeonRoom.new()
+	staged.visible = false
+	staged.process_mode = Node.PROCESS_MODE_DISABLED
+	add_child(staged)
+	staged.build(self, Run.rooms[Run.current_room], false, true)
+	while staged.building:
+		await get_tree().process_frame
+		staged.resume_build()
+		ui.loading_progress = minf(.65, ui.loading_progress + .025)
+	remove_child(staged)
+	staged.visible = true
+	staged.process_mode = Node.PROCESS_MODE_INHERIT
+	prebuilt = staged
+
+## Waits for the floor's shaders to compile, then lets play begin.
+func close_loading() -> void:
+	ui.show_screen("loading")
+	ui.loading_progress = maxf(ui.loading_progress, .7)
+	while is_instance_valid(prewarm) and prewarm.active():
+		await get_tree().process_frame
+		ui.loading_progress = minf(.98, ui.loading_progress + .01)
+	ui.loading_progress = 1.0
+	await get_tree().process_frame
+	loading = false
+	paused = false
 
 func saved_entry() -> Vector3:
 	if Run.entry.get("room", "") == Run.current_room:
@@ -902,6 +981,12 @@ func enter_room(spawn: Vector3, keep_view := false, walking_state: Dictionary = 
 	data.visited = true
 	if walking_state.get("room")!=null:
 		room=walking_state.room
+		scene_root.add_child(room)
+		room.geometry.apply_shader_mask()
+	elif is_instance_valid(prebuilt) and is_same(prebuilt.data, data):
+		# Built behind the loading screen.
+		room = prebuilt
+		prebuilt = null
 		scene_root.add_child(room)
 		room.geometry.apply_shader_mask()
 	else:

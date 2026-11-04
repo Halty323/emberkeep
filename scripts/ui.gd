@@ -39,6 +39,13 @@ const TITLE_HOLD := 1.6
 const TITLE_FADE := .9
 # A newly walked cell is scribbled onto the map over this long.
 const SCRIBBLE_TIME := .75
+# The loading screen's words while a run is prepared.
+const LOADING_TIPS := ["Frost on a soaked foe freezes it solid.", "Some relics answer each other. The journal keeps what you find.",
+	"A spellbook sings with relics of its own element.", "Shoot a dead lantern to light it again.",
+	"Dash past an enemy ember to catch it as a spark.", "Foes standing in lantern light take more damage.",
+	"Water carries lightning to every foe standing in it.", "Fire meeting a chilled foe cracks it open."]
+var loading_title := "The tower stirs"
+var loading_progress := 0.0
 # Screens laid out against the edges rather than centred whole.
 const TITLE_MODES := ["play", "menu", "armory", "coop", "lobby"]
 const REWARD_WIDTH := 340.0
@@ -219,6 +226,7 @@ func show_screen(screen: String) -> void:
 	interaction_surface = null
 	boss_surface = null
 	backdrop.color = Color(.025, .035, .035, .74) if mode not in TITLE_MODES else Color(0, 0, 0, 0)
+	if mode == "loading": backdrop.color = Color(.012, .016, .016, 1)
 	place_layers()
 	build_surfaces()
 	seed_field = null
@@ -267,7 +275,7 @@ func show_screen(screen: String) -> void:
 			elif not Session.online:
 				button("One more little light", Rect2(430, 457, 420, 62), func():
 					reforge()
-					game.start_run(starter_weapon().id, menu_seed, false), true)
+					game.begin_run(starter_weapon().id, menu_seed, false), true)
 			button("Leave the party" if Session.online else "Return to title", Rect2(430, 535, 420, 58), func(): game.return_to_title())
 	sync_lighting()
 	update_surface_visibility()
@@ -434,11 +442,11 @@ func build_menu() -> void:
 	if menu_seed == 0: reforge()
 	var y = 286.0 if Run.has_save() else 300.0
 	if Run.has_save():
-		title_button("Continue journey", Rect2(56,y,420,58), func(): game.continue_run(), true)
+		title_button("Continue journey", Rect2(56,y,420,58), func(): game.begin_continue(), true)
 		y += 68
 	title_button("New journey", Rect2(56,y,420,58), func(): show_screen("armory"), not Run.has_save())
 	y += 68
-	title_button("Daily journey", Rect2(56,y,420,58), func(): game.start_run(starter_weapon(Run.daily_seed()).id,Run.daily_seed(),true))
+	title_button("Daily journey", Rect2(56,y,420,58), func(): game.begin_run(starter_weapon(Run.daily_seed()).id,Run.daily_seed(),true))
 	y += 62
 	# Two to four players on the same network.
 	title_button("Climb together", Rect2(56,y,420,54), func(): show_screen("coop"))
@@ -504,7 +512,7 @@ func build_armory() -> void:
 	seed_field.text_changed.connect(func(value): selected_seed = value; refresh_armory_choices())
 	content.add_child(seed_field)
 	title_button("Reforge",Rect2(332,550,150,54),func(): reforge(); seed_field.text = ""; seed_field.placeholder_text = "Seed %d" % menu_seed; refresh_armory_choices())
-	title_button("Enter the tower  →",Rect2(58,622,440,62),func(): game.start_run(starter_weapon().id,chosen_seed(),false),true)
+	title_button("Enter the tower  →",Rect2(58,622,440,62),func(): game.begin_run(starter_weapon().id,chosen_seed(),false),true)
 	var back = title_button("← Hearth",Rect2(60,64,200,54),func(): show_screen("menu"))
 	back.add_theme_font_size_override("font_size",18)
 	if is_instance_valid(game.title_scene): game.title_scene.preview_weapon(starter_weapon())
@@ -561,13 +569,13 @@ func build_legacy_menu() -> void:
 		seed_field.placeholder_text = "Seed %d" % menu_seed
 		Audio.play_sound("coin", .9)
 		queue_redraw())
-	button("Begin a run   →", Rect2(64, 458, 418, 60), func(): game.start_run(starter_weapon().id, chosen_seed(), false), true)
+	button("Begin a run   →", Rect2(64, 458, 418, 60), func(): game.begin_run(starter_weapon().id, chosen_seed(), false), true)
 	if Run.has_save():
-		button("Continue saved run", Rect2(64, 530, 418, 56), func(): game.continue_run())
-		button("Today’s seed", Rect2(64, 598, 201, 54), func(): game.start_run(starter_weapon(Run.daily_seed()).id, Run.daily_seed(), true))
+		button("Continue saved run", Rect2(64, 530, 418, 56), func(): game.begin_continue())
+		button("Today’s seed", Rect2(64, 598, 201, 54), func(): game.begin_run(starter_weapon(Run.daily_seed()).id, Run.daily_seed(), true))
 		button("Journal", Rect2(281, 598, 201, 54), func(): open_journal("menu"))
 	else:
-		button("Today’s seed", Rect2(64, 536, 201, 56), func(): game.start_run(starter_weapon(Run.daily_seed()).id, Run.daily_seed(), true))
+		button("Today’s seed", Rect2(64, 536, 201, 56), func(): game.begin_run(starter_weapon(Run.daily_seed()).id, Run.daily_seed(), true))
 		button("Journal", Rect2(281, 536, 201, 56), func(): open_journal("menu"))
 	button("Settings", moved(Rect2(1080, 32, 154, 56), widen()), func(): open_settings("menu"))
 
@@ -978,6 +986,7 @@ func _draw() -> void:
 		"armory": draw_armory()
 		"coop": CoopMenus.draw_coop(self)
 		"lobby": CoopMenus.draw_lobby(self)
+		"loading": draw_loading()
 		"play":
 			draw_hud()
 			CoopMenus.draw_hud(self)
@@ -1589,6 +1598,16 @@ func draw_journal() -> void:
 		draw_multiline_string(body, Vector2(x + 27, y + 73), item.description, HORIZONTAL_ALIGNMENT_LEFT, 510, 18, 2, MUTED)
 	text("%d / %d found  ·  Filled diamonds are discovered relics" % [Run.profile.discovered.size(), Content.items.size()], Vector2(66, 664), 17, MUTED)
 	centered("%d / %d" % [journal_page + 1, journal_page_count()], 976, 664, 20, GOLD)
+
+## While a run is prepared: the hearth's emblem breathing, a line of advice
+## and how far along it is.
+func draw_loading() -> void:
+	var breath := .5 + .5 * sin(elapsed_ui * 2.6)
+	hearth_emblem(Vector2(640, 262), 17.0 + breath * 3.0)
+	centered(loading_title, 640, 350, 40, INK, heading)
+	centered(LOADING_TIPS[int(elapsed_ui / 4.0) % LOADING_TIPS.size()], 640, 394, 18, MUTED)
+	draw_rect(Rect2(440, 440, 400, 6), Color(.2, .18, .14, .85))
+	draw_rect(Rect2(440, 440, 400 * clampf(loading_progress, 0, 1), 6), GOLD)
 
 ## What an offer would combine with: a pairing it completes (named once
 ## found, hinted before), or the spellbook's element it sings with.
