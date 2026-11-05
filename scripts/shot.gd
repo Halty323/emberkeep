@@ -59,6 +59,13 @@ var tracing := false
 var erupt_wait := -1.0
 var pulses := 0
 var erupt_radius := 1.45
+# Spells that do not fly can stay a while after they strike: a lingering
+# ray's beam, a storm cell where lightning struck, a returning bolt.
+var hold := 0.0
+var hold_tick := 0.0
+var hold_linger := 0.0
+var hold_path: Array = []
+var returned := false
 # How each look sizes its heart, its rune halo and its trail.
 const FORM_GLOW := {"orb": 1.0, "shard": .7, "needle": .45, "comet": 1.3, "mote": .5, "disc": .9}
 const FORM_TAIL := {"orb": 1.0, "shard": 1.1, "needle": 1.4, "comet": 1.9, "mote": .6, "disc": .8}
@@ -87,8 +94,11 @@ func setup(owner_game: Node3D, at: Vector3, travel: Vector3, power: float, veloc
 				mode = "ray"
 				speed = 72.0
 				base_speed = speed
-				lifetime = 14.0 * float(stats.get("range", 1)) / speed
+				lifetime = 14.0 * float(stats.get("range", 1)) * sqrt(maxf(.3, float(stats.get("shot_speed", 1)))) / speed
 				radius = maxf(radius, .14)
+				# A lingering ray leaves its beam burning instead of slowing.
+				hold_linger = float(stats.get("linger", 0))
+				stats.erase("linger")
 			"lightning": mode = "lightning"
 			"eruption": mode = "eruption"
 	if mode != "": return
@@ -187,11 +197,15 @@ func update_sim(delta: float) -> void:
 		return
 	match mode:
 		"ray":
+			if hold > 0:
+				hold_ray(delta)
+				return
 			if not tracing:
 				trace_ray()
 				return
 		"lightning":
-			strike()
+			if hold > 0: hold_storm(delta)
+			else: strike()
 			return
 		"eruption":
 			erupt_tick(delta)
@@ -407,7 +421,11 @@ func hit_enemy(enemy: DungeonEnemy) -> void:
 	hit_ids[enemy.entity_id] = true
 	splash()
 	var critical = Run.rng.randf() < float(stats.get("crit", .05))
+	# Spyglass: the farther off the foe, the harder it lands (Deadeye: always critical from afar).
+	var distance := RelicPowers.reach(self, enemy) if float(stats.get("focus", 0)) > 0 or float(stats.get("deadeye", 0)) > 0 else 0.0
+	if float(stats.get("deadeye", 0)) > 0 and distance >= 8.0: critical = true
 	var power = damage * (float(stats.get("crit_damage", 2.0)) if critical else 1.0)
+	if float(stats.get("focus", 0)) > 0: power *= 1.0 + minf(.6, .06 * distance)
 	# A swelling shot strikes harder the farther it has flown.
 	if float(stats.get("grow", 0)) > 0: power *= 1.0 + .5 * age / lifetime
 	if enemy.hp < enemy.max_hp * .35:
@@ -433,6 +451,7 @@ func hit_enemy(enemy: DungeonEnemy) -> void:
 		if own: game.fps.hit_time = .13
 		else: game.party.tell(owner_peer, "hitmark")
 	enemy.take_hit(power, direction * float(stats.get("knockback", 1)) * 2.0, critical, false, "shot")
+	RelicPowers.on_hit(self, enemy, power)
 	# Lucky Star: a critical hit leaps to a second foe at full strength.
 	if critical and float(stats.get("lucky", 0)) > 0:
 		var second = game.nearest_enemy(enemy.global_position + Vector3.UP * .65, 6.0, hit_ids)
@@ -467,6 +486,15 @@ func hit_enemy(enemy: DungeonEnemy) -> void:
 		if mode == "eruption": child_stats.form = float(Forge.FORMS.find("shard"))
 		child_stats.split = 0
 		child_stats.chain = 0
+		# Fractal Seed: shards split again (Infinite Regress: once more, and they pierce).
+		var generations := int(stats.get("fractal", 0)) + int(stats.get("regress", 0))
+		if generations > 0:
+			child_stats.split = float(stats.split)
+			child_stats.fractal = float(generations - 1)
+			child_stats.regress = 0.0
+			if float(stats.get("regress", 0)) > 0 or float(stats.get("regressed", 0)) > 0:
+				child_stats.regressed = 1.0
+		if float(child_stats.get("regressed", 0)) > 0: child_stats.pierce = float(child_stats.get("pierce", 0)) + 2.0
 		child_stats.size = float(child_stats.get("size", 1)) * .65
 		# Starfall: every shard bursts; Facets: a glass book's shards cut deep.
 		if float(stats.get("starfall", 0)) > 0: child_stats.explosion = maxf(float(child_stats.get("explosion", 0)), 1.3)
@@ -589,76 +617,222 @@ func form_basis(size: float) -> Basis:
 	return turned * Basis.from_scale(Vector3.ONE * size)
 
 # ---------------------------------------------------------------- spells that do not fly
+# Every relic means something to every kind of spell: what a flying bolt
+# does with pierce, ricochet, seeking, weaving, returning, lingering,
+# speed, swelling, forking and trails, a ray, lightning and an eruption do
+# in their own way (docs/SPELLCRAFT.md).
 
 ## A ray flies its whole way in one tick, through the same flight a bolt
-## takes (walls, pierce, ricochet, lanterns, glass, hits), then shows as a
-## beam along the path it really took.
+## takes (walls, pierce, ricochet, seeking, returning, forking, lanterns,
+## glass, hits), then shows as a beam along the path it really took. A
+## weaving ray zigzags; a lingering one leaves its beam burning a while; a
+## trail is laid along it.
 func trace_ray() -> void:
 	tracing = true
 	var path: Array = [global_position]
 	var heading: Vector3 = direction
+	var weave := float(stats.get("wave", 0)) > 0
+	var side: Vector3 = direction.cross(Vector3.UP).normalized()
 	var steps := 0
 	while alive and steps < 160:
 		steps += 1
 		if cosmetic: update_cosmetic(1.0 / 120.0)
 		else: update_sim(1.0 / 120.0)
-		# A bend (a wall glanced off, a foe sought) starts a new stretch.
-		if direction.angle_to(heading) > .08:
+		if weave and alive:
+			global_position += side * cos(steps * .75) * .2
+		# A bend (a wall glanced off, a foe sought, a weave) starts a new stretch.
+		if weave or direction.angle_to(heading) > .08:
 			path.append(global_position)
 			heading = direction
 	if global_position.distance_to(path.back()) > .01: path.append(global_position)
+	SpellShapes.ray(self, path, tint, float(stats.get("size", 1)), 1.3 if hold_linger > 0 else .0)
+	if not cosmetic: lay_trail(path)
+	if hold_linger > 0 and not cosmetic:
+		hold_path = path
+		hold = 1.3
+		hold_tick = 0.0
+		alive = true
+		return
 	if alive: remove()
-	SpellShapes.ray(self, path, tint, float(stats.get("size", 1)))
+
+## A lingering ray's beam burns whatever crosses it.
+func hold_ray(delta: float) -> void:
+	hold -= delta
+	hold_tick -= delta
+	if hold_tick <= 0:
+		hold_tick = .3
+		for enemy in game.enemies.duplicate():
+			if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable: continue
+			var body: Vector3 = enemy.global_position + Vector3.UP * .6
+			for i in hold_path.size() - 1:
+				if Geometry3D.get_closest_point_to_segment(body, hold_path[i], hold_path[i + 1]).distance_to(body) < enemy.radius + .35:
+					enemy.apply_status(stats)
+					enemy.take_hit(damage * .3, Vector3.ZERO, false, true, "shot")
+					break
+	if hold <= 0: remove()
+
+## Wax, water or ice laid along a path on the floor beneath it.
+func lay_trail(path: Array) -> void:
+	var kind: String = stats.get("trail_kind", "")
+	if kind == "" or not game.residue: return
+	for i in path.size() - 1:
+		var a: Vector3 = path[i]
+		var b: Vector3 = path[i + 1]
+		var count := maxi(1, int(a.distance_to(b)))
+		for j in count:
+			var at := a.lerp(b, float(j) / count)
+			game.residue.add(kind, Vector3(at.x, 0, at.z), .6)
 
 ## Lightning: the nearest foe within a narrow cone ahead and in sight is
-## struck at once; with none, it strikes where you aim.
+## struck at once; with none, it strikes where you aim. Seeking widens the
+## cone; pierce carries it on to the next foe beyond; ricochet leaps it to
+## other foes near; swelling strikes those beside the target too; forking
+## strikes two more in a wider cone; a lingering bolt leaves a storm cell
+## that keeps striking; a returning one comes back a moment later.
 func strike() -> void:
 	var from: Vector3 = global_position
-	var reach := 12.0 * float(stats.get("range", 1))
-	var space := get_world_3d().direct_space_state
-	var mask: int = (1 | PropVisuals.FURNITURE_LAYER) if game.first_person else 1
-	var target: DungeonEnemy = null
-	var best := INF
-	for enemy in game.enemies:
-		if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable or hit_ids.has(enemy.entity_id): continue
-		var center: Vector3 = enemy.global_position + Vector3.UP * (minf(.9, enemy.hit_height * .55) if game.first_person else .65)
-		var to := center - from
-		var distance := to.length()
-		if distance > reach or distance < .05: continue
-		var facing := to.normalized().dot(direction)
-		if facing < .9: continue
-		var blocked := space.intersect_ray(PhysicsRayQueryParameters3D.create(from, center, mask))
-		if not blocked.is_empty() and from.distance_to(blocked.position) < distance - .4: continue
-		var score := distance * (1.0 + (1.0 - facing) * 8.0)
-		if score < best:
-			best = score
-			target = enemy
-	var end: Vector3
-	if target:
-		end = target.global_position + Vector3.UP * (minf(.9, target.hit_height * .55) if game.first_person else .65)
-	else:
-		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(from, from + direction * reach, mask))
-		end = hit.position if not hit.is_empty() else from + direction * reach
+	var reach := 12.0 * float(stats.get("range", 1)) * (1.4 if float(stats.get("accel", 0)) > 0 else 1.0) * (1.0 + (float(stats.get("shot_speed", 1)) - 1.0) * .5)
+	var cone := .9 - minf(.35, float(stats.get("homing", 0)) * .08)
 	var gen := RandomNumberGenerator.new()
 	gen.randomize()
-	SpellShapes.bolt(self, from, end, tint, gen)
+	var rough := .55 if float(stats.get("wave", 0)) > 0 else .32
+	var target: DungeonEnemy = find_target(from, direction, reach, cone)
+	var end: Vector3
+	if target:
+		end = aim_point(target)
+	else:
+		var hit := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(from, from + direction * reach, ray_mask()))
+		end = hit.position if not hit.is_empty() else from + direction * reach
+	SpellShapes.bolt(self, from, end, tint, gen, 2, rough)
 	global_position = end
 	Effects.play("impact", end, tint)
+	lay_trail([from, end])
 	if cosmetic:
 		remove()
 		return
-	if target:
-		direction = (end - from).normalized()
-		hit_enemy(target)
-	else:
+	if not target:
 		# Struck water carries it; whatever lies here meets it.
 		if game.residue: game.residue.shock(end, damage * .5, {})
 		finish()
-	if alive: remove()
+		return
+	var through := int(stats.get("pierce", 0))
+	var leaps := int(stats.get("bounce", 0))
+	var forward: Vector3 = direction
+	var struck := target
+	while alive and struck:
+		direction = (aim_point(struck) - from).normalized()
+		# Kept in flight while there is more to strike (and Icicle can tell).
+		pierces = through + leaps + 1
+		hit_enemy(struck)
+		if float(stats.get("grow", 0)) > 0: strike_beside(struck)
+		var next: DungeonEnemy = null
+		if through > 0:
+			through -= 1
+			next = find_target(aim_point(struck), forward, reach * .6, cone)
+		elif leaps > 0:
+			leaps -= 1
+			next = game.nearest_enemy(aim_point(struck), 6.0, hit_ids)
+			if next: ricochet()
+		if next == null: break
+		SpellShapes.bolt(self, aim_point(struck), aim_point(next), tint, gen, 1, rough)
+		from = aim_point(struck)
+		struck = next
+	# Forking: two more bolts into a wider cone.
+	if float(stats.get("fork", 0)) > 0 and not forked:
+		forked = true
+		for i in 2:
+			var other: DungeonEnemy = find_target(global_position, forward, reach, .5)
+			if other == null: break
+			SpellShapes.bolt(self, end, aim_point(other), tint, gen, 1, rough)
+			pierces = 1
+			hit_enemy(other)
+	global_position = end
+	pierces = 0
+	if float(stats.get("linger", 0)) > 0:
+		hold = 1.4
+		hold_tick = .2
+		return
+	if float(stats.get("returning", 0)) > 0 and not returned:
+		hold = .25
+		hold_tick = 99.0
+		return
+	remove()
+
+func aim_point(enemy: DungeonEnemy) -> Vector3:
+	return enemy.global_position + Vector3.UP * (minf(.9, enemy.hit_height * .55) if game.first_person else .65)
+
+func ray_mask() -> int:
+	return (1 | PropVisuals.FURNITURE_LAYER) if game.first_person else 1
+
+## The foe a bolt goes for: in sight, inside the cone, near and near the
+## line; one another bolt of this same volley already took is a last resort.
+func find_target(from: Vector3, forward: Vector3, reach: float, cone: float) -> DungeonEnemy:
+	var space := get_world_3d().direct_space_state
+	var best: DungeonEnemy = null
+	var best_score := INF
+	var frame := Engine.get_physics_frames()
+	for enemy in game.enemies:
+		if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable or hit_ids.has(enemy.entity_id): continue
+		var center := aim_point(enemy)
+		var to := center - from
+		var distance := to.length()
+		if distance > reach or distance < .05: continue
+		var facing := to.normalized().dot(forward)
+		if facing < cone: continue
+		var blocked := space.intersect_ray(PhysicsRayQueryParameters3D.create(from, center, ray_mask()))
+		if not blocked.is_empty() and from.distance_to(blocked.position) < distance - .4: continue
+		var score := distance * (1.0 + (1.0 - facing) * 8.0)
+		if int(enemy.get_meta("bolted", -1)) == frame: score += 50.0
+		if score < best_score:
+			best_score = score
+			best = enemy
+	if best: best.set_meta("bolted", frame)
+	return best
+
+## A swelling bolt strikes those beside its target too.
+func strike_beside(struck: DungeonEnemy) -> void:
+	for enemy in game.enemies.duplicate():
+		if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable or hit_ids.has(enemy.entity_id): continue
+		if enemy.global_position.distance_to(struck.global_position) > 1.4 + enemy.radius: continue
+		hit_ids[enemy.entity_id] = true
+		enemy.apply_status(stats)
+		enemy.take_hit(damage * .5, Vector3.ZERO, false, false, "shot")
+
+## After lightning: a storm cell striking near, or the bolt coming home.
+func hold_storm(delta: float) -> void:
+	hold -= delta
+	hold_tick -= delta
+	if hold_tick <= 0 and float(stats.get("linger", 0)) > 0:
+		hold_tick = .35
+		var near = game.nearest_enemy(global_position, 2.6, {})
+		if near:
+			var gen := RandomNumberGenerator.new()
+			gen.randomize()
+			SpellShapes.bolt(self, global_position + Vector3.UP * 1.6, aim_point(near), tint, gen, 0)
+			near.apply_status(stats)
+			near.take_hit(damage * .35, Vector3.ZERO, false, false, "shot")
+	if hold > 0: return
+	if float(stats.get("returning", 0)) > 0 and not returned:
+		# Homecoming: the way home strikes twice as hard.
+		returned = true
+		if float(stats.get("homecoming", 0)) > 0: damage *= 2.0
+		hit_ids.clear()
+		var back: Vector3 = caster().global_position + Vector3.UP * 1.2
+		var home: DungeonEnemy = game.nearest_enemy(global_position, 4.0, {})
+		if home:
+			var gen := RandomNumberGenerator.new()
+			gen.randomize()
+			SpellShapes.bolt(self, back, aim_point(home), tint, gen, 1)
+			pierces = 1
+			hit_enemy(home)
+	remove()
 
 ## An eruption: a rune glows on the floor where you aim (beneath the first
 ## foe in the way, or the nearest one if it seeks), then it rises, striking
-## everything over the rune; a lingering one rises twice.
+## everything over the rune; a lingering one rises twice. Pierce runs it on
+## as a fissure of eruptions; ricochet leaps it to another foe; weaving sends
+## a ripple wider; returning raises one at your own feet; speed hastens the
+## rune; forking throws three small ones around it.
 func erupt_tick(delta: float) -> void:
 	if erupt_wait < 0:
 		place_eruption()
@@ -669,37 +843,64 @@ func erupt_tick(delta: float) -> void:
 	pulses -= 1
 	if pulses > 0:
 		erupt_wait = .6
-		SpellShapes.rune(self, global_position, erupt_radius, tint, .6)
+		if float(stats.get("wave", 0)) > 0 and pulses == 1 and not ripples_done:
+			ripples_done = true
+			erupt_radius *= 1.8
+			erupt_wait = .2
+		SpellShapes.rune(self, global_position, erupt_radius, tint, erupt_wait)
 	elif cosmetic: remove()
 	else: finish()
 
+var ripples_done := false
+
 func place_eruption() -> void:
 	var from: Vector3 = global_position
-	var reach := 10.0 * float(stats.get("range", 1))
-	var mask: int = (1 | PropVisuals.FURNITURE_LAYER) if game.first_person else 1
-	var hit := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(from, from + direction * reach, mask))
-	var point: Vector3 = hit.position if not hit.is_empty() else from + direction * reach
-	var stop := from.distance_to(point)
-	for enemy in game.enemies:
-		if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable: continue
-		var pair = Geometry3D.get_closest_points_between_segments(from, point, enemy.global_position, enemy.global_position + Vector3.UP * enemy.hit_height)
-		if pair[0].distance_to(pair[1]) < enemy.radius + .35 and from.distance_to(pair[0]) < stop:
-			stop = from.distance_to(pair[0])
-			point = enemy.global_position
-	if float(stats.get("homing", 0)) > 0:
-		var near = game.nearest_enemy(point, 3.0, {})
-		if near: point = near.global_position
+	var reach := (3.5 if float(stats.get("radial", 0)) > 0 else 10.0) * float(stats.get("range", 1))
+	var point: Vector3 = from
+	var hit := {}
+	if float(stats.get("anchor", 0)) <= 0:
+		hit = get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(from, from + direction * reach, ray_mask()))
+		point = hit.position if not hit.is_empty() else from + direction * reach
+		var stop := from.distance_to(point)
+		for enemy in game.enemies:
+			if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable: continue
+			var pair = Geometry3D.get_closest_points_between_segments(from, point, enemy.global_position, enemy.global_position + Vector3.UP * enemy.hit_height)
+			if pair[0].distance_to(pair[1]) < enemy.radius + .35 and from.distance_to(pair[0]) < stop:
+				stop = from.distance_to(pair[0])
+				point = enemy.global_position
+		if float(stats.get("homing", 0)) > 0:
+			var near = game.nearest_enemy(point, 3.0, {})
+			if near: point = near.global_position
 	# Off the wall it struck, and down to the floor beneath.
 	if not hit.is_empty() and absf(hit.normal.y) < .5 and point.distance_to(hit.position) < .01:
 		point += Vector3(hit.normal.x, 0, hit.normal.z).normalized() * .5
+	global_position = ground(point)
+	erupt_radius = 1.45 * float(stats.get("size", 1)) * (1.4 if float(stats.get("grow", 0)) > 0 else 1.0)
+	pulses = (2 if float(stats.get("linger", 0)) > 0 else 1) + (1 if float(stats.get("wave", 0)) > 0 else 0)
+	var haste := 1.0 + float(stats.get("accel", 0)) * .6 + maxf(0.0, float(stats.get("shot_speed", 1)) - 1.0) * .5
+	erupt_wait = clampf(.34 / haste, .12, .34)
+	SpellShapes.rune(self, global_position, erupt_radius, tint, erupt_wait)
+	if int(stats.get("erupt", 1)) - 1 == RelicPowers.METEOR: SpellShapes.falling_star(self, global_position, erupt_wait, tint)
+	if cosmetic: return
+	# Pierce: a fissure of further eruptions on along the aim.
+	var flat := Vector3(direction.x, 0, direction.z).normalized()
+	for i in mini(int(stats.get("pierce", 0)), 4):
+		sow(global_position + flat * 2.4 * (i + 1), .8)
+
+## The floor beneath a point, inside where one can stand.
+func ground(point: Vector3) -> Vector3:
 	var flat := Vector2(point.x, point.z)
 	if game.first_person and not game.walkable_at(flat, .2): flat = game.room.geometry.safe_point(flat, .3, game.room.blocked_at)
 	var floor_y: float = game.room.floor_height(Vector3(flat.x, point.y, flat.y)) if game.first_person else 0.0
-	global_position = Vector3(flat.x, floor_y, flat.y)
-	erupt_radius = 1.45 * float(stats.get("size", 1)) * (1.4 if float(stats.get("grow", 0)) > 0 else 1.0)
-	pulses = 2 if float(stats.get("linger", 0)) > 0 else 1
-	erupt_wait = .34
-	SpellShapes.rune(self, global_position, erupt_radius, tint, erupt_wait)
+	return Vector3(flat.x, floor_y, flat.y)
+
+## Another eruption of this one's kind, rising at a spot of its own.
+func sow(at: Vector3, share: float, extra: Dictionary = {}) -> void:
+	var child := stats.duplicate()
+	for key in ["pierce", "bounce", "fork", "returning", "wave", "linger"]: child.erase(key)
+	child.anchor = 1.0
+	child.merge(extra, true)
+	game.spawn_shot(ground(at) + Vector3.UP * .5, direction, damage * share, 1.0, child, tint, true)
 
 func rise() -> void:
 	var center: Vector3 = global_position
@@ -713,6 +914,7 @@ func rise() -> void:
 	if owner_peer == 0 or owner_peer == Session.local_peer_id: game.shake = maxf(game.shake, .06)
 	var kept: int = pierces
 	pierces = 999
+	var struck := 0
 	for enemy in game.enemies.duplicate():
 		if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable: continue
 		var gap := Vector2(enemy.global_position.x - center.x, enemy.global_position.z - center.z)
@@ -722,9 +924,40 @@ func rise() -> void:
 		global_position = enemy.global_position + Vector3.UP * .5
 		hit_enemy(enemy)
 		global_position = center
+		struck += 1
 	pierces = kept
 	# What rose stays a while: water, wax or ice where it came up.
-	var element_id: String = Forge.ELEMENTS.keys()[clampi(element, 0, Forge.ELEMENTS.size() - 1)]
 	if game.residue:
-		if Forge.TRAILS.has(element_id): game.residue.add(Forge.TRAILS[element_id], Vector3(center.x, 0, center.z), erupt_radius * .7)
+		if element < Forge.ELEMENTS.size():
+			var element_id: String = Forge.ELEMENTS.keys()[element]
+			if Forge.TRAILS.has(element_id): game.residue.add(Forge.TRAILS[element_id], Vector3(center.x, 0, center.z), erupt_radius * .7)
+		var kind: String = stats.get("trail_kind", "")
+		if kind != "": game.residue.add(kind, Vector3(center.x, 0, center.z), erupt_radius * .6)
 		game.residue.react(center, erupt_radius, stats)
+	# Only the first rising of a lingering eruption sends anything on.
+	if spread_done: return
+	spread_done = true
+	# Ricochet: leap to another foe near.
+	if int(stats.get("bounce", 0)) > 0:
+		var next = game.nearest_enemy(center, 6.0, hit_ids)
+		if next:
+			ricochet()
+			Effects.beam(game, center + Vector3.UP * .4, next.global_position + Vector3.UP * .4, tint)
+			sow(next.global_position, .8, {"bounce": float(int(stats.bounce) - 1)})
+	# Returning: one more at the caster's feet (Homecoming: twice as hard).
+	if float(stats.get("returning", 0)) > 0:
+		sow(caster().global_position, 2.0 if float(stats.get("homecoming", 0)) > 0 else 1.0)
+	# Forking: three small ones around it.
+	if float(stats.get("fork", 0)) > 0:
+		for i in 3:
+			sow(center + Vector3.FORWARD.rotated(Vector3.UP, TAU * i / 3.0 + gen.randf()) * erupt_radius * 1.9, .5, {"size": float(stats.get("size", 1)) * .6})
+	# Pyroclasm: four burning shards fly out.
+	if float(stats.get("pyro", 0)) > 0:
+		var shard := SpellForms.flying(stats)
+		shard.form = float(Forge.FORMS.find("comet"))
+		shard.anchor = 0.0
+		shard.pyro = 0.0
+		for i in 4:
+			game.spawn_shot(center + Vector3.UP * .7, Vector3.FORWARD.rotated(Vector3.UP, TAU * i / 4.0 + gen.randf()), damage * .5, 13.0, shard, tint, true)
+
+var spread_done := false

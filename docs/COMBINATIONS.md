@@ -1,6 +1,6 @@
 # Combinations
 
-Spells, relics, held items and the floor now combine. There are three kinds of combination, 41 in all. Each one is hinted at until you find it, and the journal's new **Combos** tab keeps every one you have found. **This page lists them all, so it spoils the discovery.**
+Spells, relics, held items and the floor now combine. There are three kinds of combination, 53 in all. Each one is hinted at until you find it, and the journal's new **Combos** tab keeps every one you have found. **This page lists them all, so it spoils the discovery.**
 
 ![Reactions on foes: Shatter and Freeze](images/synergy-reactions.png)
 
@@ -57,6 +57,18 @@ Two relics carried together unlock something new. When a pairing completes, it i
 | Ember Dash | Cinder Steps + Chili Oil | Dashing through foes sets them burning and marks them with your book's element |
 | Hearthkeeper | Eternal Hearth + Dried Rose | Every room you clear gives you a ward |
 | Glass Cannon | Glass Sun + Heavy Ember | Foes that fall shatter into four glass shards |
+| Choir | Echo Bell + Forked Wick | Every cast echoes twice |
+| Supercell | Storm Crown + Copper Wire | Lightning from above strikes on half your hits and leaps on to two more foes |
+| Event Horizon | Black Pearl + Sunseed | When a hit drags three or more foes together, they implode |
+| Pyroclasm | Phoenix Feather + Firecracker | A fallen foe's eruption throws four burning shards |
+| Kaleidoscope | Prism Lens + Shattered Star | The rays your hits throw split into shards when they strike |
+| Aftershock | Seismic Boots + Second Wind | The floor your dash wakes erupts twice |
+| Deadeye | Spyglass + Long Match | Spells striking a foe eight metres off or farther always strike critically |
+| Meteor Shower | Meteor Charm + Twin Flame | Falling stars come down in threes |
+| Legion | Phantom Veil + Rear View | A second phantom stands at your other shoulder |
+| Infinite Regress | Fractal Seed + Splinter | Shards split one generation further, and every shard pierces two foes |
+| Blood Moon | Crimson Grail + Hunter's Mark | Every kill in a room also sharpens your critical strikes, 4% each |
+| Overture | War Drum + Glass Sun | Every third cast is a Great Cast, and Great Casts strike three times as hard |
 
 In co-op, pairings that answer a kill (Frenzy, Last Stand, Glass Cannon) answer any foe the party fells.
 
@@ -66,14 +78,14 @@ Relics of the same element as the spellbook in your hand grow stronger with it. 
 
 | Element | Resonance | Relics | What it does |
 | --- | --- | --- | --- |
-| Ember | Spreading Fire | Chili Oil, Living Coal, Firecracker, Sunseed, Little Supernova, Cinder Steps | When a burning foe falls, its fire leaps to one nearby foe per resonant relic |
+| Ember | Spreading Fire | Chili Oil, Living Coal, Firecracker, Sunseed, Little Supernova, Cinder Steps, Phoenix Feather | When a burning foe falls, its fire leaps to one nearby foe per resonant relic |
 | Frost | Deep Cold | Winter Mint, Deep Freeze, Aurora, Snowglobe | A few quick frost hits freeze a foe solid; each resonant relic needs one fewer (at least two) |
-| Storm | Thunderhead | Copper Wire, Storm Lantern, Aurora | Lightning leaps to one more foe per resonant relic |
+| Storm | Thunderhead | Copper Wire, Storm Lantern, Aurora, Storm Crown | Lightning leaps to one more foe per resonant relic |
 | Venom | Virulence | Bitter Tea, Honeycomb, Blood Orange | Poison builds with every hit |
-| Radiance | Dawn | Seeking Spark, Living Coal, Bottled Dawn, Dark Star | Spells lay foes bare (30% more damage) for longer per resonant relic |
-| Glass | Facets | Shattered Star, Splinter, Ghost Thread, Glass Sun, Grave Glass | One more split shard per resonant relic, and shards strike harder |
+| Radiance | Dawn | Seeking Spark, Living Coal, Bottled Dawn, Dark Star, Prism Lens, Meteor Charm | Spells lay foes bare (30% more damage) for longer per resonant relic |
+| Glass | Facets | Shattered Star, Splinter, Ghost Thread, Glass Sun, Grave Glass, Fractal Seed | One more split shard per resonant relic, and shards strike harder |
 | Wax | Molten | Warm Wax, Wide Wick, Heavy Ember, Steady Hand | Spells leave wax as they fly, and waxed foes are slowed |
-| Tide | Undertow | Skipping Stone, Moon Shard, Mirror Box | Soaked foes take 12% more damage from everything per resonant relic |
+| Tide | Undertow | Skipping Stone, Moon Shard, Mirror Box, Black Pearl | Soaked foes take 12% more damage from everything per resonant relic |
 
 Classic spellbooks without a written element take one from what they do: burning books are ember, chilling books frost, chaining books storm and seeking books radiance.
 

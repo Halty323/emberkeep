@@ -733,6 +733,135 @@
         "dash_cd": 0.35
       },
       "cost": 3
+    },
+    {
+      "id": "echo_bell",
+      "name": "Echo Bell",
+      "description": "Every cast rings out again a moment later, as an echo at 60% strength.",
+      "rarity": "rare",
+      "tag": "ECHO",
+      "effects": {
+        "echo": 1
+      }
+    },
+    {
+      "id": "war_drum",
+      "name": "War Drum",
+      "description": "Every fourth cast is a Great Cast: twice the damage, half again as large. Cast 10% faster.",
+      "rarity": "uncommon",
+      "tag": "TEMPO",
+      "effects": {
+        "crescendo": 1,
+        "rate": 0.1
+      }
+    },
+    {
+      "id": "black_pearl",
+      "name": "Black Pearl",
+      "description": "Every hit drags the foes around it in toward the one struck; 15% more damage.",
+      "rarity": "rare",
+      "tag": "PULL",
+      "effects": {
+        "vortex": 1,
+        "damage": 0.15
+      }
+    },
+    {
+      "id": "phantom_veil",
+      "name": "Phantom Veil",
+      "description": "A phantom of you stands at your shoulder and casts every spell you cast, at 70% strength.",
+      "rarity": "rare",
+      "tag": "MULTISHOT",
+      "effects": {
+        "phantom": 1
+      }
+    },
+    {
+      "id": "storm_crown",
+      "name": "Storm Crown",
+      "description": "Three hits in ten call lightning down from above onto the foe; every hit arcs on once more.",
+      "rarity": "mythic",
+      "tag": "LIGHTNING",
+      "effects": {
+        "thunder": 0.3,
+        "chain": 1
+      }
+    },
+    {
+      "id": "phoenix_feather",
+      "name": "Phoenix Feather",
+      "description": "Foes that fall erupt in flame where they stood; your spells set foes burning.",
+      "rarity": "mythic",
+      "tag": "FIRE",
+      "effects": {
+        "phoenix": 1,
+        "burn": 1
+      }
+    },
+    {
+      "id": "prism_lens",
+      "name": "Prism Lens",
+      "description": "Every hit throws a ray of light at the nearest other foe.",
+      "rarity": "rare",
+      "tag": "LIGHT",
+      "effects": {
+        "prism": 1
+      }
+    },
+    {
+      "id": "seismic_boots",
+      "name": "Seismic Boots",
+      "description": "Where your dash ends, the floor erupts in your spellbook's element; dash a little more often.",
+      "rarity": "uncommon",
+      "tag": "DASH",
+      "effects": {
+        "quake": 1,
+        "dash_cd": 0.15
+      }
+    },
+    {
+      "id": "spyglass",
+      "name": "Spyglass",
+      "description": "Spells strike up to 60% harder the farther off their foe stands, and reach 25% farther.",
+      "rarity": "common",
+      "tag": "REACH",
+      "effects": {
+        "focus": 1,
+        "range": 0.25
+      }
+    },
+    {
+      "id": "meteor_charm",
+      "name": "Meteor Charm",
+      "description": "One cast in four also calls a falling star down where you aim.",
+      "rarity": "rare",
+      "tag": "BLAST",
+      "effects": {
+        "meteor": 0.25
+      }
+    },
+    {
+      "id": "fractal_seed",
+      "name": "Fractal Seed",
+      "description": "Spells split in two on impact, and every shard splits again.",
+      "rarity": "mythic",
+      "tag": "SPLIT",
+      "effects": {
+        "split": 2,
+        "fractal": 1
+      }
+    },
+    {
+      "id": "crimson_grail",
+      "name": "Crimson Grail",
+      "description": "Every kill makes your spells 8% stronger until you leave the room, up to 80%; 5% of hits heal you.",
+      "rarity": "dark",
+      "tag": "POWER",
+      "effects": {
+        "bloodlust": 1,
+        "lifesteal": 0.05
+      },
+      "cost": 4
     }
   ],
   "weapons": [

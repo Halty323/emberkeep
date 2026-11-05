@@ -31,6 +31,47 @@ A flying spell's heart takes one of six shapes, each with its own halo so it rea
 
 Patterns narrow it further: a lance is a needle or a shard, a lob an orb or a comet, a boomerang a disc or an orb, and sprays and rings lean to motes and shards.
 
+## Every relic, every spellbook
+
+Every relic and pairing does something whatever the spellbook. Relics that shape a flight mean this for the spells that do not fly:
+
+| Relic power | Ray | Lightning | Eruption |
+| --- | --- | --- | --- |
+| Pierce | Passes through foes | Carries on to the next foe beyond | Runs on as a fissure of eruptions along your aim |
+| Ricochet | Glances off walls | Leaps to another foe near (Ricochet Arc, Mirror Maze answer each leap) | Leaps to rise again under another foe |
+| Seeking | Bends toward foes | A wider cone | Rises beneath the nearest foe |
+| Weaving | Zigzags | A wilder bolt (Hunter's Moon still finishes the wounded) | A ripple rises wider after it |
+| Returning | Turns back to you | Comes back a moment later to strike again (Homecoming: twice as hard) | Another rises at your feet (Homecoming: twice as hard) |
+| Lingering | Its beam stays, burning what crosses it | A storm cell keeps striking near where it hit | Rises twice |
+| Speed, gathering speed | Reaches farther | Reaches farther | Rises sooner |
+| Swelling | Widens as it goes | Strikes those beside its target too | Reaches wider |
+| Forking | Splits three ways at its end | Strikes two more foes in a wider cone | Throws three small eruptions around it |
+| Trails (Candlemaker, Molten) | Wax laid along the beam | Wax laid along the bolt | Wax where it rises |
+| More spells, behind, beside, in a ring | Fans and rings of rays | Bolts that pick different foes | Several eruptions, a ring of them close around you |
+
+Everything that answers a hit (statuses, reactions, splitting, bursting, chains, lifesteal, crits, Lucky Star, Icicle, Starfall) answers a ray's, a bolt's and an eruption's hits too.
+
+## Relics that cast
+
+Eleven new relics cast spells of their own, through the same path any spell takes, so they work with every spellbook and in co-op:
+
+| Relic | Rarity | What it does |
+| --- | --- | --- |
+| Echo Bell | rare | Every cast rings out again a moment later as an echo at 60% |
+| War Drum | uncommon | Every fourth cast is a Great Cast: twice the damage, half again as large; cast 10% faster |
+| Black Pearl | rare | Every hit drags the foes around it in toward the one struck; 15% more damage |
+| Phantom Veil | rare | A phantom at your shoulder casts every spell you do, at 70% |
+| Storm Crown | mythic | Three hits in ten call lightning down from above; every hit arcs once more |
+| Phoenix Feather | mythic | Fallen foes erupt in flame where they stood (a chain through a pack); spells burn |
+| Prism Lens | rare | Every hit throws a ray at the nearest other foe |
+| Seismic Boots | uncommon | The floor erupts in your spellbook's element where your dash ends |
+| Spyglass | common | Up to 60% more damage the farther off the foe; 25% more reach |
+| Meteor Charm | rare | One cast in four calls a falling star down where you aim |
+| Fractal Seed | mythic | Spells split in two, and every shard splits again |
+| Crimson Grail | dark | Each kill in a room: 8% more damage, up to 80%, until you leave it; 5% lifesteal |
+
+They come with twelve new pairings (Choir, Supercell, Event Horizon, Pyroclasm, Kaleidoscope, Aftershock, Deadeye, Meteor Shower, Legion, Infinite Regress, Blood Moon, Overture), listed in [COMBINATIONS.md](COMBINATIONS.md). Six of them also sing with a spellbook's element (Phoenix Feather with ember, Storm Crown with storm, Prism Lens and Meteor Charm with radiance, Fractal Seed with glass, Black Pearl with tide).
+
 ## Compatibility
 
 Forged ids now carry version 2. Version 1 ids (older saves, shops and the dark store's offers in old saves) still rebuild exactly as they were. Lances are no longer named "Ray" or "Beam" in version 2, since rays exist.
@@ -42,7 +83,8 @@ In co-op, a guest's rays, lightning and eruptions are cast by the host like any 
 - `scripts/items/forge.gd`: `ARCHETYPES`, `FORMS`, the element and pattern tables for looks, and version 2 rolls.
 - `scripts/items/spell_forms.gd`: a cast's kind and look, carried in its stats.
 - `scripts/shot.gd`: `trace_ray()`, `strike()`, `erupt_tick()`, and each look's heart (`form_basis()`).
-- `scripts/items/spell_shapes.gd`: beams, bolts, ground runes and what each element raises.
+- `scripts/items/spell_shapes.gd`: beams, bolts, ground runes, falling stars and what each element raises.
+- `scripts/items/relic_powers.gd`: the relics that cast spells of their own.
 - `shaders/shot_beam.gdshader`, `shaders/spell_rune.gdshader`, and the looks' halos in `shaders/shot_glow.gdshader`.
 
-`tests/tower.gd` checks that each kind comes up a quarter of the time in starters and in shops, that every element, trait and look suits its spell (starters, shop and dark-forged spellbooks), that version 1 ids rebuild unchanged, and that a ray, lightning and an eruption each strike a foe ahead. `tests/render_spells.gd` is an opt-in capture; set `EMBERKEEP_SPELLS_CAPTURE`.
+`tests/tower.gd` checks that each kind comes up a quarter of the time in starters and in shops, that every element, trait and look suits its spell (starters, shop and dark-forged spellbooks), that version 1 ids rebuild unchanged, that a ray, lightning and an eruption each strike a foe ahead, that every new relic's power works with every kind of spellbook (phantoms, echoes, falling stars and lightning from above for all four), and the per-kind meanings (piercing and ricochet lightning, eruption fissures and returns, lingering rays). `tests/render_spells.gd` is an opt-in capture; set `EMBERKEEP_SPELLS_CAPTURE`.

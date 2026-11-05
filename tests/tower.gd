@@ -107,6 +107,7 @@ func test_tower() -> void:
 	test_forge()
 	await test_firing()
 	await test_archetypes()
+	await test_relic_powers()
 	await test_dark_store()
 	test_coins()
 	game.queue_free()
@@ -138,7 +139,7 @@ func test_catalog() -> void:
 	check(problems.size() >= 3, "unknown foes, hazards and bosses are rejected")
 	var short_climb = catalog.validate_climb({"id": "x", "bands": ["summit", "summit"]})
 	check(not short_climb.is_empty(), "a climb that needs more themes than exist is rejected")
-	check(catalog.items.filter(func(item): return item.rarity == "dark").size() == 8, "eight dark relics")
+	check(catalog.items.filter(func(item): return item.rarity == "dark").size() == 9, "nine dark relics")
 
 func test_climb() -> void:
 	var plans := {}
@@ -617,6 +618,155 @@ func test_archetypes() -> void:
 	var needle: Array = game.shots.filter(func(s): return s.friendly and s.form == "needle")
 	step(2)
 	check(not needle.is_empty() and needle[0].core.basis.z.length() > needle[0].core.basis.x.length() * 4.0, "a needle is long and thin along its flight")
+	clear_combat(false)
+
+func book(kind: String) -> String:
+	for seed_value in range(1, 400):
+		for weapon in Forge.starters(seed_value):
+			if weapon.archetype == kind: return weapon.id
+	return ""
+
+## Equips relics on a clean slate and returns the friendly spells cast by one cast.
+func cast_with(kind: String, relics: Array, aim := Vector3(0, 0, -1)) -> Array:
+	clear_combat(false)
+	run.inventory = relics.duplicate()
+	run.modifiers = []
+	run.rebuild_stats()
+	run.weapon_id = book(kind)
+	game.player.place(Vector3(0, 0, 4))
+	game.player.aim_direction = aim
+	game.player.fire_cooldown = 0.0
+	game.player.echoes.clear()
+	var before: Array = game.shots.duplicate()
+	game.player.fire()
+	return game.shots.filter(func(s): return s.friendly and not s in before)
+
+func dummy(at: Vector3, health := 900.0):
+	var foe = spawn("brute", at)
+	foe.max_hp = health
+	foe.hp = health
+	return foe
+
+## New relics cast spells of their own, and every relic means something to
+## every kind of spell.
+func test_relic_powers() -> void:
+	await arena("cellar", 1)
+	var Synergy = load("res://scripts/items/synergies.gd")
+	for id in ["echo_bell", "war_drum", "black_pearl", "phantom_veil", "storm_crown", "phoenix_feather", "prism_lens", "seismic_boots", "spyglass", "meteor_charm", "fractal_seed", "crimson_grail"]:
+		check(catalog.item_by_id.has(id), "the relic %s exists" % id)
+	for id in ["choir", "supercell", "event_horizon", "pyroclasm", "kaleidoscope", "aftershock", "deadeye", "meteor_shower", "legion", "infinite_regress", "blood_moon", "overture"]:
+		check(Synergy.PAIRINGS.has(id) and catalog.item_by_id.has(Synergy.PAIRINGS[id][0]) and catalog.item_by_id.has(Synergy.PAIRINGS[id][1]), "the pairing %s joins two real relics" % id)
+	for kind in ["projectile", "ray", "lightning", "eruption"]:
+		# Phantom Veil and Legion: two more casts beside you.
+		var alone: int = cast_with(kind, []).size()
+		check(cast_with(kind, ["phantom_veil", "rear_view"]).size() >= alone * 3, "phantoms cast %s spells too" % kind)
+		# Echo Bell and Choir: the cast rings out twice more.
+		cast_with(kind, ["echo_bell", "forked_wick"])
+		var echoes: int = game.player.echoes.size()
+		var before: int = game.shots.size()
+		for i in 50: game.player.update_sim(1.0 / 60.0, Vector2.ZERO, Vector3.ZERO, false)
+		check(echoes == 2 and game.shots.size() > before, "a %s cast echoes" % kind)
+		# Meteor Charm: a falling star where you aim.
+		run.inventory = ["meteor_charm"]
+		run.rebuild_stats()
+		run.stats.meteor = 1.0
+		var cast: Array = []
+		run.weapon_id = book(kind)
+		game.player.fire_cooldown = 0.0
+		var known: Array = game.shots.duplicate()
+		game.player.fire()
+		check(game.shots.any(func(s): return not s in known and int(s.stats.get("erupt", 0)) == 9), "a %s cast can call a falling star" % kind)
+		# Storm Crown and Prism Lens: lightning from above, a ray at the next foe.
+		var foe = null
+		cast = cast_with(kind, ["storm_crown", "prism_lens"])
+		run.stats.thunder = 1.0
+		foe = dummy(Vector3(0, 0, -1))
+		dummy(Vector3(3, 0, -1))
+		known = game.shots.duplicate()
+		var spell: Array = cast_with(kind, ["storm_crown", "prism_lens"])
+		for s in spell: s.stats.thunder = 1.0
+		foe = dummy(Vector3(0, 0, -1))
+		dummy(Vector3(3, 0, -1))
+		var sky := false
+		for i in 40:
+			step(1)
+			if game.shots.any(func(s): return is_instance_valid(s) and float(s.stats.get("sky", 0)) > 0): sky = true
+		check(sky, "a %s hit calls lightning from above" % kind)
+	# The rest, with the kind they matter most for.
+	var near = null
+	var spell: Array = cast_with("projectile", ["black_pearl"])
+	var target = dummy(Vector3(0, 0, -1))
+	near = dummy(Vector3(2.4, 0, -1))
+	step(25)
+	check(near.knock_velocity.length() > .5 or near.global_position.x < 2.3, "a Black Pearl hit drags the foes around it in")
+	# War Drum: the fourth cast is a Great Cast.
+	var damages: Array = []
+	for i in 4:
+		var volley: Array = cast_with("projectile", ["war_drum"])
+		if not volley.is_empty(): damages.append(volley[0].damage)
+	check(damages.size() == 4 and damages[3] > damages[0] * 1.9, "every fourth cast strikes twice as hard")
+	# Seismic Boots: the floor erupts where a dash lands.
+	clear_combat(false)
+	run.inventory = ["seismic_boots"]
+	run.rebuild_stats()
+	game.player.dash_cooldown = 0
+	game.player.dash_time = 0
+	var known: Array = game.shots.duplicate()
+	game.player.dash()
+	check(game.shots.any(func(s): return not s in known and s.mode == "eruption" and float(s.stats.get("anchor", 0)) > 0), "a dash wakes the floor where it lands")
+	# Phoenix Feather: a fallen foe erupts.
+	clear_combat(false)
+	run.inventory = ["phoenix_feather", "crimson_grail"]
+	run.rebuild_stats()
+	known = game.shots.duplicate()
+	var damage_before: float = run.stats.damage
+	game.kill_pairings(Vector3(1, 0, -2))
+	check(game.shots.any(func(s): return not s in known and s.mode == "eruption"), "a fallen foe erupts in flame")
+	check(run.stats.damage > damage_before and game.bloodlust == 1, "the Crimson Grail feeds on the kill")
+	game.enter_room(Vector3(0, 0, 2))
+	check(game.bloodlust == 0 and is_equal_approx(run.stats.damage, damage_before), "and its hunger ends with the room")
+	await arena("cellar", 1)
+	# Lightning: pierce carries it to the foe behind; ricochet leaps aside.
+	cast_with("lightning", ["splinter"])
+	clear_combat(false)
+	var first = dummy(Vector3(0, 0, -1))
+	var behind = dummy(Vector3(0, 0, -4))
+	spell = cast_with("lightning", ["splinter"])
+	first = dummy(Vector3(0, 0, -1))
+	behind = dummy(Vector3(0, 0, -4))
+	step(3)
+	check(first.hp < 900.0 and behind.hp < 900.0, "piercing lightning strikes the foe behind too")
+	spell = cast_with("lightning", ["skipping_stone"])
+	first = dummy(Vector3(0, 0, -1))
+	var aside = dummy(Vector3(3.5, 0, 1))
+	step(3)
+	check(first.hp < 900.0 and aside.hp < 900.0, "ricochet lightning leaps to a foe aside")
+	# Eruptions: pierce runs on as a fissure; returning rises at your feet.
+	spell = cast_with("eruption", ["splinter"])
+	step(2)
+	check(game.shots.filter(func(s): return s.mode == "eruption").size() >= 3, "a piercing eruption runs on as a fissure")
+	spell = cast_with("eruption", ["return_address"])
+	dummy(Vector3(0, 0, -2))
+	step(30)
+	check(game.shots.any(func(s): return s.mode == "eruption" and float(s.stats.get("anchor", 0)) > 0 and s.global_position.distance_to(game.player.global_position) < 1.5), "a returning eruption rises at your feet")
+	# Rays: a lingering beam keeps burning what crosses it.
+	spell = cast_with("ray", [])
+	var lingering: Array = cast_with("ray", [])
+	clear_combat(false)
+	run.inventory = []
+	run.rebuild_stats()
+	run.weapon_id = book("ray")
+	game.player.fire_cooldown = 0.0
+	known = game.shots.duplicate()
+	var beam_stats := {"ray": 1.0, "linger": 1.0}
+	var beam = game.spawn_shot(Vector3(0, .65, 4), Vector3(0, 0, -1), 10.0, 72.0, beam_stats, Color.WHITE, true)
+	step(1)
+	var crossing = dummy(Vector3(0, 0, -2))
+	var hp_then: float = crossing.hp
+	step(40)
+	check(is_instance_valid(beam) and crossing.hp < hp_then, "a lingering ray's beam burns what crosses it")
+	run.inventory = []
+	run.rebuild_stats()
 	clear_combat(false)
 
 func test_firing() -> void:

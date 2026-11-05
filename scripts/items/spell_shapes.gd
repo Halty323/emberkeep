@@ -16,7 +16,8 @@ static var rune_mesh: PlaneMesh
 static var materials: Dictionary = {}
 static var meshes: Dictionary = {}
 # Eruptions, in the order of Forge.ELEMENTS.
-const RISINGS := ["flame", "ice", "skyfall", "bubbles", "pillar", "crystal", "geyser", "spout"]
+# The ninth, a falling star, is the Meteor Charm's (RelicPowers.METEOR).
+const RISINGS := ["flame", "ice", "skyfall", "bubbles", "pillar", "crystal", "geyser", "spout", "meteor"]
 
 static func material(shader: String, color: Color) -> ShaderMaterial:
 	var key := shader + color.to_html()
@@ -54,15 +55,15 @@ static func span(shot: Node3D, a: Vector3, b: Vector3, width: float, color: Colo
 	return piece(shot, beam_mesh, material("shot_beam", color), Transform3D(basis, (a + b) / 2.0), life, {"beam": brightness, "width": width, "flicker": flicker})
 
 ## A ray's light along the path it really took (bends and ricochets too).
-static func ray(shot: Node3D, path: Array, color: Color, size: float) -> void:
+static func ray(shot: Node3D, path: Array, color: Color, size: float, linger := 0.0) -> void:
 	var width := .13 + .1 * size
 	for i in path.size() - 1:
-		span(shot, path[i], path[i + 1], width, color, .26, 2.6)
-		span(shot, path[i], path[i + 1], width * 3.6, color, .32, .7)
+		span(shot, path[i], path[i + 1], width, color, maxf(.26, linger), 2.6)
+		span(shot, path[i], path[i + 1], width * 3.6, color, maxf(.32, linger), .7)
 
 ## A lightning bolt: a jagged line with a branch or two, flickering out.
-static func bolt(shot: Node3D, a: Vector3, b: Vector3, color: Color, gen: RandomNumberGenerator, branches := 2) -> void:
-	var points := jagged(a, b, gen, .32)
+static func bolt(shot: Node3D, a: Vector3, b: Vector3, color: Color, gen: RandomNumberGenerator, branches := 2, roughness := .32) -> void:
+	var points := jagged(a, b, gen, roughness)
 	for i in points.size() - 1:
 		span(shot, points[i], points[i + 1], .09, color, .28, 3.0, true)
 		span(shot, points[i], points[i + 1], .36, color, .32, .8, true)
@@ -176,6 +177,14 @@ static func erupt(shot: Node3D, at: Vector3, radius: float, element: int, color:
 			# A shaft of light from floor to ceiling, narrowing as it fades.
 			lift(shot, shape("column", 1.0, 1.0), glow, Transform3D(Basis.IDENTITY.scaled(Vector3(radius * .55, 4.0, radius * .55)), at + Vector3.UP * 2.0), .55, .06)
 			lift(shot, shape("column", 1.0, 1.0), pale, Transform3D(Basis.IDENTITY.scaled(Vector3(radius * .2, 4.0, radius * .2)), at + Vector3.UP * 2.0), .45, .04)
+		"meteor":
+			# Where the star struck: a flash, a ring of flame thrown out.
+			lift(shot, shape("ball", 1.0, 0.0), pale, Transform3D(Basis.IDENTITY.scaled(Vector3(radius, radius * .7, radius)), at + Vector3.UP * .3), .35, .05)
+			for i in 9:
+				var spot := ring_point(at, radius * .7, i, 9, gen)
+				var out := (spot - at).normalized()
+				var tilt := Basis(Vector3.UP.cross(out).normalized(), .7)
+				lift(shot, shape("cone", .16, 1.0), glow, Transform3D(tilt.scaled(Vector3(1, gen.randf_range(.7, 1.2), 1)), spot + Vector3.UP * .35), .5, .06, out * 1.5)
 		"geyser", "spout":
 			# A column bursting up, throwing drops (or wax) that fall back.
 			var wide := radius * (.42 if kind == "spout" else .34)
@@ -184,6 +193,14 @@ static func erupt(shot: Node3D, at: Vector3, radius: float, element: int, color:
 				var out := Vector3.FORWARD.rotated(Vector3.UP, TAU * i / 9.0 + gen.randf()) * gen.randf_range(1.2, 2.6)
 				var drop := gen.randf_range(.09, .17)
 				lift(shot, shape("ball", 1.0, 0.0), pale, Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * drop), at + Vector3.UP * 1.9), .75, .02, out + Vector3.UP * gen.randf_range(2.0, 3.6), 9.0)
+
+## A star falling from the dark overhead onto where it will strike.
+static func falling_star(shot: Node3D, at: Vector3, time: float, color: Color) -> void:
+	var height := 5.0
+	var start := at + Vector3(-1.2, height, -.8)
+	var speed := (at - start) / maxf(.05, time)
+	piece(shot, shape("ball", 1.0, 0.0), EmberShot.material("core", color.lightened(.3)), Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * .35), start), time, {"grow": .02, "drift": speed, "root": Vector3.ZERO})
+	piece(shot, shape("ball", 1.0, 0.0), EmberShot.material("core", color), Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * .6), start), time, {"grow": .02, "drift": speed, "root": Vector3.ZERO})
 
 static func ring_point(at: Vector3, distance: float, i: int, count: int, gen: RandomNumberGenerator) -> Vector3:
 	return at + Vector3.FORWARD.rotated(Vector3.UP, TAU * i / maxf(1, count) + gen.randf_range(-.3, .3)) * distance

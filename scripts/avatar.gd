@@ -41,6 +41,10 @@ var push := Vector3.ZERO
 var spin_angle = 0.0
 var burst_left = 0
 var burst_timer = 0.0
+# Relics that cast on their own: casts counted for the War Drum, and echoes
+# waiting to ring out (scripts/items/relic_powers.gd).
+var casts := 0
+var echoes: Array = []
 var burst_shot: Dictionary = {}
 
 func setup(owner_game: Node3D) -> void:
@@ -182,6 +186,7 @@ func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting:
 			burst_left -= 1
 			burst_timer = float(burst_shot.gap)
 			volley(burst_shot.weapon, burst_shot.stats, burst_shot.damage, burst_shot.tint)
+	if not echoes.is_empty(): RelicPowers.play_echoes(self, delta)
 	haste_time = maxf(0, haste_time - delta)
 	recoil = move_toward(recoil, 0.0, delta * 3.0)
 	if aim_input.length_squared() > .01:
@@ -289,8 +294,11 @@ func fire() -> void:
 	elif float(stats.get("candle", 0)) > 0 or (stats.get("element", "") == "wax" and float(stats.get("resonance", 0)) > 0): stats["trail_kind"] = "wax"
 	# Last Stand: below half health, spells pierce.
 	if Run.has_pairing("last_stand") and Run.hp <= Run.stats.max_hp / 2.0: stats.pierce = float(stats.get("pierce", 0)) + 1.0
+	damage *= RelicPowers.great_cast(self, stats)
 	release_sparks(damage, stats)
 	var count = volley(weapon, stats, damage, tint)
+	RelicPowers.queue_echoes(self, weapon, stats, damage, tint)
+	RelicPowers.call_meteor(self, stats, damage, shot_origin(), aim_direction)
 	if int(weapon.get("burst", 1)) > 1:
 		burst_left = int(weapon.burst) - 1
 		burst_timer = float(weapon.burst_gap)
@@ -341,6 +349,10 @@ func volley(weapon: Dictionary, stats: Dictionary, damage: float, tint: Color) -
 			var hit = get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(origin, at, 1 | PropVisuals.FURNITURE_LAYER))
 			if not hit.is_empty(): at = origin
 		launch_shot(at, direction, damage, speed_value, stats, tint, true)
+		# Phantom Veil: the phantoms beside you cast it too.
+		for offset in RelicPowers.phantoms(stats, aim_direction.cross(aim_up()).normalized()):
+			launch_shot(at + offset, direction, damage * RelicPowers.PHANTOM_SHARE, speed_value, stats, tint.lightened(.4), true)
+			if i == 0: Effects.play("muzzle", at + offset, tint.lightened(.4), -1, 1.0, aim_direction)
 	return count
 
 ## Caught sparks leave with the next shot as homing embers.
@@ -376,6 +388,7 @@ func dash() -> void:
 	invulnerability = .32
 	var trials = game.get("trials")
 	if trials and game.get("player") == self: trials.on_dash()
+	if game.get("player") == self: RelicPowers.quake(self)
 	Audio.play_sound("dash")
 	game.make_noise(global_position, 2.0)
 	Effects.ring_burst(game, global_position, Color("efd1a0"), 1.1)

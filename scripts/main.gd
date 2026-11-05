@@ -22,6 +22,8 @@ var marker_visual: Node3D
 # Death, behind a dark altar not yet bargained with.
 var death_figure: DeathFigure
 var trials: DeathTrials
+# The Crimson Grail's kills this room.
+var bloodlust := 0
 var enemies: Array = []
 var shots: Array = []
 var pickups: Array = []
@@ -1043,6 +1045,7 @@ func saved_entry() -> Vector3:
 	return Vector3(0, 0, 2.0)
 
 func enter_room(spawn: Vector3, keep_view := false, walking_state: Dictionary = {}) -> void:
+	RelicPowers.room_left(self)
 	clean_room(keep_view,not walking_state.is_empty())
 	var data: Dictionary = Run.rooms[Run.current_room]
 	var first_visit: bool=not data.get("visited",false)
@@ -1394,6 +1397,7 @@ func on_enemy_killed(enemy: DungeonEnemy) -> void:
 
 ## Pairings this player carries that answer any foe falling.
 func kill_pairings(at: Vector3) -> void:
+	RelicPowers.on_kill(self, at)
 	if Run.has_pairing("frenzy"): Run.add_modifier("frenzy", 2.0, {"rate": 1.0})
 	if Run.has_pairing("last_stand") and Run.hp <= Run.stats.max_hp / 2.0: Run.heal(.5)
 	if Run.has_pairing("glass_cannon"):
