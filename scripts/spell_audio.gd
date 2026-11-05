@@ -23,22 +23,22 @@ static func recipes() -> Dictionary:
 		"hum": func(): return mix([tremolo(buzz(1.3, 110, 104, .28, .08, 1.4, 5), 9.0)]),
 		# Lightning: crackle gathering, then the crack and a rumble after it.
 		"charge": func(): return mix([swell(crackle(.14, 40, .5, 31), 2.4), swell(sweep(.14, 300, 1300, .2, .0, 0.0), 2.0)]),
-		"crack": func(): return mix([noise(.5, .9, .95, .2, .001, 22.0, 32), sweep(.5, 70, 45, .35, .004, 5.0), crackle(.5, 18, .3, 33)]),
-		"thunder": func(): return mix([noise(.85, .85, .9, .08, .001, 14.0, 34), noise(.85, .45, .05, .02, .01, 3.0, 35), sweep(.85, 60, 32, .45, .01, 3.5)]),
+		"crack": func(): return mix([noise(.42, .45, .4, .08, .004, 16.0, 32), sweep(.42, 85, 50, .45, .004, 7.0), crackle(.42, 12, .22, 33)]),
+		"thunder": func(): return mix([noise(.8, .4, .35, .05, .006, 9.0, 34), noise(.8, .4, .05, .02, .01, 3.0, 35), sweep(.8, 60, 32, .5, .01, 3.5)]),
 		# An eruption: a breath drawn as the rune is drawn, the ground stirring
 		# under it, and then what rises, each element its own way.
 		"conjure": func(): return mix([swell(noise(.2, .3, .08, .3, .0, 0.0, 41), 1.6)]),
 		"rumble": func(): return mix([swell(noise(.36, .6, .02, .05, .0, 0.0, 42), 2.2), swell(sweep(.36, 48, 62, .4, .0, 0.0), 2.0)]),
 		"whistle": func(): return mix([swell(sweep(.36, 1900, 520, .32, .0, 0.0), 1.4), swell(noise(.36, .2, .3, .1, .0, 0.0, 43), 2.0)]),
-		"rise_flame": func(): return mix([noise(.55, .9, .7, .04, .004, 6.0, 51), sweep(.55, 95, 48, .55, .004, 5.0), crackle(.55, 26, .35, 52)]),
+		"rise_flame": func(): return mix([noise(.55, .55, .35, .04, .008, 6.0, 51), sweep(.55, 95, 48, .55, .004, 5.0), crackle(.55, 26, .35, 52)]),
 		"rise_ice": func(): return mix([crackle(.5, 40, .55, 53), ping(.5, 1520, .25, 0.0, 9.0), ping(.5, 2280, .18, .05, 11.0), noise(.5, .25, .8, .4, .002, 12.0, 54)]),
-		"rise_skyfall": func(): return mix([noise(.85, .85, .9, .08, .001, 14.0, 55), sweep(.85, 60, 32, .45, .01, 3.5), crackle(.85, 20, .3, 56)]),
+		"rise_skyfall": func(): return mix([noise(.8, .4, .35, .05, .006, 9.0, 55), sweep(.8, 60, 32, .5, .01, 3.5), crackle(.8, 12, .2, 56)]),
 		"rise_bubbles": func(): return mix([bubbles(.65, 7, 280, 640, .4, 57)]),
 		"rise_pillar": func(): return mix([chord(.9, [440.0, 554.4, 659.3, 880.0], .16, .12, 2.6), sweep(.9, 1760, 1790, .05, .2, 3.0)]),
 		"rise_crystal": func(): return mix([pings(.55, 16, 1800, 4200, .25, 58), noise(.55, .35, .9, .5, .001, 16.0, 59)]),
 		"rise_geyser": func(): return mix([noise(.6, .7, .2, .03, .01, 5.0, 60), bubbles(.6, 5, 160, 320, .3, 61)]),
 		"rise_spout": func(): return mix([noise(.6, .75, .45, .05, .004, 6.0, 62), pings(.6, 6, 700, 1400, .15, 63)]),
-		"rise_meteor": func(): return mix([noise(.9, 1.0, .8, .03, .001, 5.0, 64), sweep(.9, 75, 34, .7, .003, 3.2), crackle(.9, 30, .35, 65)]),
+		"rise_meteor": func(): return mix([noise(.9, .6, .4, .03, .006, 5.0, 64), sweep(.9, 75, 34, .7, .003, 3.2), crackle(.9, 30, .35, 65)]),
 	}
 
 static func mix(layers: Array) -> AudioStreamWAV:

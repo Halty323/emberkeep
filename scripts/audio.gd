@@ -63,21 +63,33 @@ func play_sound(id: String, pitch := 1.0) -> void:
 	play_local(id, pitch)
 
 ## How loud each sound sits in the mix, in dB (the default is -4).
-const VOLUMES := {"shoot": -9.0, "scribble": -19.0, "ray": -10.0, "hum": -15.0, "charge": -11.0, "crack": -6.0, "thunder": -5.0,
-	"conjure": -14.0, "rumble": -8.0, "whistle": -11.0, "rise_flame": -6.0, "rise_ice": -7.0, "rise_skyfall": -5.0, "rise_bubbles": -7.0,
-	"rise_pillar": -8.0, "rise_crystal": -7.0, "rise_geyser": -6.0, "rise_spout": -6.0, "rise_meteor": -4.0}
+## Spell sounds sit well under the rest: they come often and close.
+const VOLUMES := {"shoot": -9.0, "scribble": -19.0, "ray": -15.0, "hum": -19.0, "charge": -17.0, "crack": -17.0, "thunder": -14.0,
+	"conjure": -18.0, "rumble": -14.0, "whistle": -16.0, "rise_flame": -13.0, "rise_ice": -14.0, "rise_skyfall": -14.0, "rise_bubbles": -13.0,
+	"rise_pillar": -14.0, "rise_crystal": -15.0, "rise_geyser": -13.0, "rise_spout": -13.0, "rise_meteor": -11.0}
+# The same spell sound starting again this soon is skipped, so rapid casts
+# and chains never pile into one roar.
+const REPEAT_GAP := .07
+var last_played: Dictionary = {}
+
+func too_soon(id: String) -> bool:
+	if not VOLUMES.has(id) and not id.begins_with("cast_"): return false
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - float(last_played.get(id, -1.0)) < REPEAT_GAP: return true
+	last_played[id] = now
+	return false
 
 ## Heard on this device alone: a spell every device draws for itself makes
 ## its own sound on each, rather than once more from the host.
 func play_local(id: String, pitch := 1.0, louder := 0.0) -> void:
 	if DisplayServer.get_name() == "headless": return
-	if not Settings.values.sound or not sounds.has(id):
+	if not Settings.values.sound or not sounds.has(id) or too_soon(id):
 		return
 	var player: AudioStreamPlayer = players[voice % players.size()]
 	voice += 1
 	player.stream = sounds[id]
 	player.pitch_scale = pitch
-	player.volume_db = float(VOLUMES.get(id, -12.0 if id.begins_with("cast_") else -4.0)) + louder
+	player.volume_db = float(VOLUMES.get(id, -15.0 if id.begins_with("cast_") else -4.0)) + louder
 	player.play()
 
 func render_spell_sounds() -> void:
@@ -184,7 +196,7 @@ func play_at(id: String, parent: Node3D, at: Vector3, pitch := 1.0) -> void:
 
 ## A sound where something happens, on this device alone.
 func play_local_at(id: String, parent: Node3D, at: Vector3, pitch := 1.0, louder := 0.0) -> void:
-	if DisplayServer.get_name() == "headless" or not Settings.values.sound or not sounds.has(id): return
+	if DisplayServer.get_name() == "headless" or not Settings.values.sound or not sounds.has(id) or too_soon(id): return
 	if spatial_players.is_empty():
 		for i in 8:
 			var player = AudioStreamPlayer3D.new()
@@ -199,4 +211,6 @@ func play_local_at(id: String, parent: Node3D, at: Vector3, pitch := 1.0, louder
 	player.pitch_scale = pitch
 	# Spell sounds keep their own loudness, a little softened by distance.
 	player.volume_db = (float(VOLUMES[id]) - 2.0 if VOLUMES.has(id) else -12.0) + louder
+	# A spell's sound is full only right beside it and falls away from a step off.
+	player.unit_size = 1.5 if VOLUMES.has(id) else 4.0
 	player.play()

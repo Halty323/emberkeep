@@ -9,6 +9,7 @@ uniform vec4 tint : source_color = vec4(1.0, 0.8, 0.5, 1.0);
 varying float fade;
 varying float reach;
 varying float seed;
+varying vec3 world;
 
 void vertex() {
     vec3 centre = MODEL_MATRIX[3].xyz;
@@ -20,6 +21,7 @@ void vertex() {
     vec3 side = normalize(cross(dir, normalize(CAMERA_POSITION_WORLD - centre)) + vec3(0.0, 0.00001, 0.0));
     seed = dot(centre, vec3(1.7, 2.3, 0.9));
     VERTEX = centre + span * (UV.x - 0.5) + side * (UV.y - 0.5) * width;
+    world = VERTEX;
 }
 
 void fragment() {
@@ -28,5 +30,7 @@ void fragment() {
     float halo = exp(-y * 3.4) * 0.55;
     float run = 0.72 + 0.28 * sin(UV.x * reach * 5.0 - TIME * 34.0 + seed);
     vec3 hot = mix(tint.rgb, vec3(1.0, 0.98, 0.94), 0.65);
-    ALBEDO = (tint.rgb * halo + hot * line) * run * fade;
+    // Light right at the eye would fill the view: it fades out close up.
+    float near = smoothstep(0.35, 1.6, distance(world, CAMERA_POSITION_WORLD));
+    ALBEDO = (tint.rgb * halo + hot * line) * run * fade * near;
 }
