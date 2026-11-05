@@ -528,7 +528,8 @@ func test_forge() -> void:
 			var single = float(weapon.damage) * int(weapon.count) * int(weapon.get("burst", 1)) / float(weapon.cooldown)
 			check(single > 12.0 and single < 140.0, "%s deals a sane volume of damage (%.0f)" % [weapon.name, single])
 			check(Color.html_is_valid(weapon.color) and weapon.cooldown >= .1, "%s has a colour and a cadence" % weapon.name)
-		check(patterns.size() == 4 and elements.size() == 4, "seed %d's starters never share a pattern or an element" % seed_value)
+		var flying: Array = starters.filter(func(w): return w.get("archetype", "projectile") == "projectile").map(func(w): return w.pattern)
+		check(elements.size() == 4 and flying.size() == patterns.keys().filter(func(p): return p in Forge.PATTERNS).size(), "seed %d's starters never share an element, nor a flying pattern" % seed_value)
 	check(seen_names.size() > 200, "forged names vary (%d)" % seen_names.size())
 	check(Forge.starters(5) != Forge.starters(6), "different seeds forge different weapons")
 	var dark = Forge.lookup(Forge.id_for(77, 12, 1))
@@ -560,11 +561,12 @@ func test_forge() -> void:
 func test_archetypes() -> void:
 	var found := {}
 	var odd := 0
+	var kinds := {}
 	for seed_value in range(1, 300):
 		var starters: Array = Forge.starters(seed_value)
-		check(starters.any(func(w): return w.archetype != "projectile"), "seed %d's starters include a spell that does not fly" % seed_value)
 		for weapon in starters:
 			var kind: String = weapon.archetype
+			kinds[kind] = kinds.get(kind, 0) + 1
 			if not found.has(kind): found[kind] = weapon
 			if kind == "projectile" and not found.has(weapon.form): found[weapon.form] = weapon
 			if not weapon.element in Forge.suited_elements(weapon.pattern): odd += 1
@@ -573,6 +575,14 @@ func test_archetypes() -> void:
 			if kind == "projectile" and not weapon.form in Forge.PATTERN_FORMS[weapon.pattern]: odd += 1
 		if failures > 0: break
 	check(found.has("ray") and found.has("lightning") and found.has("eruption"), "the forge writes rays, lightning and eruptions")
+	# Every kind is as likely as any other, among starters and in shops alike.
+	var rolled := {}
+	for i in 2000:
+		var kind: String = Forge.lookup(Forge.id_for(5000 + i, 40 + i % 50, i % 2)).archetype
+		rolled[kind] = rolled.get(kind, 0) + 1
+	for kind in Forge.KINDS:
+		check(absf(float(rolled.get(kind, 0)) / 2000.0 - .25) < .04, "shops roll %s a quarter of the time (%d / 2000)" % [kind, rolled.get(kind, 0)])
+		check(absf(float(kinds.get(kind, 0)) / (299.0 * 4.0) - .25) < .045, "starters offer %s a quarter of the time (%d / %d)" % [kind, kinds.get(kind, 0), 299 * 4])
 	check(Forge.FORMS.all(func(f): return found.has(f)), "and flying spells of every look")
 	check(odd == 0, "every element, trait and look suits its spell (%d odd)" % odd)
 	check(found.lightning.element in ["storm", "radiance"], "lightning is storm or radiance")

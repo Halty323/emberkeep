@@ -152,7 +152,7 @@ static func make(seed_value: int, slot: int, tier: int, version := VERSION) -> D
 		pattern_id = plan[0]
 		element_id = plan[1]
 	else:
-		pattern_id = pick(gen, PATTERNS.keys() + ARCHETYPES.keys())
+		pattern_id = roll_pattern(gen)
 		element_id = pick(gen, suited_elements(pattern_id))
 	var archetype := pattern_id if ARCHETYPES.has(pattern_id) else "projectile"
 	var pattern: Dictionary = ARCHETYPES[pattern_id] if ARCHETYPES.has(pattern_id) else PATTERNS[pattern_id]
@@ -213,18 +213,31 @@ static func make(seed_value: int, slot: int, tier: int, version := VERSION) -> D
 	weapon.description = describe(pattern_id, element[4], phrases)
 	return weapon
 
-## A seed's four starters (version 2): no two share a pattern or an element,
-## and at least one is not a flying spell, so every seed shows something new.
+## Every kind of spell is as likely as any other: a flying spell (one of its
+## nine patterns), a ray, lightning or an eruption, a quarter each.
+const KINDS := ["projectile", "ray", "lightning", "eruption"]
+
+static func roll_pattern(gen: RandomNumberGenerator) -> String:
+	var kind: String = pick(gen, KINDS)
+	return pick(gen, PATTERNS.keys()) if kind == "projectile" else kind
+
+## A seed's four starters (version 2): each slot's kind is rolled evenly (two
+## rays may meet, in different elements), no two flying starters share a
+## pattern and no two starters share an element.
 static func starter_plan(seed_value: int) -> Array:
 	var order = RandomNumberGenerator.new()
 	order.seed = Content.stable_hash("forge-order:%d:%d" % [VERSION, seed_value])
-	var patterns: Array = PATTERNS.keys() + ARCHETYPES.keys()
+	var patterns: Array = PATTERNS.keys()
 	var elements: Array = ELEMENTS.keys()
 	shuffle(patterns, order)
 	shuffle(elements, order)
-	var picked: Array = patterns.slice(0, STARTERS)
-	if not picked.any(func(id): return ARCHETYPES.has(id)):
-		picked[STARTERS - 1] = patterns.filter(func(id): return ARCHETYPES.has(id))[0]
+	var picked: Array = []
+	for slot in STARTERS:
+		var kind: String = pick(order, KINDS)
+		# Lightning comes only in storm or radiance: a third would have no
+		# element of its own, so it rolls again.
+		while kind == "lightning" and picked.count("lightning") >= 2: kind = pick(order, KINDS)
+		picked.append(patterns.pop_front() if kind == "projectile" else kind)
 	# The pickiest patterns choose their elements first.
 	var slots: Array = range(STARTERS)
 	slots.sort_custom(func(a, b): return suited_elements(picked[a]).size() < suited_elements(picked[b]).size())

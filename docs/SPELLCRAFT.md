@@ -14,7 +14,7 @@ Besides the nine flying patterns (bolt, burst, fan, twin, ring, spiral, lance, l
 | Lightning | Strikes the nearest foe within a narrow cone ahead and in sight, at once, as a jagged bolt with branches. With no foe it strikes where you aim, and lightning in water runs through the pool. | storm, radiance | chaining, volatile, splitting, keen, heavy, kindled |
 | Eruption | A rune glows on the floor where you aim (under the first foe in the way), then something rises and strikes everything over it. Each element rises its own way: flame tongues, ice spikes, a bolt from above, venom bubbles, a pillar of light, crystal shards, a wax geyser, a waterspout. Water, wax and ice eruptions leave their residue behind. | all eight | lingering (rises twice), growing (wider), seeking (rises under the nearest foe), chaining, splitting (throws glass shards), keen, heavy, kindled |
 
-Every seed's four starters include at least one spell that does not fly. Each kind is balanced against the same damage budget as before.
+The four kinds are equally rare: a flying spell (any of its nine patterns), a ray, lightning and an eruption each come up a quarter of the time, in a seed's starters, at merchants, at the boss's reliquary and at Death's altar alike. Starters may hold two of a kind in different elements (two rays, one frost and one ember); no two starters share an element. Each kind is balanced against the same damage budget as before.
 
 ## Looks
 
@@ -45,4 +45,4 @@ In co-op, a guest's rays, lightning and eruptions are cast by the host like any 
 - `scripts/items/spell_shapes.gd`: beams, bolts, ground runes and what each element raises.
 - `shaders/shot_beam.gdshader`, `shaders/spell_rune.gdshader`, and the looks' halos in `shaders/shot_glow.gdshader`.
 
-`tests/tower.gd` checks that every seed's starters include a spell that does not fly, that every element, trait and look suits its spell (starters, shop and dark-forged spellbooks), that version 1 ids rebuild unchanged, and that a ray, lightning and an eruption each strike a foe ahead. `tests/render_spells.gd` is an opt-in capture; set `EMBERKEEP_SPELLS_CAPTURE`.
+`tests/tower.gd` checks that each kind comes up a quarter of the time in starters and in shops, that every element, trait and look suits its spell (starters, shop and dark-forged spellbooks), that version 1 ids rebuild unchanged, and that a ray, lightning and an eruption each strike a foe ahead. `tests/render_spells.gd` is an opt-in capture; set `EMBERKEEP_SPELLS_CAPTURE`.
