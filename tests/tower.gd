@@ -734,12 +734,13 @@ func test_relic_powers() -> void:
 	spell = cast_with("lightning", ["splinter"])
 	first = dummy(Vector3(0, 0, -1))
 	behind = dummy(Vector3(0, 0, -4))
-	step(3)
+	# Lightning gathers for a breath before it strikes.
+	step(12)
 	check(first.hp < 900.0 and behind.hp < 900.0, "piercing lightning strikes the foe behind too")
 	spell = cast_with("lightning", ["skipping_stone"])
 	first = dummy(Vector3(0, 0, -1))
 	var aside = dummy(Vector3(3.5, 0, 1))
-	step(3)
+	step(12)
 	check(first.hp < 900.0 and aside.hp < 900.0, "ricochet lightning leaps to a foe aside")
 	# Eruptions: pierce runs on as a fissure; returning rises at your feet.
 	spell = cast_with("eruption", ["splinter"])

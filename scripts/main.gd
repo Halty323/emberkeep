@@ -1477,16 +1477,21 @@ func pickup_node(drop_id: String) -> DungeonPickup:
 func pickup_feedback(at: Vector3, definition: Dictionary) -> void:
 	Effects.play("pickup", at + Vector3(0, .35, 0), Color(definition.color))
 
-## The map remembers each floor cell the first time it is walked into and
-## scribbles it in. A safe room keeps it at once; in a fight, the room's own
-## save at the end keeps it.
+## The map takes in a whole room the moment the player steps into it, every
+## cell scribbled in together under one soft pass of the quill. A safe room
+## keeps it at once; in a fight, the room's own save at the end keeps it.
 func track_exploration() -> void:
 	var local = room.geometry.cell_at(Vector2(player.position.x, player.position.z))
 	if not room.geometry.cell_set.has(local): return
-	var cell: Vector2i = local + Run.room_anchor(Run.rooms[Run.current_room])
-	if not Run.uncover(cell): return
-	ui.scribble(cell)
-	Audio.play_sound("scribble", .92 + float(absi(hash(cell)) % 17) / 100.0)
+	var anchor: Vector2i = Run.room_anchor(Run.rooms[Run.current_room])
+	var fresh := false
+	for each in room.geometry.cells:
+		var cell: Vector2i = each + anchor
+		if Run.uncover(cell):
+			ui.scribble(cell)
+			fresh = true
+	if not fresh: return
+	Audio.play_sound("scribble", randf_range(.95, 1.03))
 	if room.open: Run.save_run()
 
 ## The room's stair (or stairwell) spot. Rooms generated before the stairs

@@ -66,6 +66,9 @@ var hold_tick := 0.0
 var hold_linger := 0.0
 var hold_path: Array = []
 var returned := false
+# Lightning gathers for a breath before it strikes (its crackle builds the while).
+var charge := 0.0
+const CHARGE := .11
 # How each look sizes its heart, its rune halo and its trail.
 const FORM_GLOW := {"orb": 1.0, "shard": .7, "needle": .45, "comet": 1.3, "mote": .5, "disc": .9}
 const FORM_TAIL := {"orb": 1.0, "shard": 1.1, "needle": 1.4, "comet": 1.9, "mote": .6, "disc": .8}
@@ -99,7 +102,10 @@ func setup(owner_game: Node3D, at: Vector3, travel: Vector3, power: float, veloc
 				# A lingering ray leaves its beam burning instead of slowing.
 				hold_linger = float(stats.get("linger", 0))
 				stats.erase("linger")
-			"lightning": mode = "lightning"
+			"lightning":
+				mode = "lightning"
+				# Sky bolts (Storm Crown) fall at once; a cast gathers first.
+				charge = 0.0 if float(stats.get("sky", 0)) > 0 else CHARGE
 			"eruption": mode = "eruption"
 	if mode != "": return
 	build_light(color)
@@ -204,6 +210,10 @@ func update_sim(delta: float) -> void:
 				trace_ray()
 				return
 		"lightning":
+			# A breath of gathering charge before it strikes.
+			if charge > 0:
+				charge -= delta
+				return
 			if hold > 0: hold_storm(delta)
 			else: strike()
 			return
@@ -650,6 +660,7 @@ func trace_ray() -> void:
 	if hold_linger > 0 and not cosmetic:
 		hold_path = path
 		hold = 1.3
+		SpellSounds.hum(self, path.back())
 		hold_tick = 0.0
 		alive = true
 		return
@@ -698,19 +709,24 @@ func strike() -> void:
 	var rough := .55 if float(stats.get("wave", 0)) > 0 else .32
 	var target: DungeonEnemy = find_target(from, direction, reach, cone)
 	var end: Vector3
+	var struck_prop := ""
 	if target:
 		end = aim_point(target)
 	else:
 		var hit := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(from, from + direction * reach, ray_mask()))
 		end = hit.position if not hit.is_empty() else from + direction * reach
+		if not hit.is_empty() and is_instance_valid(hit.collider) and hit.collider.has_meta("prop_id"): struck_prop = str(hit.collider.get_meta("prop_id"))
 	SpellShapes.bolt(self, from, end, tint, gen, 2, rough)
 	global_position = end
 	Effects.play("impact", end, tint)
+	SpellSounds.crack(self, end)
 	lay_trail([from, end])
 	if cosmetic:
 		remove()
 		return
 	if not target:
+		# A crate or barrel it struck breaks like any other spell would break it.
+		if struck_prop != "": game.hit_prop(struck_prop, damage)
 		# Struck water carries it; whatever lies here meets it.
 		if game.residue: game.residue.shock(end, damage * .5, {})
 		finish()
@@ -881,6 +897,8 @@ func place_eruption() -> void:
 	erupt_wait = clampf(.34 / haste, .12, .34)
 	SpellShapes.rune(self, global_position, erupt_radius, tint, erupt_wait)
 	if int(stats.get("erupt", 1)) - 1 == RelicPowers.METEOR: SpellShapes.falling_star(self, global_position, erupt_wait, tint)
+	# The ground stirs under the rune before it breaks (a star whistles down).
+	SpellSounds.stir(self, global_position, int(stats.get("erupt", 1)) - 1)
 	if cosmetic: return
 	# Pierce: a fissure of further eruptions on along the aim.
 	var flat := Vector3(direction.x, 0, direction.z).normalized()
@@ -908,6 +926,7 @@ func rise() -> void:
 	var gen := RandomNumberGenerator.new()
 	gen.randomize()
 	SpellShapes.erupt(self, center, erupt_radius, element, tint, gen)
+	SpellSounds.rise(self, center, element)
 	Effects.play("impact", center + Vector3.UP * .3, tint, 14, 1.4)
 	if cosmetic: return
 	game.make_noise(center, 1.6)
@@ -926,6 +945,14 @@ func rise() -> void:
 		global_position = center
 		struck += 1
 	pierces = kept
+	# Crates and barrels over the rune break like anything else it strikes.
+	if is_instance_valid(game.room):
+		for prop_id in game.room.props.keys():
+			var entry: Dictionary = game.room.props[prop_id]
+			if not entry.definition.has("breakable") or not is_instance_valid(entry.node): continue
+			var spot: Vector3 = entry.node.global_position
+			if Vector2(spot.x - center.x, spot.z - center.z).length() <= erupt_radius + .5 and absf(spot.y - center.y) < 2.2:
+				game.hit_prop(prop_id, damage)
 	# What rose stays a while: water, wax or ice where it came up.
 	if game.residue:
 		if element < Forge.ELEMENTS.size():

@@ -42,7 +42,7 @@ static func play_echoes(avatar: Node, delta: float) -> void:
 		if echo.wait > 0: continue
 		avatar.echoes.erase(echo)
 		avatar.volley(echo.weapon, echo.stats, echo.damage, echo.tint)
-		Audio.play_sound("shoot", 1.25)
+		SpellSounds.cast(echo.stats, 1, true)
 
 ## Phantom Veil: where the phantoms stand, beside the caster (both sides with Legion).
 static func phantoms(stats: Dictionary, side: Vector3) -> Array:
