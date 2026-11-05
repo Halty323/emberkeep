@@ -30,6 +30,8 @@ import json
 import os
 import struct
 import sys
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -42,7 +44,7 @@ NGA_IMAGES = os.environ.get("EMBERKEEP_NGA_IMAGES", "https://github.com/National
 MET_API = os.environ.get("EMBERKEEP_MET_API", "https://collectionapi.metmuseum.org/public/collection/v1/objects/")
 AIC_API = os.environ.get("EMBERKEEP_AIC_API", "https://api.artic.edu/api/v1/artworks/")
 AIC_IIIF = os.environ.get("EMBERKEEP_AIC_IIIF", "https://www.artic.edu/iiif/2/")
-USER_AGENT = "EmberkeepAssetImporter/1.0 (authoring tool; contact via repository)"
+USER_AGENT = "EmberkeepAssetImporter/1.1 (https://github.com/Halty323/emberkeep; public-domain art authoring)"
 SIZES = {"wall": 1024, "full": 2048}
 ASPECT_TOLERANCE = 0.03
 
@@ -53,8 +55,18 @@ class ImportError_(Exception):
 
 def fetch(url, accept="*/*"):
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": accept})
-    with urllib.request.urlopen(request, timeout=120) as response:
-        return response.read()
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                return response.read()
+        except urllib.error.HTTPError as error:
+            if error.code not in (429, 503) or attempt == 3:
+                raise
+            delay = max(15 * (attempt + 1), int(error.headers.get("Retry-After", "0")))
+            if delay > 60:
+                raise ImportError_("source requests a longer pause; retry the import later") from error
+            print("Source busy; retrying in %ds" % delay, file=sys.stderr, flush=True)
+            time.sleep(delay)
 
 
 def fetch_json(url):
@@ -114,23 +126,22 @@ def width_for(aspect, longest):
 
 def resolve_commons(painting):
     """Pinned Commons file: revision timestamp, original SHA-1, licence."""
-    out = {}
-    for kind, longest in SIZES.items():
-        params = {"action": "query", "format": "json", "prop": "imageinfo", "titles": "File:" + painting["source"]["file"],
-                  "iiprop": "url|sha1|size|timestamp|extmetadata", "iiurlwidth": str(width_for(painting["aspect"], longest))}
-        reply = fetch_json(COMMONS_API + "?" + urllib.parse.urlencode(params))
-        pages = list(reply.get("query", {}).get("pages", {}).values())
-        if not pages or "imageinfo" not in pages[0]:
-            raise ImportError_("Commons file not found: " + painting["source"]["file"])
-        info = pages[0]["imageinfo"][0]
-        meta = info.get("extmetadata", {})
-        licence = meta.get("LicenseShortName", {}).get("value", "")
-        if "public domain" not in licence.lower() and "pd" not in licence.lower() and "cc0" not in licence.lower():
-            raise ImportError_("Commons licence is not public domain: %r" % licence)
-        out[kind] = info.get("thumburl") or info["url"]
-        out["revision"] = "commons %s sha1:%s (%dx%d original)" % (info["timestamp"], info["sha1"], info["width"], info["height"])
-        out["rights_evidence"] = licence
-    return out
+    params = {"action": "query", "format": "json", "prop": "imageinfo", "titles": "File:" + painting["source"]["file"],
+              "iiprop": "url|sha1|size|timestamp|extmetadata", "iiurlwidth": str(width_for(painting["aspect"], SIZES["full"]))}
+    reply = fetch_json(COMMONS_API + "?" + urllib.parse.urlencode(params))
+    pages = list(reply.get("query", {}).get("pages", {}).values())
+    if not pages or "imageinfo" not in pages[0]:
+        raise ImportError_("Commons file not found: " + painting["source"]["file"])
+    info = pages[0]["imageinfo"][0]
+    licence = info.get("extmetadata", {}).get("LicenseShortName", {}).get("value", "")
+    if "public domain" not in licence.lower() and "pd" not in licence.lower() and "cc0" not in licence.lower():
+        raise ImportError_("Commons licence is not public domain: %r" % licence)
+    # One metadata request and one bounded image download per work. Derive
+    # the smaller wall image locally, instead of requesting two thumbnails.
+    image = info.get("thumburl") or info["url"]
+    return {"wall": image, "full": image,
+            "revision": "commons %s sha1:%s (%dx%d original)" % (info["timestamp"], info["sha1"], info["width"], info["height"]),
+            "rights_evidence": licence}
 
 
 def resolve_nga(painting):
@@ -175,22 +186,30 @@ def import_painting(painting, today):
     urls = RESOLVERS[painting["source"]["type"]](painting)
     asset = painting["asset"]
     saved = {}
+    downloaded = {}
     for kind, longest in SIZES.items():
-        data = ensure_jpeg(fetch(urls[kind]), longest)
+        if urls[kind] not in downloaded:
+            downloaded[urls[kind]] = fetch(urls[kind])
+        data = ensure_jpeg(downloaded[urls[kind]], longest)
         width, height = image_size(data)
         if abs((width / height) / painting["aspect"] - 1) > ASPECT_TOLERANCE:
             raise ImportError_("%s aspect %.3f differs from the composition's %.3f; is it cropped?" % (kind, width / height, painting["aspect"]))
+        saved[kind] = (hashlib.sha256(data).hexdigest(), width, height, data)
+    for kind in SIZES:
         target = res_path(asset[kind])
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
-        saved[kind] = (hashlib.sha256(data).hexdigest(), width, height)
+        target.write_bytes(saved[kind][3])
     asset.update({"status": "imported", "sha256_wall": saved["wall"][0], "sha256_full": saved["full"][0],
                   "width": saved["full"][1], "height": saved["full"][2], "retrieved": today,
                   "revision": urls["revision"], "image_url": urls["full"], "rights_evidence": urls["rights_evidence"]})
 
 
-def check(paintings):
+def check(paintings, required_ids=()):
     problems = []
+    records = {p["id"]: p for p in paintings}
+    for pid in sorted(required_ids):
+        if pid not in records or records[pid]["asset"]["status"] != "imported":
+            problems.append("%s: required collection artwork is not bundled" % pid)
     for painting in paintings:
         asset = painting["asset"]
         if asset["status"] != "imported":
@@ -203,7 +222,15 @@ def check(paintings):
             data = path.read_bytes()
             if hashlib.sha256(data).hexdigest() != asset["sha256_" + kind]:
                 problems.append("%s: %s file does not match its recorded SHA-256" % (painting["id"], kind))
-            width, height = image_size(data)
+            try:
+                width, height = image_size(data)
+            except (ImportError_, struct.error, IndexError) as error:
+                problems.append("%s: unreadable %s image (%s)" % (painting["id"], kind, error))
+                continue
+            if max(width, height) > SIZES[kind] * 1.05:
+                problems.append("%s: %s image exceeds its size budget" % (painting["id"], kind))
+            if kind == "full" and (width, height) != (asset.get("width"), asset.get("height")):
+                problems.append("%s: inspection dimensions differ from the manifest" % painting["id"])
             if abs((width / height) / painting["aspect"] - 1) > ASPECT_TOLERANCE:
                 problems.append("%s: %s file aspect does not match the composition" % (painting["id"], kind))
     return problems
@@ -224,7 +251,8 @@ def write_credits(manifest, collection_ids):
                   "- Authoring notes: %s" % (painting.get("notes") or "none"),
                   "- Status: %s" % asset["status"]]
         if asset["status"] == "imported":
-            lines += ["- Image URL: %s" % asset["image_url"], "- Source revision: %s" % asset["revision"],
+            lines += ["- Observed image rights: %s" % asset["rights_evidence"],
+                      "- Image URL: %s" % asset["image_url"], "- Source revision: %s" % asset["revision"],
                       "- Retrieved: %s · %d × %d px" % (asset["retrieved"], asset["width"], asset["height"]),
                       "- SHA-256: wall `%s`, inspection `%s`" % (asset["sha256_wall"], asset["sha256_full"])]
         lines.append("")
@@ -241,7 +269,7 @@ def main(argv=None):
     collections = json.loads((ROOT / "content" / "collections.json").read_text())["collections"]
     collection_ids = {pid for collection in collections for pid in collection["paintings"]}
     if args.check:
-        problems = check(manifest["paintings"])
+        problems = check(manifest["paintings"], collection_ids)
         imported = sum(1 for p in manifest["paintings"] if p["asset"]["status"] == "imported")
         print("%d imported, %d pending, %d problems" % (imported, len(manifest["paintings"]) - imported, len(problems)))
         for problem in problems:

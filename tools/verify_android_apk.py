@@ -63,7 +63,10 @@ def verify_pack(archive, output, godot):
         require(len(families) >= 12 and all(families.values()), "Missing packaged content families")
         require(int(report.get("relics", 0)) >= 68 and int(report.get("weapons", 0)) >= 11,
                 "Missing packaged relics or weapons")
-        require(not report.get("paintings_missing"), "An imported painting is missing from the APK")
+        require(not report.get("paintings_missing"), "Required painting artwork is missing from the APK")
+        required_art = report.get("paintings_required", [])
+        require(len(required_art) >= 12 and set(required_art) <= set(report.get("paintings_imported", [])),
+                "The APK must include all twelve collection paintings")
         quickstart = run([godot, "--headless", "--path", str(project), "--quit-after", "240", "--", "--quickstart"],
                          output / "quickstart.log", env)
         require(not re.search(r"SCRIPT ERROR|^ERROR:", quickstart, re.MULTILINE), "Packaged quickstart emitted errors")

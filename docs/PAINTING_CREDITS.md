@@ -11,7 +11,12 @@ Observed rights labels are source evidence, not a blanket legal guarantee. Capti
 - Reproduction source: https://commons.wikimedia.org/wiki/File:Leonardo_da_Vinci_-_Mona_Lisa_(Louvre,_Paris).jpg
 - Rights: Public domain (PD-Art): a faithful reproduction of a two-dimensional work whose author died in 1519.
 - Authoring notes: none
-- Status: pending
+- Status: imported
+- Observed image rights: Public domain
+- Image URL: https://thumb.wikimedia.org/wikipedia/commons/thumb/7/73/Leonardo_da_Vinci_-_Mona_Lisa_%28Louvre%2C_Paris%29.jpg/1920px-Leonardo_da_Vinci_-_Mona_Lisa_%28Louvre%2C_Paris%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+- Source revision: commons 2017-04-25T02:41:35Z sha1:06257d9d880bfe9c849cf74bdf4a1a0ab3714d31 (6441x9565 original)
+- Retrieved: 2026-11-03 · 1379 × 2048 px
+- SHA-256: wall `0a224cc60fdd892d2e674a791bc464a240ed9d8af48e9ac3477dd9d52c4282c3`, inspection `4c99ec3285271cc75f9f21389164619efa9cb750b11cf2d0833db45c4b4c7f04`
 
 ## The Last Supper — Leonardo da Vinci (1495–1498)
 
@@ -20,7 +25,12 @@ Observed rights labels are source evidence, not a blanket legal guarantee. Capti
 - Reproduction source: https://commons.wikimedia.org/wiki/File:Leonardo_da_Vinci_-_The_Last_Supper_high_res.jpg
 - Rights: Public domain (PD-Art) as stated on the file page.
 - Authoring notes: Store the full composition and label it as a wall painting reproduction, not a framed canvas.
-- Status: pending
+- Status: imported
+- Observed image rights: Public domain
+- Image URL: https://thumb.wikimedia.org/wikipedia/commons/thumb/b/bb/Leonardo_da_Vinci_-_The_Last_Supper_high_res.jpg/3840px-Leonardo_da_Vinci_-_The_Last_Supper_high_res.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+- Source revision: commons 2012-05-14T03:44:00Z sha1:9429e47401f307b358f00e5b03d1e882e63ae86e (5381x2926 original)
+- Retrieved: 2026-11-03 · 2048 × 1114 px
+- SHA-256: wall `587276f48551ad5a953aef023456ab36de0bcc7c22126308822fc76b450aaa7d`, inspection `34b25ca876282f31c87a1dc24e41cc7e423b953840fd3772d7f9119860ee3d08`
 
 ## The Birth of Venus — Sandro Botticelli (c. 1485)
 
@@ -29,7 +39,12 @@ Observed rights labels are source evidence, not a blanket legal guarantee. Capti
 - Reproduction source: https://commons.wikimedia.org/wiki/File:Botticelli_Venus.jpg
 - Rights: Public domain (PD-Art) as stated on the file page.
 - Authoring notes: Italian cultural-heritage reproduction rules are separate and should be reviewed before commercial release; this is not an institutional open-access grant. If that is undesirable, substitute an explicitly open museum work.
-- Status: pending
+- Status: imported
+- Observed image rights: Public domain
+- Image URL: https://thumb.wikimedia.org/wikipedia/commons/thumb/7/7d/Botticelli_Venus.jpg/3840px-Botticelli_Venus.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+- Source revision: commons 2011-02-19T12:57:31Z sha1:ce9b3f6aa08021295e12fa1d037e93115a663574 (5995x3763 original)
+- Retrieved: 2026-11-03 · 2048 × 1285 px
+- SHA-256: wall `951df177a3dee3bc0054f5f01a659c20da5e734e9c7cd2d0763f999c2815d777`, inspection `54cc34b79fe934402c1b9441c0973ca2a2ffa46e781d0edb15cb672084e92cdd`
 
 ## Girl with a Pearl Earring — Johannes Vermeer (c. 1665)
 
@@ -38,7 +53,12 @@ Observed rights labels are source evidence, not a blanket legal guarantee. Capti
 - Reproduction source: https://commons.wikimedia.org/wiki/File:Girl_with_a_Pearl_Earring.jpg
 - Rights: Public domain (PD-Art) as stated on the file page; source attributed to Geheugen van Nederland.
 - Authoring notes: The Mauritshuis's own current image is offered for non-commercial download only; do not use it or call it CC0.
-- Status: pending
+- Status: imported
+- Observed image rights: Public domain
+- Image URL: https://upload.wikimedia.org/wikipedia/commons/c/ce/Girl_with_a_Pearl_Earring.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled
+- Source revision: commons 2009-04-29T21:43:53Z sha1:d25e342cf59b92d387e25f91921da0cde4e7fed1 (1808x2138 original)
+- Retrieved: 2026-11-03 · 1808 × 2138 px
+- SHA-256: wall `229fb9866826d5ba09583542bbd125b61a39562a3fbb0a6c13a40b7ec7c5724f`, inspection `2bcc1d67345b9d21dc5f4eecdba7940496ebdf2cccbb46b27181d083136b87dc`
 
 ## The Night Watch — Rembrandt van Rijn (1642)
 
@@ -47,7 +67,12 @@ Observed rights labels are source evidence, not a blanket legal guarantee. Capti
 - Reproduction source: https://commons.wikimedia.org/wiki/File:The_Nightwatch_by_Rembrandt_-_Rijksmuseum.jpg
 - Rights: Public domain (PD-Art) as stated on the file page, with Rijksmuseum provenance.
 - Authoring notes: Use a downsampled derivative, not the 14168 × 11528 original.
-- Status: pending
+- Status: imported
+- Observed image rights: Public domain
+- Image URL: https://thumb.wikimedia.org/wikipedia/commons/thumb/9/94/The_Nightwatch_by_Rembrandt_-_Rijksmuseum.jpg/3840px-The_Nightwatch_by_Rembrandt_-_Rijksmuseum.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+- Source revision: commons 2019-02-09T17:54:03Z sha1:53db595a5a1bca243b152b175d65f0f2f1ab1ff8 (14168x11528 original)
+- Retrieved: 2026-11-03 · 2048 × 1666 px
+- SHA-256: wall `b250f8d279a98b74a70bcf3723587e07a375b300c75b8b65faeab3ae868f795e`, inspection `28f460bccfd55f175aaaa73bd6784f71c984b15f144a2eda76cfa7f9621702bc`
 
 ## Las Meninas — Diego Velázquez (1656)
 
@@ -56,7 +81,12 @@ Observed rights labels are source evidence, not a blanket legal guarantee. Capti
 - Reproduction source: https://commons.wikimedia.org/wiki/File:Las_Meninas_(1656),_by_Velazquez.jpg
 - Rights: Public domain (PD-Art) as stated on the file page.
 - Authoring notes: Verify that the full composition, not a similarly named cropped detail, is imported.
-- Status: pending
+- Status: imported
+- Observed image rights: Public domain
+- Image URL: https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f8/Las_Meninas_%281656%29%2C_by_Velazquez.jpg/1920px-Las_Meninas_%281656%29%2C_by_Velazquez.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+- Source revision: commons 2013-04-27T19:02:37Z sha1:409ceef6c24a3c81de561ee565ca52fee96ba7e6 (3475x4000 original)
+- Retrieved: 2026-11-03 · 1779 × 2048 px
+- SHA-256: wall `e83c220d92f301c2ca81d05159988e514c7fea8aba0bb7d835b15ffcfa985670`, inspection `90d0cd9ebfc986a520ca98e21b5f43f9fd7d56b68695a579e9f6ab34cc8e2072`
 
 ## The Starry Night — Vincent van Gogh (1889)
 
@@ -65,7 +95,12 @@ Observed rights labels are source evidence, not a blanket legal guarantee. Capti
 - Reproduction source: https://commons.wikimedia.org/wiki/File:Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg
 - Rights: Public domain (PD-Art): a faithful reproduction, as stated on the file page.
 - Authoring notes: Import an approved derivative with a pinned revision; the original file is about 664 MB. MoMA's wider image library is not assumed to be free to reuse.
-- Status: pending
+- Status: imported
+- Observed image rights: Public domain
+- Image URL: https://thumb.wikimedia.org/wikipedia/commons/thumb/e/ea/Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg/3840px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+- Source revision: commons 2026-03-02T17:26:01Z sha1:b3e5f8291b4137ff50ba876c84a1f7248186104a (44567x35291 original)
+- Retrieved: 2026-11-03 · 2048 × 1622 px
+- SHA-256: wall `b9a42bf6122c2bdd9a94c86032cc85a9771b69bbddfcc99c5e69c5b12537ba51`, inspection `fea17e0c7bc1c6b653f33a4d9d85805797d8e5314d5ca613df1b320bcf7ad16b`
 
 ## Impression, Sunrise — Claude Monet (1872)
 
@@ -74,7 +109,12 @@ Observed rights labels are source evidence, not a blanket legal guarantee. Capti
 - Reproduction source: https://commons.wikimedia.org/wiki/File:Monet_-_Impression,_Sunrise.jpg
 - Rights: Public domain as stated on the file page: author's life plus 95 years or fewer, with a separate United States basis. Not a worldwide CC0 grant.
 - Authoring notes: none
-- Status: pending
+- Status: imported
+- Observed image rights: Public domain
+- Image URL: https://thumb.wikimedia.org/wikipedia/commons/thumb/5/59/Monet_-_Impression%2C_Sunrise.jpg/3840px-Monet_-_Impression%2C_Sunrise.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+- Source revision: commons 2013-10-23T15:50:32Z sha1:8fa9b9d727d7865bcb2185bfe814feaf00a1219c (5773x4478 original)
+- Retrieved: 2026-11-03 · 2048 × 1589 px
+- SHA-256: wall `7d5eaeb8a571aa3a157ec617573951c491fac3bc154aa28320cf4f6542f8ed3c`, inspection `3c71624593580a9865022697712b176ffff3a50d4887ce51759b753b013cc7f6`
 
 ## Woman with a Parasol – Madame Monet and Her Son — Claude Monet (1875)
 
@@ -83,7 +123,12 @@ Observed rights labels are source evidence, not a blanket legal guarantee. Capti
 - Reproduction source: https://www.nga.gov/artworks/61379-woman-parasol-madame-monet-and-her-son
 - Rights: Public domain: the National Gallery of Art states that this object's media is free and in the public domain under its open-access policy.
 - Authoring notes: none
-- Status: pending
+- Status: imported
+- Observed image rights: NGA open access (published_images.csv)
+- Image URL: https://api.nga.gov/iiif/99758d9d-c10b-4d02-a198-7e49afb1f3a6/full/!2048,2048/0/default.jpg
+- Source revision: nga uuid:99758d9d-c10b-4d02-a198-7e49afb1f3a6 modified:2026-10-13 16:31:26-04
+- Retrieved: 2026-11-03 · 1652 × 2048 px
+- SHA-256: wall `2e34136036bd517cbad9f6c1e7522bf60b9e12b0a01a4981071d822bd6091f6d`, inspection `6d98c3247b0ddb3b47da48494e58cd11e9dbda964e6e92d17f0047f08109e201`
 
 ## The Kiss — Gustav Klimt (1907–1908)
 
@@ -92,7 +137,12 @@ Observed rights labels are source evidence, not a blanket legal guarantee. Capti
 - Reproduction source: https://commons.wikimedia.org/wiki/File:The_Kiss_-_Gustav_Klimt_-_Google_Cultural_Institute.jpg
 - Rights: Public domain (PD-Art) as stated on the file page.
 - Authoring notes: Do not substitute a recoloured or cropped derivative.
-- Status: pending
+- Status: imported
+- Observed image rights: Public domain
+- Image URL: https://thumb.wikimedia.org/wikipedia/commons/thumb/4/40/The_Kiss_-_Gustav_Klimt_-_Google_Cultural_Institute.jpg/3840px-The_Kiss_-_Gustav_Klimt_-_Google_Cultural_Institute.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+- Source revision: commons 2015-03-10T06:41:34Z sha1:a944e309232d18fa1515dea297d994756b899d65 (7376x7401 original)
+- Retrieved: 2026-11-03 · 2041 × 2048 px
+- SHA-256: wall `9a240acdfb8d88faccf3349ec609fc498bd729966558ac783a6b42b755f7f8a2`, inspection `a3a77e86a57091ed2e8578eaf989ebe1744ba369f2d099b819aee66c361b8c95`
 
 ## The Scream — Edvard Munch (1893)
 
@@ -101,7 +151,12 @@ Observed rights labels are source evidence, not a blanket legal guarantee. Capti
 - Reproduction source: https://commons.wikimedia.org/wiki/File:The_Scream_by_Edvard_Munch,_1893_-_Nasjonalgalleriet.png
 - Rights: Public domain (PD-Art) as stated on the file page: author's life plus 80 years or fewer. Unrestricted status is not claimed in every jurisdiction.
 - Authoring notes: none
-- Status: pending
+- Status: imported
+- Observed image rights: Public domain
+- Image URL: https://upload.wikimedia.org/wikipedia/commons/9/9d/The_Scream_by_Edvard_Munch%2C_1893_-_Nasjonalgalleriet.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled
+- Source revision: commons 2015-08-15T21:49:40Z sha1:856ed0f48c817397542f93c209eb2c80104aa547 (1611x2000 original)
+- Retrieved: 2026-11-03 · 1611 × 2000 px
+- SHA-256: wall `31239ee15662113177655bb95c98bff2b336e4045b00e6b4f33c6fb631cb23a5`, inspection `70332ed629f9a2a00412e39cde40899eb9c72e484e0b4094788df318cdc64bb7`
 
 ## The Arnolfini Portrait — Jan van Eyck (1434)
 
@@ -110,7 +165,12 @@ Observed rights labels are source evidence, not a blanket legal guarantee. Capti
 - Reproduction source: https://commons.wikimedia.org/wiki/File:Arnolfini_Portrait.jpg
 - Rights: Public domain as stated on the file page, sourced from Closer to Van Eyck.
 - Authoring notes: Not the tiny cropped 'Arnolfini Portrait 1.jpg' detail.
-- Status: pending
+- Status: imported
+- Observed image rights: Public domain
+- Image URL: https://thumb.wikimedia.org/wikipedia/commons/thumb/6/62/Arnolfini_Portrait.jpg/1920px-Arnolfini_Portrait.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+- Source revision: commons 2021-07-23T09:07:46Z sha1:0c41fc1427de12a185edfb970a7bae1d2a3fa8fa (6433x8667 original)
+- Retrieved: 2026-11-03 · 1520 × 2048 px
+- SHA-256: wall `e3472626339fd0b7d47a39dd94c7c8cf25363383aa5539128aa2f5c14307b6be`, inspection `220c7b457f5f3715b9ab583b0be437aa8e816de7dfa5d268b2d5543f9198c927`
 
 ## Water Lilies — Claude Monet (1906)
 

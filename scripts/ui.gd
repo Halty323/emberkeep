@@ -71,6 +71,9 @@ var lighting_colors := PackedColorArray()
 var toast_surface: DungeonUISurface
 var interaction_surface: DungeonUISurface
 var boss_surface: DungeonUISurface
+var minimap_clip: Control
+var minimap_ink: Node2D
+var minimap_pointer: Node2D
 var mode = "menu"
 var previous_mode = "menu"
 var scale_value = 1.0
@@ -228,6 +231,9 @@ func show_screen(screen: String) -> void:
 	right_vector = Vector2.ZERO
 	look_delta = Vector2.ZERO
 	fire_touch = -1
+	minimap_clip = null
+	minimap_ink = null
+	minimap_pointer = null
 	for child in content.get_children():
 		if child is CanvasItem: child.hide()
 		if game.first_person: content.remove_child(child)
@@ -265,6 +271,7 @@ func show_screen(screen: String) -> void:
 				map_button.add_theme_stylebox_override(state, StyleBoxEmpty.new())
 			map_button.pressed.connect(func(): open_map("play"))
 			content.add_child(map_button)
+			if game.first_person: build_rotating_minimap()
 		"map":
 			button("← Back", Rect2(396, 590, 488, 58), func(): close_subscreen())
 		"pause":
@@ -297,6 +304,7 @@ func show_screen(screen: String) -> void:
 			button("Leave the party" if Session.online else "Return to title", Rect2(430, 535, 420, 58), func(): game.return_to_title())
 	sync_lighting()
 	update_surface_visibility()
+	sync_minimap()
 	queue_redraw()
 
 func make_surface(rect: Rect2, background := PANEL, accent := EDGE, compact := false) -> DungeonUISurface:
@@ -961,7 +969,7 @@ func _process(delta: float) -> void:
 	floating_numbers = floating_numbers.filter(func(n): return n.age < n.get("life", .65))
 	sync_lighting()
 	update_surface_visibility()
-	place_minimap()
+	sync_minimap()
 	queue_redraw()
 
 func place_minimap() -> void:
@@ -1479,14 +1487,64 @@ func draw_stick(at: Vector2, value: Vector2, label: String, active_touch: bool) 
 	centered(label, at.x, at.y + 91, 14, Color(INK, .8), bold)
 
 func draw_minimap() -> void:
-	# First person: the minimap view turns with the player (MinimapView).
-	if not game.first_person:
-		var cells = FloorGenerator.room_cells(Run.rooms[Run.current_room])
-		var focus = Vector2.ZERO
-		for cell in cells: focus += Vector2(cell)
-		draw_floor_map(MINIMAP_AREA, focus / cells.size(), 22.0)
+	# The first-person ink is a clipped child canvas so only the map turns;
+	# the lit frame, shortcut and other HUD groups retain their own transform.
+	if game.first_person: return
+	var cells = FloorGenerator.room_cells(Run.rooms[Run.current_room])
+	var focus = Vector2.ZERO
+	for cell in cells: focus += Vector2(cell)
+	draw_floor_map(MINIMAP_AREA, focus / cells.size(), 22.0)
 	if not touch_hud_visible():
 		right_text("M", MINIMAP_RECT.end - Vector2(20, 11), 12, MUTED)
+
+func build_rotating_minimap() -> void:
+	minimap_clip = Control.new()
+	minimap_clip.name = "MinimapClip"
+	minimap_clip.position = moved(MINIMAP_AREA, widen()).position
+	minimap_clip.size = MINIMAP_AREA.size
+	minimap_clip.clip_contents = true
+	minimap_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	content.add_child(minimap_clip)
+	minimap_ink = Node2D.new()
+	minimap_ink.name = "MapInk"
+	minimap_ink.position = MINIMAP_AREA.size * .5
+	minimap_clip.add_child(minimap_ink)
+	minimap_ink.draw.connect(draw_rotating_minimap.bind(minimap_ink))
+	minimap_pointer = Node2D.new()
+	minimap_pointer.name = "ViewDirection"
+	minimap_pointer.position = minimap_ink.position
+	minimap_clip.add_child(minimap_pointer)
+	minimap_pointer.draw.connect(draw_minimap_pointer.bind(minimap_pointer))
+	sync_minimap()
+
+func sync_minimap() -> void:
+	if not is_instance_valid(minimap_ink): return
+	var forward: Vector3 = -game.camera.global_basis.z
+	var bearing := Vector2(forward.x, forward.z)
+	# Use the rendered view's horizontal bearing, including camera transitions.
+	# Looking straight up/down retains the last meaningful compass direction.
+	if bearing.length_squared() > .0001: minimap_ink.rotation = bearing.angle_to(Vector2.UP)
+	minimap_ink.queue_redraw()
+	minimap_pointer.queue_redraw()
+
+func draw_rotating_minimap(target: CanvasItem) -> void:
+	if not Run.rooms.has(Run.current_room): return
+	var cells = FloorGenerator.room_cells(Run.rooms[Run.current_room])
+	var focus := Vector2.ZERO
+	for cell in cells: focus += Vector2(cell)
+	# Cover the rectangular aperture at every angle, including complete edge
+	# segments whose endpoints fall outside it. The parent canvas clips ink.
+	var radius := MINIMAP_AREA.size.length() * .5 + 44.0
+	draw_floor_map(Rect2(-Vector2.ONE * radius, Vector2.ONE * radius * 2), focus / cells.size(), 22.0, target)
+
+func draw_minimap_pointer(target: CanvasItem) -> void:
+	target.draw_colored_polygon(PackedVector2Array([Vector2(0,-7),Vector2(-5,5),Vector2(0,3),Vector2(5,5)]), Color("202724"))
+	target.draw_colored_polygon(PackedVector2Array([Vector2(0,-5),Vector2(-3,3),Vector2(0,1),Vector2(3,3)]), GOLD)
+	if not touch_hud_visible():
+		var label := MINIMAP_RECT.end - Vector2(20,11) - MINIMAP_AREA.get_center()
+		label.x -= body.get_string_size("M",HORIZONTAL_ALIGNMENT_LEFT,-1,12).x
+		target.draw_string(body,label+Vector2(0,2),"M",HORIZONTAL_ALIGNMENT_LEFT,-1,12,Color(.025,.035,.025,.85))
+		target.draw_string(body,label,"M",HORIZONTAL_ALIGNMENT_LEFT,-1,12,MUTED)
 
 ## Rooms the player may know about: those walked through, and every room
 ## glimpsed through one of their open doorways, so the map shows each way on
@@ -1511,7 +1569,8 @@ func map_color(id: String) -> Color:
 
 ## Draws each room's whole footprint as one shape: cells merge across their
 ## own seams, and short connectors mark actual doorways, not adjacency.
-func draw_floor_map(area: Rect2, focus: Vector2, cell_size: float) -> void:
+func draw_floor_map(area: Rect2, focus: Vector2, cell_size: float, target: CanvasItem = null) -> void:
+	if target == null: target = self
 	var known = map_rooms()
 	var origin = area.get_center() - focus * cell_size
 	var inset = maxf(3.0, cell_size * .2)
@@ -1522,7 +1581,7 @@ func draw_floor_map(area: Rect2, focus: Vector2, cell_size: float) -> void:
 		var start = origin + (a + direction * (.5 - inset / cell_size)) * cell_size
 		var end = origin + (a + direction * (.5 + inset / cell_size)) * cell_size
 		if area.has_point(start) and area.has_point(end):
-			canvas.draw_line(start, end, Color("9d9878"), maxf(2.0, cell_size * .12), true)
+			target.draw_line(start, end, Color("9d9878"), maxf(2.0, cell_size * .12), true)
 	for id in known:
 		var data: Dictionary = Run.rooms[id]
 		var cells = FloorGenerator.room_cells(data)
@@ -1533,8 +1592,8 @@ func draw_floor_map(area: Rect2, focus: Vector2, cell_size: float) -> void:
 			var rect = Rect2(origin + (Vector2(cell) - Vector2(.5, .5)) * cell_size + low, Vector2.ONE * cell_size - low - high)
 			if Run.is_seen(data, cell):
 				var shadow = Rect2(rect.position + Vector2(0, 2), rect.size).intersection(area)
-				if shadow.has_area(): canvas.draw_rect(shadow, Color("262e28"))
-				draw_scribbled(rect, area, cell, color, cell_size)
+				if shadow.has_area(): target.draw_rect(shadow, Color("262e28"))
+				draw_scribbled(rect, area, cell, color, cell_size, target)
 			else:
 				# Known but not yet walked: a faint pencil outline, merged across
 				# the room's own unexplored seams.
@@ -1543,13 +1602,13 @@ func draw_floor_map(area: Rect2, focus: Vector2, cell_size: float) -> void:
 					if cells.has(next) and not Run.is_seen(data, next): continue
 					var edge = ghost_edge(rect, direction)
 					if area.has_point(edge[0]) and area.has_point(edge[1]):
-						canvas.draw_dashed_line(edge[0], edge[1], Color(color, .5), maxf(1.0, cell_size * .05), maxf(2.5, cell_size * .12), true, true)
+						target.draw_dashed_line(edge[0], edge[1], Color(color, .5), maxf(1.0, cell_size * .05), maxf(2.5, cell_size * .12), true, true)
 		if data.get("fps_terrain",{}).get("kind","")=="loft":
 			var mark: Vector2=origin+Vector2(FloorGenerator.vec(data.anchor))*cell_size+Vector2(2,-2)
 			if area.grow(-5).has_point(mark):
-				canvas.draw_rect(Rect2(mark-Vector2(4,4),Vector2(8,8)),Color("202724"))
-				for y in [-2,2]: canvas.draw_line(mark+Vector2(-3,y),mark+Vector2(3,y),GOLD,1.0,true)
-				canvas.draw_line(mark+Vector2(-2,2),mark+Vector2(2,-2),GOLD,1.0,true)
+				target.draw_rect(Rect2(mark-Vector2(4,4),Vector2(8,8)),Color("202724"))
+				for y in [-2,2]: target.draw_line(mark+Vector2(-3,y),mark+Vector2(3,y),GOLD,1.0,true)
+				target.draw_line(mark+Vector2(-2,2),mark+Vector2(2,-2),GOLD,1.0,true)
 		if id == Run.current_room:
 			# One outline around the whole footprint, drawn on exposed edges only.
 			var reach = cell_size * .5 - inset + 2.5
@@ -1562,7 +1621,7 @@ func draw_floor_map(area: Rect2, focus: Vector2, cell_size: float) -> void:
 					var start = mid - Vector2(across) * (cell_size * .5 if cells.has(cell - across) else reach)
 					var end = mid + Vector2(across) * (cell_size * .5 if cells.has(cell + across) else reach)
 					if area.has_point(start) and area.has_point(end):
-						canvas.draw_line(start, end, GOLD, 1.5, true)
+						target.draw_line(start, end, GOLD, 1.5, true)
 
 func scribble(cell: Vector2i) -> void:
 	scribbles[cell] = elapsed_ui
@@ -1575,17 +1634,18 @@ func scribble_progress(cell: Vector2i) -> float:
 
 ## An explored cell: a soft wash under a crayon's zig-zag, drawn only as far
 ## as its scribble has got. The trail is all there is; no crayon is shown.
-func draw_scribbled(rect: Rect2, area: Rect2, cell: Vector2i, color: Color, cell_size: float) -> void:
+func draw_scribbled(rect: Rect2, area: Rect2, cell: Vector2i, color: Color, cell_size: float, target: CanvasItem = null) -> void:
+	if target == null: target = self
 	var shown = rect.intersection(area)
 	if not shown.has_area(): return
 	var progress = scribble_progress(cell)
-	canvas.draw_rect(shown, Color(color.darkened(.5), .45 * progress))
+	target.draw_rect(shown, Color(color.darkened(.5), .45 * progress))
 	var inner = rect.grow(-cell_size * .08)
 	var points = scribble_path(inner, cell, Run.floor_number)
 	for i in points.size(): points[i] = points[i].clamp(area.position, area.end)
 	var drawn = partial_path(points, progress)
 	# About a third of their spacing, so each line of the zig-zag stands apart.
-	if drawn.size() >= 2: canvas.draw_polyline(drawn, Color(color, .85), scribble_spacing(inner) * .37, true)
+	if drawn.size() >= 2: target.draw_polyline(drawn, Color(color, .85), scribble_spacing(inner) * .37, true)
 
 static func ghost_edge(rect: Rect2, direction: Vector2i) -> Array:
 	match direction:

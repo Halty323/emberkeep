@@ -63,6 +63,12 @@ func shadow_count() -> int:
 func test_ui() -> void:
 	run = root.get_node("Run")
 	catalog = root.get_node("Content")
+	if not OS.get_environment("EMBERKEEP_MINIMAP_CAPTURE").is_empty():
+		root.size=Vector2i(1280,720)
+		await test_rotating_minimap()
+		print("MINIMAP RENDER RESULT: %d checks, %d failures" % [checks,failures])
+		quit(0 if failures==0 else 1)
+		return
 	game = load("res://scenes/main.tscn").instantiate()
 	root.add_child(game)
 	current_scene = game
@@ -226,5 +232,120 @@ func test_ui() -> void:
 	for player in root.get_node("Audio").players: player.stop()
 	await process_frame
 	await process_frame
+	await test_rotating_minimap()
 	print("EMBERKEEP UI PRESENTATION TEST RESULT: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
+
+func test_rotating_minimap() -> void:
+	var legacy_mode := OS.get_environment("EMBERKEEP_LEGACY_TEST")
+	OS.set_environment("EMBERKEEP_LEGACY_TEST","0")
+	if not OS.get_environment("EMBERKEEP_MINIMAP_CAPTURE").is_empty():
+		var policy=load("res://scripts/graphics/render_policy.gd")
+		policy.device_override=policy.for_device("Android","Imagination","PowerVR","gl_compatibility")
+		root.get_node("Settings").apply_render_policy()
+	game=load("res://scenes/main.tscn").instantiate()
+	root.add_child(game)
+	current_scene=game
+	game.set_process(false)
+	game.set_physics_process(false)
+	game.start_run("candle",31609250,false)
+	game.paused=true
+	var ui=game.ui
+	ui.set_process(false)
+	check(game.first_person and is_instance_valid(ui.minimap_ink),"first-person play builds the rotating minimap")
+	check(ui.minimap_clip.clip_contents and ui.minimap_clip.mouse_filter==Control.MOUSE_FILTER_IGNORE,"map ink is clipped without intercepting map-button input")
+	check(not descendants(ui.minimap_clip).any(func(node):return node is Viewport),"the minimap adds no rendering viewport")
+	var rng_before: int=run.rng.state
+	for yaw in [0.0,PI*.25,PI*.5,PI*.75,PI,-PI*.5,-PI+.001,PI-.001]:
+		game.fps.yaw=yaw
+		game.update_camera(0,true)
+		ui._process(0)
+		var forward: Vector3=-game.camera.global_basis.z
+		var right: Vector3=game.camera.global_basis.x
+		var visible_forward: Vector2=ui.minimap_ink.global_transform.basis_xform(Vector2(forward.x,forward.z))
+		var visible_right: Vector2=ui.minimap_ink.global_transform.basis_xform(Vector2(right.x,right.z))
+		check(visible_forward.normalized().distance_to(Vector2.UP)<.0001,"the rendered view faces up on the minimap at yaw %.3f"%yaw)
+		check(visible_right.normalized().distance_to(Vector2.RIGHT)<.0001,"camera-right remains map-right at yaw %.3f"%yaw)
+		check(ui.minimap_pointer.global_transform.basis_xform(Vector2.UP).normalized().distance_to(Vector2.UP)<.0001,"the facing marker stays upright while the dungeon turns")
+	for pitch in [deg_to_rad(-80),deg_to_rad(80)]:
+		game.fps.pitch=pitch
+		game.update_camera(0,true)
+		ui._process(0)
+		check(absf(angle_difference(ui.minimap_ink.rotation,game.fps.yaw))<.0001,"looking up or down preserves the compass bearing")
+	game.fps.pitch=0
+	# Track the actual rendered camera, including views controlled by a cinematic.
+	game.camera.rotation=Vector3(0,1.2,0)
+	ui._process(0)
+	check(absf(angle_difference(ui.minimap_ink.rotation,1.2))<.0001,"map orientation follows the rendered camera rather than stale input")
+	game.camera.rotation=Vector3(-PI*.5,0,0)
+	ui._process(0)
+	check(absf(angle_difference(ui.minimap_ink.rotation,1.2))<.0001,"a vertical view retains its last horizontal bearing")
+	check(run.rng.state==rng_before,"camera-driven map drawing preserves gameplay randomness")
+	var output: String=OS.get_environment("EMBERKEEP_MINIMAP_CAPTURE")
+	if not output.is_empty() and DisplayServer.get_name()!="headless":
+		await capture_minimap(output)
+	root.size=Vector2i(2424,1080)
+	await process_frame
+	await process_frame
+	ui._process(0)
+	var expected: Vector2=ui.content.global_position+(ui.MINIMAP_AREA.position+Vector2(ui.widen(),0))*ui.scale_value
+	check(ui.minimap_clip.global_position.distance_to(expected)<.01,"the clipped minimap follows the right edge on a scaled ultrawide screen")
+	check(ui.minimap_clip.size==ui.MINIMAP_AREA.size,"resizing preserves the logical map aperture")
+	var clip_ref: WeakRef=weakref(ui.minimap_clip)
+	var map_button: Button=ui.content.get_node("MapButton")
+	map_button.pressed.emit()
+	await process_frame
+	await process_frame
+	check(ui.mode=="map" and clip_ref.get_ref()==null,"the map button opens the full floor map and removes the HUD ink")
+	ui.close_subscreen()
+	await process_frame
+	check(ui.mode=="play" and is_instance_valid(ui.minimap_ink),"returning from the full map rebuilds the rotating HUD")
+	game.pause_game()
+	await process_frame
+	check(not is_instance_valid(ui.minimap_ink),"pausing removes the minimap overlay")
+	game.queue_free()
+	await process_frame
+	await process_frame
+	root.size=Vector2i(1280,720)
+	OS.set_environment("EMBERKEEP_LEGACY_TEST",legacy_mode)
+
+func capture_minimap(output: String) -> void:
+	DirAccess.make_dir_recursive_absolute(output)
+	for room in run.rooms.values():
+		room.visited=true
+		room.seen=room.cells.duplicate(true)
+	game.ui.scribbles.clear()
+	game.ui.floor_title_start=-100
+	game.ui.toast_time=0
+	var reports: Array=[]
+	for pair in [["north",0.0],["west",PI*.5],["south",PI],["east",-PI*.5],["diagonal",PI*.25]]:
+		game.fps.yaw=pair[1]
+		game.update_camera(0,true)
+		game.ui._process(0)
+		game.ui.minimap_ink.hide()
+		game.ui.minimap_pointer.hide()
+		for i in 4: await process_frame
+		await RenderingServer.frame_post_draw
+		var bare:=root.get_texture().get_image()
+		game.ui.minimap_ink.show()
+		game.ui.minimap_pointer.show()
+		for i in 4: await process_frame
+		await RenderingServer.frame_post_draw
+		var shown:=root.get_texture().get_image()
+		var outer: Rect2i=Rect2i(game.ui.MINIMAP_RECT.grow(-5))
+		var aperture: Rect2i=Rect2i(game.ui.MINIMAP_AREA)
+		var outside:=0.0
+		var inside:=0.0
+		for y in range(outer.position.y,outer.end.y):
+			for x in range(outer.position.x,outer.end.x):
+				var a:=bare.get_pixel(x,y)
+				var b:=shown.get_pixel(x,y)
+				var difference: float=absf(a.r-b.r)+absf(a.g-b.g)+absf(a.b-b.b)
+				if aperture.has_point(Vector2i(x,y)): inside+=difference
+				else: outside+=difference
+		check(outside<.01,"rotated "+pair[0]+" map does not draw outside its aperture")
+		check(inside>1.0,"rotated "+pair[0]+" map ink is actually rendered")
+		shown.save_png(output.path_join(pair[0]+".png"))
+		shown.get_region(aperture.grow(8)).save_png(output.path_join(pair[0]+"-map.png"))
+		reports.append({"view":pair[0],"yaw":pair[1],"outside_difference":outside,"inside_difference":inside})
+	FileAccess.open(output.path_join("measurements.json"),FileAccess.WRITE).store_string(JSON.stringify(reports,"  "))

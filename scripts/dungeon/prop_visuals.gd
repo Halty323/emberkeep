@@ -100,6 +100,7 @@ static func build(room: Node3D, record: Dictionary, definition: Dictionary, deta
 				leg.rotation.z = .08
 			Geo.cylinder(node, Vector3(0, .86, 0), .4, .2, Color("5c544a"), 0.0, .26)
 			var coals = Geo.sphere(node, Vector3(0, .95, 0), .26, Color("ff9a4d"), 2.2)
+			coals.name = "Coals"
 			coals.scale = Vector3(1, .35, 1)
 			var flame = Geo.sphere(node, Vector3(0, 1.15, 0), .16, Color("ffd28a"), 2.6)
 			flame.scale = Vector3(.8, 1.6, .8)

@@ -75,13 +75,18 @@ def main():
         (root / "docs").mkdir()
         manifest = json.loads((REPO / "content" / "paintings.json").read_text())
         manifest["paintings"] = [p for p in manifest["paintings"] if p["id"] in ("mona_lisa", "water_lilies_1906")]
+        for painting in manifest["paintings"]:
+            painting["asset"]["status"] = "pending"
         (root / "content" / "paintings.json").write_text(json.dumps(manifest))
-        shutil.copy(REPO / "content" / "collections.json", root / "content" / "collections.json")
+        collections = {"collections": [{"paintings": ["mona_lisa"]}]}
+        (root / "content" / "collections.json").write_text(json.dumps(collections))
         os.environ["EMBERKEEP_ROOT"] = str(root)
         os.environ["EMBERKEEP_COMMONS_API"] = "http://127.0.0.1:%d/api.php" % server.server_address[1]
         spec = importlib.util.spec_from_file_location("importer", REPO / "tools" / "import_paintings.py")
         importer = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(importer)
+        check(importer.main(["--check"]) == 1, "pending required artwork fails the offline build check")
+        check(bool(importer.check([], ["mona_lisa"])), "removing a required record fails completeness checks")
         # A refused licence imports nothing.
         Source.licence = "CC BY-SA 4.0"
         check(importer.main(["--only", "mona_lisa"]) == 1, "a non-public-domain licence is refused")
@@ -103,6 +108,10 @@ def main():
         check(asset["height"] > asset["width"], "dimensions are recorded")
         check(importer.main(["--only", "water_lilies_1906"]) == 1, "an unverified record is never imported")
         check(importer.main(["--check"]) == 0, "offline check passes for intact files")
+        missing = root / "assets" / "paintings" / "mona_lisa_full.jpg"
+        missing.unlink()
+        check(importer.main(["--check"]) == 1, "a missing inspection image fails the build check")
+        missing.write_bytes(full)
         (root / "assets" / "paintings" / "mona_lisa.jpg").write_bytes(jpeg(700, 1017))
         check(importer.main(["--check"]) == 1, "offline check catches a replaced file")
         credits = (root / "docs" / "PAINTING_CREDITS.md").read_text()
