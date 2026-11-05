@@ -642,7 +642,8 @@ func test_stairs() -> void:
 	game.queue_free()
 	await process_frame
 
-## The map remembers each floor cell walked into and scribbles it in.
+## The map takes in a whole room the moment it is entered, every cell
+## scribbled in together under one pass of the quill.
 func test_map_memory() -> void:
 	game = load("res://scenes/main.tscn").instantiate()
 	root.add_child(game)
@@ -657,20 +658,23 @@ func test_map_memory() -> void:
 	game.enter_room(Vector3(5, 0, 3))
 	game.track_exploration()
 	var room: Dictionary = run.rooms["1,0"]
-	check(room.seen == [[1, 0]] and ui.scribbles.has(Vector2i(1, 0)), "standing in a cell uncovers only that cell and scribbles it in")
-	var started = ui.scribbles[Vector2i(1, 0)]
+	var cells: Array = Generator.room_cells(room)
+	check(cells.size() > 1 and cells.all(func(cell): return run.is_seen(room, cell) and ui.scribbles.has(cell)), "stepping into a room uncovers and scribbles in all of it at once")
+	check(cells.all(func(cell): return ui.scribbles[cell] == ui.scribbles[cells[0]]), "its cells are scribbled in together")
+	var started = ui.scribbles[cells[0]]
+	var seen_count: int = room.seen.size()
 	ui.elapsed_ui += .1
 	game.track_exploration()
-	check(room.seen.size() == 1 and ui.scribbles[Vector2i(1, 0)] == started, "a cell is uncovered once")
+	check(room.seen.size() == seen_count and ui.scribbles[cells[0]] == started, "a room is uncovered once")
 	game.player.place(Vector3(20, 0, 2))
 	game.track_exploration()
-	check(run.is_seen(room, Vector2i(2, 0)) and not run.is_seen(room, Vector2i(1, 1)) and ui.scribbles.has(Vector2i(2, 0)), "walking on uncovers the next cell, not the rest of the room")
+	check(room.seen.size() == seen_count and ui.scribbles[cells[0]] == started, "walking on through it scribbles nothing more")
 	check(not run.is_seen(run.rooms["0,0"], Vector2i(0, 0)), "a neighbour seen only through its doorway stays a sketch")
 	# Remembered across a save; older saves count visited rooms as explored.
 	run.save_run()
 	run.load_run()
-	check(run.is_seen(run.rooms["1,0"], Vector2i(1, 0)) and run.is_seen(run.rooms["1,0"], Vector2i(2, 0)) and not run.is_seen(run.rooms["1,0"], Vector2i(1, 1)),
-		"uncovered cells survive a reload")
+	check(Generator.room_cells(run.rooms["1,0"]).all(func(cell): return run.is_seen(run.rooms["1,0"], cell)),
+		"an uncovered room survives a reload")
 	var legacy = {"a": {"anchor": [0, 0], "cells": [[0, 0], [1, 0]], "visited": true}, "b": {"anchor": [3, 0], "visited": false}}
 	run.normalize_seen(legacy)
 	check(legacy.a.seen == [[0, 0], [1, 0]] and not legacy.b.has("seen"), "an older save's visited rooms count as explored")
@@ -728,14 +732,14 @@ func test_map_memory() -> void:
 	var middle = ui.scribble_progress(Vector2i(9, 9))
 	ui._process(ui.SCRIBBLE_TIME * .6)
 	check(middle > .3 and middle < 1.0 and ui.scribble_progress(Vector2i(9, 9)) == 1.0 and not ui.scribbles.has(Vector2i(9, 9)), "the scribble finishes in %.2f s" % ui.SCRIBBLE_TIME)
-	# The quill: a short scratch, audible but never clipped.
+	# The quill: one soft pass over the room, audible but never clipped.
 	var audio = root.get_node("Audio")
 	var scratch: AudioStreamWAV = audio.sounds.get("scribble")
 	var loudest = 0
 	if scratch:
 		for i in range(0, scratch.data.size(), 2): loudest = maxi(loudest, absi(scratch.data.decode_s16(i)))
-	check(scratch != null and scratch.loop_mode == AudioStreamWAV.LOOP_DISABLED and absf(scratch.get_length() - .72) < .02 and loudest > 1500 and loudest < 32000,
-		"a quill's scratch plays as a cell is scribbled in")
+	check(scratch != null and scratch.loop_mode == AudioStreamWAV.LOOP_DISABLED and absf(scratch.get_length() - 1.05) < .02 and loudest > 1500 and loudest < 32000,
+		"a quill's scratch plays as a room is scribbled in")
 	game.return_to_title()
 	game.queue_free()
 	await process_frame
