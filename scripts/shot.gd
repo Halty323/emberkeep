@@ -49,6 +49,19 @@ var cosmetic := false
 var net_id := 0
 # Whose spell this is (0 alone): their hit marker, heal and returning book.
 var owner_peer := 0
+# What it is (SpellForms): "" for a flying spell, or "ray", "lightning" or
+# "eruption"; and how a flying one looks. Spells that do not fly draw
+# themselves with SpellShapes pieces (fx) that outlive the blow a moment.
+var mode := ""
+var form := "orb"
+var fx: Array = []
+var tracing := false
+var erupt_wait := -1.0
+var pulses := 0
+var erupt_radius := 1.45
+# How each look sizes its heart, its rune halo and its trail.
+const FORM_GLOW := {"orb": 1.0, "shard": .7, "needle": .45, "comet": 1.3, "mote": .5, "disc": .9}
+const FORM_TAIL := {"orb": 1.0, "shard": 1.1, "needle": 1.4, "comet": 1.9, "mote": .6, "disc": .8}
 
 func setup(owner_game: Node3D, at: Vector3, travel: Vector3, power: float, velocity_value: float, effects: Dictionary, color: Color, is_friendly: bool) -> void:
 	game = owner_game
@@ -67,16 +80,29 @@ func setup(owner_game: Node3D, at: Vector3, travel: Vector3, power: float, veloc
 	if float(stats.get("linger", 0)) > 0: lifetime *= 2.2
 	radius = (.12 if friendly else .17) * float(stats.get("size", 1))
 	light_radius = radius
+	form = SpellForms.form(stats)
+	if friendly:
+		match SpellForms.archetype(stats):
+			"ray":
+				mode = "ray"
+				speed = 72.0
+				base_speed = speed
+				lifetime = 14.0 * float(stats.get("range", 1)) / speed
+				radius = maxf(radius, .14)
+			"lightning": mode = "lightning"
+			"eruption": mode = "eruption"
+	if mode != "": return
 	build_light(color)
 	if not friendly:
 		Geo.ring(self, Vector3.ZERO, radius * 1.4, Color("f39b88"), .025)
 
-static func material(name: String, color: Color) -> ShaderMaterial:
-	var key = name + color.to_html()
+static func material(name: String, color: Color, style := 0) -> ShaderMaterial:
+	var key = name + color.to_html() + (":%d" % style if style > 0 else "")
 	if not materials.has(key):
 		var mat = ShaderMaterial.new()
 		mat.shader = load("res://shaders/shot_%s.gdshader" % name)
 		mat.set_shader_parameter("tint", color)
+		if style > 0: mat.set_shader_parameter("style", style)
 		materials[key] = mat
 	return materials[key]
 
@@ -97,7 +123,8 @@ func build_light(color: Color) -> void:
 		pool_mesh.size = Vector2.ONE
 	var shade = color.lightened(.15)
 	core = add_light(core_mesh, "core", shade)
-	glow = add_light(quad_mesh, "glow", shade)
+	# A disc spins flat; every other look turns to its flight.
+	glow = add_light(quad_mesh, "glow", shade, Forge.FORMS.find(form))
 	if level >= 1:
 		streak = add_light(quad_mesh, "streak", shade)
 		streak.top_level = true
@@ -106,10 +133,10 @@ func build_light(color: Color) -> void:
 		splat.position = Vector3(0, -position.y + .04, 0)
 	shine()
 
-func add_light(mesh: Mesh, kind: String, color: Color) -> MeshInstance3D:
+func add_light(mesh: Mesh, kind: String, color: Color, style := 0) -> MeshInstance3D:
 	var node = MeshInstance3D.new()
 	node.mesh = mesh
-	node.material_override = material(kind, color)
+	node.material_override = material(kind, color, style)
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	node.layers = 2
 	add_child(node)
@@ -121,16 +148,17 @@ func shine() -> void:
 	var rise = ease(clampf(appear, 0.0, 1.0), .4)
 	var fall = clampf(vanish, 0.0, 1.0) if vanish >= 0 else 0.0
 	var fade = maxf(.001, rise * (1.0 - fall))
-	core.scale = Vector3.ONE * maxf(.001, light_radius * lerpf(1.8, 1.0, rise) * (1.0 - fall * .85))
+	var heart := maxf(.001, light_radius * lerpf(1.8, 1.0, rise) * (1.0 - fall * .85))
+	core.basis = form_basis(heart) if form != "orb" else Basis.from_scale(Vector3.ONE * heart)
 	# The glow's X scale is its size, its Y scale (relative) its brightness.
-	var size = radius * 7.5 * (lerpf(1.6, 1.0, rise) + fall * 1.4)
+	var size = radius * 7.5 * (lerpf(1.6, 1.0, rise) + fall * 1.4) * float(FORM_GLOW.get(form, 1.0))
 	glow.scale = Vector3(size, size * fade, size)
 	if splat:
 		splat.scale = Vector3.ONE * maxf(.001, light_radius * 14.0 * fade)
 		if game.first_person:
 			splat.global_position = Vector3(global_position.x, game.room.floor_height(global_position) + .04, global_position.z)
 	if streak:
-		var tail = maxf(.001, clampf(speed * .045, .15, 1.3) * rise * (1.0 - fall))
+		var tail = maxf(.001, clampf(speed * .045, .15, 1.3) * rise * (1.0 - fall) * float(FORM_TAIL.get(form, 1.0)))
 		var flat = Vector3(direction.x, 0, direction.z).normalized() if Vector2(direction.x, direction.z).length() > .01 else Vector3.RIGHT
 		var up = Vector3.UP
 		if game.first_person:
@@ -139,6 +167,10 @@ func shine() -> void:
 		streak.global_transform = Transform3D(Basis(direction * tail, up * fade, direction.cross(up).normalized() * radius * 2.4), global_position)
 
 func _process(delta: float) -> void:
+	if mode != "":
+		# Its pieces play out; once it has struck and they are done, it goes.
+		if not SpellShapes.animate(self, delta) and not alive: queue_free()
+		return
 	if vanish >= 0:
 		vanish += delta / VANISH
 		if vanish >= 1.0:
@@ -153,6 +185,17 @@ func _process(delta: float) -> void:
 func update_sim(delta: float) -> void:
 	if not alive:
 		return
+	match mode:
+		"ray":
+			if not tracing:
+				trace_ray()
+				return
+		"lightning":
+			strike()
+			return
+		"eruption":
+			erupt_tick(delta)
+			return
 	if cosmetic:
 		update_cosmetic(delta)
 		return
@@ -420,7 +463,8 @@ func hit_enemy(enemy: DungeonEnemy) -> void:
 	if stats.get("explosion", 0) > 0:
 		game.blast(global_position, minf(3.5, stats.explosion), power * .5, true, enemy)
 	if stats.get("split", 0) > 0:
-		var child_stats = stats.duplicate()
+		var child_stats = SpellForms.flying(stats) if mode == "eruption" else stats.duplicate()
+		if mode == "eruption": child_stats.form = float(Forge.FORMS.find("shard"))
 		child_stats.split = 0
 		child_stats.chain = 0
 		child_stats.size = float(child_stats.get("size", 1)) * .65
@@ -530,3 +574,157 @@ func ricochet() -> void:
 			var spark := {"chain": 1.0, "element": "storm", "hit": damage * .6, "owner": owner_peer}
 			target.apply_status(spark)
 			target.take_hit(damage * .6, Vector3.ZERO, false, false, "shot")
+
+## A flying spell's heart, shaped by its look and turned to its flight.
+func form_basis(size: float) -> Basis:
+	if form == "disc":
+		return Basis(Vector3.UP, age * 16.0) * Basis.from_scale(Vector3(2.2, .3, 2.2) * size)
+	var forward: Vector3 = direction if direction.length_squared() > .001 else Vector3.FORWARD
+	var turned := Basis.looking_at(forward, Vector3.UP if absf(forward.y) < .95 else Vector3.RIGHT)
+	match form:
+		"shard": return turned * Basis.from_scale(Vector3(.55, .55, 2.6) * size)
+		"needle": return turned * Basis.from_scale(Vector3(.32, .32, 3.8) * size)
+		"comet": return turned * Basis.from_scale(Vector3(1.25, 1.25, 1.7) * size)
+		"mote": return turned * Basis.from_scale(Vector3.ONE * .7 * size)
+	return turned * Basis.from_scale(Vector3.ONE * size)
+
+# ---------------------------------------------------------------- spells that do not fly
+
+## A ray flies its whole way in one tick, through the same flight a bolt
+## takes (walls, pierce, ricochet, lanterns, glass, hits), then shows as a
+## beam along the path it really took.
+func trace_ray() -> void:
+	tracing = true
+	var path: Array = [global_position]
+	var heading: Vector3 = direction
+	var steps := 0
+	while alive and steps < 160:
+		steps += 1
+		if cosmetic: update_cosmetic(1.0 / 120.0)
+		else: update_sim(1.0 / 120.0)
+		# A bend (a wall glanced off, a foe sought) starts a new stretch.
+		if direction.angle_to(heading) > .08:
+			path.append(global_position)
+			heading = direction
+	if global_position.distance_to(path.back()) > .01: path.append(global_position)
+	if alive: remove()
+	SpellShapes.ray(self, path, tint, float(stats.get("size", 1)))
+
+## Lightning: the nearest foe within a narrow cone ahead and in sight is
+## struck at once; with none, it strikes where you aim.
+func strike() -> void:
+	var from: Vector3 = global_position
+	var reach := 12.0 * float(stats.get("range", 1))
+	var space := get_world_3d().direct_space_state
+	var mask: int = (1 | PropVisuals.FURNITURE_LAYER) if game.first_person else 1
+	var target: DungeonEnemy = null
+	var best := INF
+	for enemy in game.enemies:
+		if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable or hit_ids.has(enemy.entity_id): continue
+		var center: Vector3 = enemy.global_position + Vector3.UP * (minf(.9, enemy.hit_height * .55) if game.first_person else .65)
+		var to := center - from
+		var distance := to.length()
+		if distance > reach or distance < .05: continue
+		var facing := to.normalized().dot(direction)
+		if facing < .9: continue
+		var blocked := space.intersect_ray(PhysicsRayQueryParameters3D.create(from, center, mask))
+		if not blocked.is_empty() and from.distance_to(blocked.position) < distance - .4: continue
+		var score := distance * (1.0 + (1.0 - facing) * 8.0)
+		if score < best:
+			best = score
+			target = enemy
+	var end: Vector3
+	if target:
+		end = target.global_position + Vector3.UP * (minf(.9, target.hit_height * .55) if game.first_person else .65)
+	else:
+		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(from, from + direction * reach, mask))
+		end = hit.position if not hit.is_empty() else from + direction * reach
+	var gen := RandomNumberGenerator.new()
+	gen.randomize()
+	SpellShapes.bolt(self, from, end, tint, gen)
+	global_position = end
+	Effects.play("impact", end, tint)
+	if cosmetic:
+		remove()
+		return
+	if target:
+		direction = (end - from).normalized()
+		hit_enemy(target)
+	else:
+		# Struck water carries it; whatever lies here meets it.
+		if game.residue: game.residue.shock(end, damage * .5, {})
+		finish()
+	if alive: remove()
+
+## An eruption: a rune glows on the floor where you aim (beneath the first
+## foe in the way, or the nearest one if it seeks), then it rises, striking
+## everything over the rune; a lingering one rises twice.
+func erupt_tick(delta: float) -> void:
+	if erupt_wait < 0:
+		place_eruption()
+		return
+	erupt_wait -= delta
+	if erupt_wait > 0: return
+	rise()
+	pulses -= 1
+	if pulses > 0:
+		erupt_wait = .6
+		SpellShapes.rune(self, global_position, erupt_radius, tint, .6)
+	elif cosmetic: remove()
+	else: finish()
+
+func place_eruption() -> void:
+	var from: Vector3 = global_position
+	var reach := 10.0 * float(stats.get("range", 1))
+	var mask: int = (1 | PropVisuals.FURNITURE_LAYER) if game.first_person else 1
+	var hit := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(from, from + direction * reach, mask))
+	var point: Vector3 = hit.position if not hit.is_empty() else from + direction * reach
+	var stop := from.distance_to(point)
+	for enemy in game.enemies:
+		if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable: continue
+		var pair = Geometry3D.get_closest_points_between_segments(from, point, enemy.global_position, enemy.global_position + Vector3.UP * enemy.hit_height)
+		if pair[0].distance_to(pair[1]) < enemy.radius + .35 and from.distance_to(pair[0]) < stop:
+			stop = from.distance_to(pair[0])
+			point = enemy.global_position
+	if float(stats.get("homing", 0)) > 0:
+		var near = game.nearest_enemy(point, 3.0, {})
+		if near: point = near.global_position
+	# Off the wall it struck, and down to the floor beneath.
+	if not hit.is_empty() and absf(hit.normal.y) < .5 and point.distance_to(hit.position) < .01:
+		point += Vector3(hit.normal.x, 0, hit.normal.z).normalized() * .5
+	var flat := Vector2(point.x, point.z)
+	if game.first_person and not game.walkable_at(flat, .2): flat = game.room.geometry.safe_point(flat, .3, game.room.blocked_at)
+	var floor_y: float = game.room.floor_height(Vector3(flat.x, point.y, flat.y)) if game.first_person else 0.0
+	global_position = Vector3(flat.x, floor_y, flat.y)
+	erupt_radius = 1.45 * float(stats.get("size", 1)) * (1.4 if float(stats.get("grow", 0)) > 0 else 1.0)
+	pulses = 2 if float(stats.get("linger", 0)) > 0 else 1
+	erupt_wait = .34
+	SpellShapes.rune(self, global_position, erupt_radius, tint, erupt_wait)
+
+func rise() -> void:
+	var center: Vector3 = global_position
+	var element: int = int(stats.get("erupt", 1)) - 1
+	var gen := RandomNumberGenerator.new()
+	gen.randomize()
+	SpellShapes.erupt(self, center, erupt_radius, element, tint, gen)
+	Effects.play("impact", center + Vector3.UP * .3, tint, 14, 1.4)
+	if cosmetic: return
+	game.make_noise(center, 1.6)
+	if owner_peer == 0 or owner_peer == Session.local_peer_id: game.shake = maxf(game.shake, .06)
+	var kept: int = pierces
+	pierces = 999
+	for enemy in game.enemies.duplicate():
+		if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable: continue
+		var gap := Vector2(enemy.global_position.x - center.x, enemy.global_position.z - center.z)
+		if gap.length() > erupt_radius + enemy.radius or absf(enemy.global_position.y - center.y) > 2.2: continue
+		var out := Vector3(gap.x, 0, gap.y).normalized() if gap.length() > .05 else Vector3(direction.x, 0, direction.z).normalized()
+		direction = (out + Vector3.UP * .35).normalized()
+		global_position = enemy.global_position + Vector3.UP * .5
+		hit_enemy(enemy)
+		global_position = center
+	pierces = kept
+	# What rose stays a while: water, wax or ice where it came up.
+	var element_id: String = Forge.ELEMENTS.keys()[clampi(element, 0, Forge.ELEMENTS.size() - 1)]
+	if game.residue:
+		if Forge.TRAILS.has(element_id): game.residue.add(Forge.TRAILS[element_id], Vector3(center.x, 0, center.z), erupt_radius * .7)
+		game.residue.react(center, erupt_radius, stats)

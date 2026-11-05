@@ -106,6 +106,7 @@ func test_tower() -> void:
 	await test_twists()
 	test_forge()
 	await test_firing()
+	await test_archetypes()
 	await test_dark_store()
 	test_coins()
 	game.queue_free()
@@ -554,6 +555,60 @@ func test_forge() -> void:
 	check(first != second, "new weapons are forged with a new menu seed")
 	check(game.ui.starter_weapon(run.daily_seed()).id == game.ui.starter_weapon(run.daily_seed()).id, "today's seed always forges the same weapons")
 
+## Version 2 forges spells that do not fly (rays, lightning, eruptions) and
+## flying spells of several looks, every roll logical.
+func test_archetypes() -> void:
+	var found := {}
+	var odd := 0
+	for seed_value in range(1, 300):
+		var starters: Array = Forge.starters(seed_value)
+		check(starters.any(func(w): return w.archetype != "projectile"), "seed %d's starters include a spell that does not fly" % seed_value)
+		for weapon in starters:
+			var kind: String = weapon.archetype
+			if not found.has(kind): found[kind] = weapon
+			if kind == "projectile" and not found.has(weapon.form): found[weapon.form] = weapon
+			if not weapon.element in Forge.suited_elements(weapon.pattern): odd += 1
+			if kind != "projectile" and not weapon.traits.all(func(t): return t in Forge.ARCHETYPES[kind].traits): odd += 1
+			if kind == "projectile" and not (weapon.form in Forge.ELEMENT_FORMS[weapon.element] or weapon.form == Forge.PATTERN_FORMS[weapon.pattern][0]): odd += 1
+			if kind == "projectile" and not weapon.form in Forge.PATTERN_FORMS[weapon.pattern]: odd += 1
+		if failures > 0: break
+	check(found.has("ray") and found.has("lightning") and found.has("eruption"), "the forge writes rays, lightning and eruptions")
+	check(Forge.FORMS.all(func(f): return found.has(f)), "and flying spells of every look")
+	check(odd == 0, "every element, trait and look suits its spell (%d odd)" % odd)
+	check(found.lightning.element in ["storm", "radiance"], "lightning is storm or radiance")
+	var old: Dictionary = Forge.lookup("forged:1:4242:1:0")
+	check(not old.is_empty() and not old.has("archetype") and old.pattern in Forge.PATTERNS, "version-one spellbooks rebuild as they were")
+	for i in 40:
+		var shop: Dictionary = Forge.lookup(Forge.id_for(9000 + i, 50 + i, i % 2))
+		if not shop.element in Forge.suited_elements(shop.pattern): odd += 1
+	check(odd == 0, "shop and dark-forged spellbooks follow the same rules")
+	await arena("cellar", 1)
+	clear_combat(false)
+	game.player.place(Vector3(0, 0, 4))
+	var aim := Vector3(0, 0, -1)
+	for kind in ["ray", "lightning", "eruption"]:
+		clear_combat(false)
+		var foe = spawn("brute", Vector3(0, 0, -1))
+		foe.max_hp = 900.0
+		foe.hp = 900.0
+		run.weapon_id = found[kind].id
+		game.player.aim_direction = aim.rotated(Vector3.UP, .12 if kind == "lightning" else 0.0)
+		game.player.fire_cooldown = 0.0
+		game.player.fire()
+		var cast: Array = game.shots.filter(func(s): return s.mode == kind)
+		check(cast.size() == 1, "a %s spellbook casts a %s" % [kind, kind])
+		step(32)
+		check(foe.hp < 900.0, "the %s strikes the foe ahead (%.0f)" % [kind, 900.0 - foe.hp])
+		if not cast.is_empty() and is_instance_valid(cast[0]): check(not cast[0].fx.is_empty(), "the %s is drawn" % kind)
+	clear_combat(false)
+	run.weapon_id = found.needle.id
+	game.player.fire_cooldown = 0.0
+	game.player.fire()
+	var needle: Array = game.shots.filter(func(s): return s.friendly and s.form == "needle")
+	step(2)
+	check(not needle.is_empty() and needle[0].core.basis.z.length() > needle[0].core.basis.x.length() * 4.0, "a needle is long and thin along its flight")
+	clear_combat(false)
+
 func test_firing() -> void:
 	await arena("cellar", 1)
 	clear_combat()
@@ -563,7 +618,7 @@ func test_firing() -> void:
 			if not cases.has(weapon.pattern): cases[weapon.pattern] = weapon
 			for trait_id in weapon.traits:
 				if not cases.has(trait_id): cases[trait_id] = weapon
-		if cases.size() >= 9 + 14: break
+		if cases.size() >= Forge.PATTERNS.size() + Forge.ARCHETYPES.size() + 14: break
 	check(cases.has("burst") and cases.has("twin") and cases.has("spiral") and cases.has("lingering") and cases.has("forking"), "the forge reaches every pattern and trait")
 	run.weapon_id = cases.burst.id
 	game.player.aim_direction = Vector3(0, 0, -1)

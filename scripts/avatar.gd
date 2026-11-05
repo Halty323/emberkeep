@@ -281,6 +281,9 @@ func fire() -> void:
 		stats.burn = float(stats.get("burn", 0)) + .6
 	# A kindled weapon burns hotter still with every kindle level.
 	damage *= 1.0 + float(stats.get("kindled", 0)) * .12 * game.kindle_level()
+	# What the spell is (a flying spell, a ray, lightning, an eruption) and
+	# how a flying one looks; numbers, so a co-op guest draws it the same.
+	SpellForms.mark(stats, weapon)
 	if weapon.has("trail"): stats["trail_kind"] = weapon.trail
 	# Candlemaker, and a wax book's resonance: spells leave wax as they fly.
 	elif float(stats.get("candle", 0)) > 0 or (stats.get("element", "") == "wax" and float(stats.get("resonance", 0)) > 0): stats["trail_kind"] = "wax"
@@ -343,7 +346,7 @@ func volley(weapon: Dictionary, stats: Dictionary, damage: float, tint: Color) -
 ## Caught sparks leave with the next shot as homing embers.
 func release_sparks(damage: float, stats: Dictionary) -> void:
 	if game.sparks <= 0: return
-	var spark_stats = stats.duplicate()
+	var spark_stats = SpellForms.flying(stats)
 	spark_stats.homing = maxf(float(spark_stats.get("homing", 0)), 5.0)
 	spark_stats.pierce = 0
 	for i in game.sparks:
