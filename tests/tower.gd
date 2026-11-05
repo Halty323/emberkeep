@@ -63,6 +63,16 @@ func arena(theme: String, depth := 2, kind := "combat", twist := "", keep_foes :
 		return id
 	return ""
 
+## Fells a foe whatever it is doing (hanging, submerged or warded).
+func slay(foe) -> void:
+	for blow in 4:
+		if is_instance_valid(foe) and foe.alive:
+			foe.targetable = true
+			foe.take_hit(1.0e6, Vector3.ZERO, false, false, "shot")
+	if is_instance_valid(foe) and foe.alive:
+		foe.hp = 0.0
+		foe.die()
+
 func spawn(kind: String, at := Vector3(0, 0, -2)):
 	var foe = game.spawn_enemy(at, kind)
 	foe.place(at)
@@ -96,6 +106,8 @@ func test_tower() -> void:
 	await test_twists()
 	test_forge()
 	await test_firing()
+	await test_archetypes()
+	await test_relic_powers()
 	await test_dark_store()
 	test_coins()
 	game.queue_free()
@@ -127,7 +139,7 @@ func test_catalog() -> void:
 	check(problems.size() >= 3, "unknown foes, hazards and bosses are rejected")
 	var short_climb = catalog.validate_climb({"id": "x", "bands": ["summit", "summit"]})
 	check(not short_climb.is_empty(), "a climb that needs more themes than exist is rejected")
-	check(catalog.items.filter(func(item): return item.rarity == "dark").size() == 8, "eight dark relics")
+	check(catalog.items.filter(func(item): return item.rarity == "dark").size() == 9, "nine dark relics")
 
 func test_climb() -> void:
 	var plans := {}
@@ -528,7 +540,8 @@ func test_forge() -> void:
 			var single = float(weapon.damage) * int(weapon.count) * int(weapon.get("burst", 1)) / float(weapon.cooldown)
 			check(single > 12.0 and single < 140.0, "%s deals a sane volume of damage (%.0f)" % [weapon.name, single])
 			check(Color.html_is_valid(weapon.color) and weapon.cooldown >= .1, "%s has a colour and a cadence" % weapon.name)
-		check(patterns.size() == 4 and elements.size() == 4, "seed %d's starters never share a pattern or an element" % seed_value)
+		var flying: Array = starters.filter(func(w): return w.get("archetype", "projectile") == "projectile").map(func(w): return w.pattern)
+		check(elements.size() == 4 and flying.size() == patterns.keys().filter(func(p): return p in Forge.PATTERNS).size(), "seed %d's starters never share an element, nor a flying pattern" % seed_value)
 	check(seen_names.size() > 200, "forged names vary (%d)" % seen_names.size())
 	check(Forge.starters(5) != Forge.starters(6), "different seeds forge different weapons")
 	var dark = Forge.lookup(Forge.id_for(77, 12, 1))
@@ -555,6 +568,219 @@ func test_forge() -> void:
 	check(first != second, "new weapons are forged with a new menu seed")
 	check(game.ui.starter_weapon(run.daily_seed()).id == game.ui.starter_weapon(run.daily_seed()).id, "today's seed always forges the same weapons")
 
+## Version 2 forges spells that do not fly (rays, lightning, eruptions) and
+## flying spells of several looks, every roll logical.
+func test_archetypes() -> void:
+	var found := {}
+	var odd := 0
+	var kinds := {}
+	for seed_value in range(1, 300):
+		var starters: Array = Forge.starters(seed_value)
+		for weapon in starters:
+			var kind: String = weapon.archetype
+			kinds[kind] = kinds.get(kind, 0) + 1
+			if not found.has(kind): found[kind] = weapon
+			if kind == "projectile" and not found.has(weapon.form): found[weapon.form] = weapon
+			if not weapon.element in Forge.suited_elements(weapon.pattern): odd += 1
+			if kind != "projectile" and not weapon.traits.all(func(t): return t in Forge.ARCHETYPES[kind].traits): odd += 1
+			if kind == "projectile" and not (weapon.form in Forge.ELEMENT_FORMS[weapon.element] or weapon.form == Forge.PATTERN_FORMS[weapon.pattern][0]): odd += 1
+			if kind == "projectile" and not weapon.form in Forge.PATTERN_FORMS[weapon.pattern]: odd += 1
+		if failures > 0: break
+	check(found.has("ray") and found.has("lightning") and found.has("eruption"), "the forge writes rays, lightning and eruptions")
+	# Every kind is as likely as any other, among starters and in shops alike.
+	var rolled := {}
+	for i in 2000:
+		var kind: String = Forge.lookup(Forge.id_for(5000 + i, 40 + i % 50, i % 2)).archetype
+		rolled[kind] = rolled.get(kind, 0) + 1
+	for kind in Forge.KINDS:
+		check(absf(float(rolled.get(kind, 0)) / 2000.0 - .25) < .04, "shops roll %s a quarter of the time (%d / 2000)" % [kind, rolled.get(kind, 0)])
+		check(absf(float(kinds.get(kind, 0)) / (299.0 * 4.0) - .25) < .045, "starters offer %s a quarter of the time (%d / %d)" % [kind, kinds.get(kind, 0), 299 * 4])
+	check(Forge.FORMS.all(func(f): return found.has(f)), "and flying spells of every look")
+	check(odd == 0, "every element, trait and look suits its spell (%d odd)" % odd)
+	check(found.lightning.element in ["storm", "radiance"], "lightning is storm or radiance")
+	var old: Dictionary = Forge.lookup("forged:1:4242:1:0")
+	check(not old.is_empty() and not old.has("archetype") and old.pattern in Forge.PATTERNS, "version-one spellbooks rebuild as they were")
+	for i in 40:
+		var shop: Dictionary = Forge.lookup(Forge.id_for(9000 + i, 50 + i, i % 2))
+		if not shop.element in Forge.suited_elements(shop.pattern): odd += 1
+	check(odd == 0, "shop and dark-forged spellbooks follow the same rules")
+	await arena("cellar", 1)
+	clear_combat(false)
+	game.player.place(Vector3(0, 0, 4))
+	var aim := Vector3(0, 0, -1)
+	for kind in ["ray", "lightning", "eruption"]:
+		clear_combat(false)
+		var foe = spawn("brute", Vector3(0, 0, -1))
+		foe.max_hp = 900.0
+		foe.hp = 900.0
+		run.weapon_id = found[kind].id
+		game.player.aim_direction = aim.rotated(Vector3.UP, .12 if kind == "lightning" else 0.0)
+		game.player.fire_cooldown = 0.0
+		game.player.fire()
+		var cast: Array = game.shots.filter(func(s): return s.mode == kind)
+		check(cast.size() == 1, "a %s spellbook casts a %s" % [kind, kind])
+		step(32)
+		check(foe.hp < 900.0, "the %s strikes the foe ahead (%.0f)" % [kind, 900.0 - foe.hp])
+		if not cast.is_empty() and is_instance_valid(cast[0]): check(not cast[0].fx.is_empty(), "the %s is drawn" % kind)
+	clear_combat(false)
+	run.weapon_id = found.needle.id
+	game.player.fire_cooldown = 0.0
+	game.player.fire()
+	var needle: Array = game.shots.filter(func(s): return s.friendly and s.form == "needle")
+	step(2)
+	check(not needle.is_empty() and needle[0].core.basis.z.length() > needle[0].core.basis.x.length() * 4.0, "a needle is long and thin along its flight")
+	clear_combat(false)
+
+func book(kind: String) -> String:
+	for seed_value in range(1, 400):
+		for weapon in Forge.starters(seed_value):
+			if weapon.archetype == kind: return weapon.id
+	return ""
+
+## Equips relics on a clean slate and returns the friendly spells cast by one cast.
+func cast_with(kind: String, relics: Array, aim := Vector3(0, 0, -1)) -> Array:
+	clear_combat(false)
+	run.inventory = relics.duplicate()
+	run.modifiers = []
+	run.rebuild_stats()
+	run.weapon_id = book(kind)
+	game.player.place(Vector3(0, 0, 4))
+	game.player.aim_direction = aim
+	game.player.fire_cooldown = 0.0
+	game.player.echoes.clear()
+	var before: Array = game.shots.duplicate()
+	game.player.fire()
+	return game.shots.filter(func(s): return s.friendly and not s in before)
+
+func dummy(at: Vector3, health := 900.0):
+	var foe = spawn("brute", at)
+	foe.max_hp = health
+	foe.hp = health
+	return foe
+
+## New relics cast spells of their own, and every relic means something to
+## every kind of spell.
+func test_relic_powers() -> void:
+	await arena("cellar", 1)
+	var Synergy = load("res://scripts/items/synergies.gd")
+	for id in ["echo_bell", "war_drum", "black_pearl", "phantom_veil", "storm_crown", "phoenix_feather", "prism_lens", "seismic_boots", "spyglass", "meteor_charm", "fractal_seed", "crimson_grail"]:
+		check(catalog.item_by_id.has(id), "the relic %s exists" % id)
+	for id in ["choir", "supercell", "event_horizon", "pyroclasm", "kaleidoscope", "aftershock", "deadeye", "meteor_shower", "legion", "infinite_regress", "blood_moon", "overture"]:
+		check(Synergy.PAIRINGS.has(id) and catalog.item_by_id.has(Synergy.PAIRINGS[id][0]) and catalog.item_by_id.has(Synergy.PAIRINGS[id][1]), "the pairing %s joins two real relics" % id)
+	for kind in ["projectile", "ray", "lightning", "eruption"]:
+		# Phantom Veil and Legion: two more casts beside you.
+		var alone: int = cast_with(kind, []).size()
+		check(cast_with(kind, ["phantom_veil", "rear_view"]).size() >= alone * 3, "phantoms cast %s spells too" % kind)
+		# Echo Bell and Choir: the cast rings out twice more.
+		cast_with(kind, ["echo_bell", "forked_wick"])
+		var echoes: int = game.player.echoes.size()
+		var before: int = game.shots.size()
+		for i in 50: game.player.update_sim(1.0 / 60.0, Vector2.ZERO, Vector3.ZERO, false)
+		check(echoes == 2 and game.shots.size() > before, "a %s cast echoes" % kind)
+		# Meteor Charm: a falling star where you aim.
+		run.inventory = ["meteor_charm"]
+		run.rebuild_stats()
+		run.stats.meteor = 1.0
+		var cast: Array = []
+		run.weapon_id = book(kind)
+		game.player.fire_cooldown = 0.0
+		var known: Array = game.shots.duplicate()
+		game.player.fire()
+		check(game.shots.any(func(s): return not s in known and int(s.stats.get("erupt", 0)) == 9), "a %s cast can call a falling star" % kind)
+		# Storm Crown and Prism Lens: lightning from above, a ray at the next foe.
+		var foe = null
+		cast = cast_with(kind, ["storm_crown", "prism_lens"])
+		run.stats.thunder = 1.0
+		foe = dummy(Vector3(0, 0, -1))
+		dummy(Vector3(3, 0, -1))
+		known = game.shots.duplicate()
+		var spell: Array = cast_with(kind, ["storm_crown", "prism_lens"])
+		for s in spell: s.stats.thunder = 1.0
+		foe = dummy(Vector3(0, 0, -1))
+		dummy(Vector3(3, 0, -1))
+		var sky := false
+		for i in 40:
+			step(1)
+			if game.shots.any(func(s): return is_instance_valid(s) and float(s.stats.get("sky", 0)) > 0): sky = true
+		check(sky, "a %s hit calls lightning from above" % kind)
+	# The rest, with the kind they matter most for.
+	var near = null
+	var spell: Array = cast_with("projectile", ["black_pearl"])
+	var target = dummy(Vector3(0, 0, -1))
+	near = dummy(Vector3(2.4, 0, -1))
+	step(25)
+	check(near.knock_velocity.length() > .5 or near.global_position.x < 2.3, "a Black Pearl hit drags the foes around it in")
+	# War Drum: the fourth cast is a Great Cast.
+	var damages: Array = []
+	for i in 4:
+		var volley: Array = cast_with("projectile", ["war_drum"])
+		if not volley.is_empty(): damages.append(volley[0].damage)
+	check(damages.size() == 4 and damages[3] > damages[0] * 1.9, "every fourth cast strikes twice as hard")
+	# Seismic Boots: the floor erupts where a dash lands.
+	clear_combat(false)
+	run.inventory = ["seismic_boots"]
+	run.rebuild_stats()
+	game.player.dash_cooldown = 0
+	game.player.dash_time = 0
+	var known: Array = game.shots.duplicate()
+	game.player.dash()
+	check(game.shots.any(func(s): return not s in known and s.mode == "eruption" and float(s.stats.get("anchor", 0)) > 0), "a dash wakes the floor where it lands")
+	# Phoenix Feather: a fallen foe erupts.
+	clear_combat(false)
+	run.inventory = ["phoenix_feather", "crimson_grail"]
+	run.rebuild_stats()
+	known = game.shots.duplicate()
+	var damage_before: float = run.stats.damage
+	game.kill_pairings(Vector3(1, 0, -2))
+	check(game.shots.any(func(s): return not s in known and s.mode == "eruption"), "a fallen foe erupts in flame")
+	check(run.stats.damage > damage_before and game.bloodlust == 1, "the Crimson Grail feeds on the kill")
+	game.enter_room(Vector3(0, 0, 2))
+	check(game.bloodlust == 0 and is_equal_approx(run.stats.damage, damage_before), "and its hunger ends with the room")
+	await arena("cellar", 1)
+	# Lightning: pierce carries it to the foe behind; ricochet leaps aside.
+	cast_with("lightning", ["splinter"])
+	clear_combat(false)
+	var first = dummy(Vector3(0, 0, -1))
+	var behind = dummy(Vector3(0, 0, -4))
+	spell = cast_with("lightning", ["splinter"])
+	first = dummy(Vector3(0, 0, -1))
+	behind = dummy(Vector3(0, 0, -4))
+	# Lightning gathers for a breath before it strikes.
+	step(12)
+	check(first.hp < 900.0 and behind.hp < 900.0, "piercing lightning strikes the foe behind too")
+	spell = cast_with("lightning", ["skipping_stone"])
+	first = dummy(Vector3(0, 0, -1))
+	var aside = dummy(Vector3(3.5, 0, 1))
+	step(12)
+	check(first.hp < 900.0 and aside.hp < 900.0, "ricochet lightning leaps to a foe aside")
+	# Eruptions: pierce runs on as a fissure; returning rises at your feet.
+	spell = cast_with("eruption", ["splinter"])
+	step(2)
+	check(game.shots.filter(func(s): return s.mode == "eruption").size() >= 3, "a piercing eruption runs on as a fissure")
+	spell = cast_with("eruption", ["return_address"])
+	dummy(Vector3(0, 0, -2))
+	step(30)
+	check(game.shots.any(func(s): return s.mode == "eruption" and float(s.stats.get("anchor", 0)) > 0 and s.global_position.distance_to(game.player.global_position) < 1.5), "a returning eruption rises at your feet")
+	# Rays: a lingering beam keeps burning what crosses it.
+	spell = cast_with("ray", [])
+	var lingering: Array = cast_with("ray", [])
+	clear_combat(false)
+	run.inventory = []
+	run.rebuild_stats()
+	run.weapon_id = book("ray")
+	game.player.fire_cooldown = 0.0
+	known = game.shots.duplicate()
+	var beam_stats := {"ray": 1.0, "linger": 1.0}
+	var beam = game.spawn_shot(Vector3(0, .65, 4), Vector3(0, 0, -1), 10.0, 72.0, beam_stats, Color.WHITE, true)
+	step(1)
+	var crossing = dummy(Vector3(0, 0, -2))
+	var hp_then: float = crossing.hp
+	step(40)
+	check(is_instance_valid(beam) and crossing.hp < hp_then, "a lingering ray's beam burns what crosses it")
+	run.inventory = []
+	run.rebuild_stats()
+	clear_combat(false)
+
 func test_firing() -> void:
 	await arena("cellar", 1)
 	clear_combat()
@@ -564,7 +790,7 @@ func test_firing() -> void:
 			if not cases.has(weapon.pattern): cases[weapon.pattern] = weapon
 			for trait_id in weapon.traits:
 				if not cases.has(trait_id): cases[trait_id] = weapon
-		if cases.size() >= 9 + 14: break
+		if cases.size() >= Forge.PATTERNS.size() + Forge.ARCHETYPES.size() + 14: break
 	check(cases.has("burst") and cases.has("twin") and cases.has("spiral") and cases.has("lingering") and cases.has("forking"), "the forge reaches every pattern and trait")
 	run.weapon_id = cases.burst.id
 	game.player.aim_direction = Vector3(0, 0, -1)
@@ -609,46 +835,149 @@ func test_dark_store() -> void:
 			check(floor_data.rooms.values().filter(func(r): return r.type == "dark").size() == 1, "seed %d floor %d has one dark store" % [seed_value, depth])
 			check(Generator.validate(floor_data).is_empty(), "seed %d floor %d with a dark store validates" % [seed_value, depth])
 	check(Generator.validate(Generator.fallback_floor(5, 2)).is_empty(), "the fallback floor needs no dark store")
+	var Bargain = load("res://scripts/items/death_bargain.gd")
 	game.start_run("candle", 7070, false)
 	run.floor_plan = ["cellar", "halls", "crypt", "kiln", "hearth"]
 	var dark_id = run.rooms.keys().filter(func(id): return run.rooms[id].type == "dark")[0]
 	run.current_room = dark_id
 	game.enter_room(Vector3(0, 0, 2))
-	check(game.marker != null and game.marker.get_meta("kind") == "dark", "the dark store keeps its altar")
-	check(game.room.burning_indices().is_empty(), "the dark store's lanterns are dead")
+	check(game.marker != null and game.marker.get_meta("kind") == "dark", "the dark room keeps its altar")
+	check(game.room.burning_indices().is_empty(), "the dark room's lanterns are dead")
+	check(is_instance_valid(game.death_figure) and game.death_figure.state == "hidden", "Death waits unseen behind its altar")
 	game.use_pedestal({"kind": "dark"})
 	var offers: Array = run.rooms[dark_id].offers
-	check(game.ui.mode == "reward" and game.ui.dark, "bargaining opens the dark merchant")
-	check(offers.size() == 3 and offers.all(func(o): return int(o.price) >= 2 and int(o.price) <= 5), "three bargains, each 2-5 half-hearts")
+	check(game.ui.mode == "bargain" and game.paused, "bargaining opens Death's bargain")
+	check(game.death_figure.state == "rising", "Death rises out of the dark when the bargain opens")
+	game.death_figure._process(1.0)
+	check(game.death_figure.eyes.all(func(eye): return eye.material_override.albedo_color.a == 0.0), "its eyes come last")
+	game.death_figure._process(4.0)
+	check(game.death_figure.present() and game.death_figure.eyes.all(func(eye): return eye.material_override.albedo_color.a > .5), "then its small white eyes")
+	check(offers.size() == 3 and offers.all(func(o): return int(o.power) >= 2 and int(o.power) <= 5 and Bargain.known_curse(o.curse) and Bargain.TRIALS.has(o.trial)), "three offers, each with a curse and a trial")
+	check(offers.all(func(o): return is_equal_approx(absf(float(o.curse.amount)), Bargain.STEP * int(o.power) * absf(float(Bargain.CURSES[o.curse.id][2])))), "each curse is as heavy as its offer is strong")
 	check(offers[0].kind == "item" and catalog.item_by_id[offers[0].id].rarity == "dark", "a dark relic is always on offer")
 	var copy = offers.duplicate(true)
 	run.rooms[dark_id].erase("offers")
 	game.ensure_dark_offers()
 	check(JSON.stringify(run.rooms[dark_id].offers) == JSON.stringify(copy), "the bargains come from the room's seed")
 	offers = run.rooms[dark_id].offers
-	run.stats.max_hp = 6.0
-	run.blood_debt = 0
-	run.rebuild_stats()
-	run.hp = run.stats.max_hp
+	game.ui.offers = offers
+	game.ui.pick_bargain(0, "curse")
+	check(game.ui.content.get_node_or_null("Take_0") != null and game.ui.bargain_pick == 0, "an offer is chosen from Death's right hand")
+	offers[0].curse = {"id": "withering", "amount": -.18}
 	var max_before: float = run.stats.max_hp
 	var coins: int = run.coins
-	game.choose_offer(0)
-	check(offers[0].sold and is_equal_approx(run.stats.max_hp, max_before - int(offers[0].price)), "a bargain costs its price in maximum health")
-	check(run.coins == coins and run.hp <= run.stats.max_hp, "the dark store takes no coins, and health never exceeds the new maximum")
-	check(offers[0].id in run.inventory, "a bought dark relic is carried")
-	check(not run.rooms[dark_id].claimed and game.ui.mode == "reward", "the merchant stays open for more")
-	var debt: int = run.blood_debt
+	check(game.seal_bargain(0, "curse").ok, "the bargain is sealed")
+	check(offers[0].id in run.inventory and run.curses.size() == 1 and run.blood_debt == 0, "what is taken is carried, and its curse falls")
+	check(run.coins == coins and run.stats.max_hp >= max_before - catalog.base_stats().max_hp, "Death takes no coins and no health")
+	var cursed: float = run.stats.damage
+	run.curses = []
+	run.rebuild_stats()
+	check(is_equal_approx(run.stats.damage - .18, cursed), "Withering weakens spells for the rest of the run")
+	run.curses = [{"id": "withering", "amount": -.18}]
+	run.rebuild_stats()
+	check(run.rooms[dark_id].claimed and game.ui.mode == "play" and not game.paused, "Death deals once per altar")
+	check(game.death_figure.state == "fading", "Death fades once the bargain is struck")
+	check(not game.seal_bargain(1, "curse").ok and run.curses.size() == 1, "a second bargain is refused")
+	check(Bargain.curse_text({"id": "withering", "amount": -.3}) == "Your spells strike 30% weaker.", "a curse says how heavy it is")
 	run.save_run()
-	run.blood_debt = 0
+	run.curses = []
 	run.load_run()
-	check(run.blood_debt == debt and is_equal_approx(run.stats.max_hp, max_before - debt), "the debt survives save and load")
-	game.choose_offer(0)
-	check(run.blood_debt == debt, "a bargain can be taken only once")
+	check(run.curses.size() == 1 and is_equal_approx(run.stats.damage, cursed), "curses survive save and load")
+	var curse := {"id": "leaden_feet", "amount": -.12}
+	var before: int = run.curses.size()
+	# Relics that strike on their own would fight the trials for the test.
+	run.inventory = []
+	run.rebuild_stats()
+	# Waves against the clock: three waves, each cleared before the next.
+	game.trials.begin("waves", curse)
+	check(run.trial.state == "running" and not game.room.open, "a trial fought now seals Death's room")
+	step(100)
+	check(game.trials.wave == 1 and game.trials.foes.size() >= 3, "Death raises the first wave")
+	for w in 3:
+		for foe in game.trials.foes.duplicate(): slay(foe)
+		step(2)
+	check(run.trial.is_empty() and game.room.open and run.curses.size() == before, "clearing every wave in time keeps the curse away")
+	# Reaper's quarry, out of time.
+	game.trials.begin("quarry", curse)
+	step(110)
+	var champion = game.trials.foes[0] if not game.trials.foes.is_empty() else null
+	check(game.trials.foes.size() == 1 and champion.elite != "", "Reaper's quarry summons one elite champion")
+	game.trials.clock = .05
+	step(5)
+	check(run.trial.is_empty() and run.curses.size() == before + 1 and game.room.open, "out of time, the curse falls anyway and the doors open")
+	check(not is_instance_valid(champion) or not champion.alive, "the champion goes back into the dark")
+	before = run.curses.size()
+	# Soul harvest: walk through every wisp.
+	game.trials.begin("harvest", curse)
+	step(110)
+	check(game.trials.wisps.size() == 7, "Soul harvest scatters seven wisps")
+	for wisp in game.trials.wisps.duplicate():
+		if not is_instance_valid(wisp): continue
+		game.player.place(Vector3(wisp.position.x, game.player.position.y, wisp.position.z))
+		step(1)
+	check(run.trial.is_empty() and run.curses.size() == before, "catching every wisp wins the harvest")
+	# Last breath: a fall fails the trial instead of the run.
+	clear_combat(false)
 	run.hp = run.stats.max_hp
-	game.choose_offer(1)
-	game.choose_offer(2)
-	check(run.stats.max_hp >= run.LIFE_FLOOR, "the dark never takes the last heart")
-	check(not run.can_pay_life(int(run.stats.max_hp)), "a price that would leave no heart is refused")
+	var full: float = run.hp
+	game.trials.begin("last_breath", curse)
+	check(is_equal_approx(run.hp, 1.0), "Last breath leaves half a heart")
+	game.player.invulnerability = 5.0
+	step(110)
+	run.wards = 0
+	game.player.shield = 0
+	game.player.invulnerability = 0
+	game.player.hurt(1.0, game.player.position + Vector3(1, 0, 0))
+	check(run.active and run.trial.is_empty() and is_equal_approx(run.hp, full) and run.curses.size() == before + 1, "falling in Last breath fails it, health returns and the run goes on")
+	clear_combat(false)
+	before = run.curses.size()
+	# Leaving a trial halfway is failing it; No dashing goes on waiting.
+	run.trial = {"kind": "waves", "curse": curse, "room": dark_id, "state": "running"}
+	run.save_run()
+	run.load_run()
+	check(run.trial.is_empty() and run.curses.size() == before + 1, "leaving a trial halfway lets its curse fall")
+	run.curses.pop_back()
+	run.rebuild_stats()
+	before = run.curses.size()
+	# No dashing: the next fight, won without a dash.
+	game.trials.begin("no_dash", curse)
+	check(run.trial.state == "waiting" and game.ui.toast_text == "No dashing", "No dashing waits for the next fight")
+	var fight_id = run.rooms.keys().filter(func(id): return run.rooms[id].type == "combat" and not run.rooms[id].cleared)[0]
+	run.current_room = fight_id
+	game.enter_room(Vector3(0, 0, 2))
+	step(2)
+	check(run.trial.state == "running", "the trial begins when a fight shuts its doors")
+	run.save_run()
+	run.load_run()
+	check(run.trial.state == "waiting", "a reload puts No dashing back to waiting")
+	step(2)
+	game.player.dash_cooldown = 0
+	game.player.dash_time = 0
+	game.player.dash()
+	check(run.trial.is_empty() and run.curses.size() == before + 1, "a dash fails it")
+	game.trials.begin("no_dash", curse)
+	step(2)
+	game.clear_room()
+	check(run.trial.is_empty() and run.curses.size() == before + 1, "winning the fight without a dash keeps the curse away")
+	# Heavy Chains lengthen the dash's return.
+	run.inventory = []
+	run.curses = [{"id": "heavy_chains", "amount": -.45}]
+	run.rebuild_stats()
+	game.player.dash_cooldown = 0
+	game.player.dash_time = 0
+	game.player.dash()
+	check(is_equal_approx(game.player.dash_cooldown, 1.35 * 1.45), "Heavy Chains make the dash return 45% slower")
+	run.curses = []
+	run.rebuild_stats()
+	# Every trial can come up, co-op included (the party watches).
+	var party_gen = RandomNumberGenerator.new()
+	var party_trials := {}
+	for i in 30:
+		party_gen.seed = i
+		var offer := {"price": 3}
+		Bargain.terms(offer, party_gen)
+		party_trials[offer.trial] = true
+	check(party_trials.size() == Bargain.TRIALS.size(), "every trial can be set, alone or in co-op")
 	for i in 400:
 		var gen = RandomNumberGenerator.new()
 		gen.seed = i

@@ -87,6 +87,7 @@ func show_state(state: Dictionary, snap := false) -> void:
 	if color is Color and not color.is_equal_approx(page_color):
 		page_color = color
 		pages.material_override = Geo.material(color, 1.2)
+	ghost(bool(state.get("spec", false)))
 	if snap or position.distance_to(target) > 4.0:
 		position = target
 		last_valid = target
@@ -100,6 +101,32 @@ func pose() -> void:
 	label.text = member_name + ("  · fallen" if downed else "")
 	label.position.y = .95 if downed else 2.1
 	if not downed: revive_ring.visible = false
+
+static var ghost_material: StandardMaterial3D
+var ghosted := false
+
+## Watching a teammate's trial: pale and translucent, out of the fight.
+func ghost(on: bool) -> void:
+	if on == ghosted: return
+	ghosted = on
+	if not ghost_material:
+		ghost_material = StandardMaterial3D.new()
+		ghost_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		ghost_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		ghost_material.albedo_color = Color(.86, .9, 1.0, .24)
+	for part in visual.find_children("*", "MeshInstance3D", true, false):
+		if on:
+			part.set_meta("solid", [part.material_override, part.cast_shadow])
+			part.material_override = ghost_material
+			part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		elif part.has_meta("solid"):
+			var solid: Array = part.get_meta("solid")
+			part.material_override = solid[0]
+			part.cast_shadow = solid[1]
+			part.remove_meta("solid")
+	glow.light_energy = .15 if on else (.2 if downed else .55)
+	label.modulate = tint.lightened(.2) * Color(1, 1, 1, .5 if on else 1.0)
+	label.text = member_name + ("  · watching" if on else ("  · fallen" if downed else ""))
 
 ## How much of a rekindling is done (0 to 1), shown as a ring at their feet.
 func show_revive(progress: float) -> void:

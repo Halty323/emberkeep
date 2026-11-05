@@ -27,6 +27,9 @@ func perform(command: Dictionary, peer_id := 1) -> Dictionary:
 		return result(false, "not your character")
 	if game.in_transition():
 		return result(false, "between rooms")
+	var trials = game.get("trials")
+	if trials and trials.spectating():
+		return result(false, "watching a trial")
 	if not Run.remember_event(str(command.get("event", ""))):
 		return {"ok": false, "reason": "duplicate", "duplicate": true}
 	match command.get("type", ""):

@@ -39,6 +39,16 @@ const TITLE_HOLD := 1.6
 const TITLE_FADE := .9
 # A newly walked cell is scribbled onto the map over this long.
 const SCRIBBLE_TIME := .75
+# The loading screen's words while a run is prepared.
+const LOADING_TIPS := ["Frost on a soaked foe freezes it solid.", "Some relics answer each other. The journal keeps what you find.",
+	"A spellbook sings with relics of its own element.", "Shoot a dead lantern to light it again.",
+	"Dash past an enemy ember to catch it as a spark.", "Foes standing in lantern light take more damage.",
+	"Water carries lightning to every foe standing in it.", "Fire meeting a chilled foe cracks it open."]
+# Where the map helpers draw: this control, or the turning minimap view.
+var canvas: CanvasItem
+var minimap_view: MinimapView
+var loading_title := "The tower stirs"
+var loading_progress := 0.0
 # Screens laid out against the edges rather than centred whole.
 const TITLE_MODES := ["play", "menu", "armory", "coop", "lobby"]
 const REWARD_WIDTH := 340.0
@@ -77,6 +87,14 @@ var seed_field: LineEdit
 var offers: Array = []
 var shop = false
 var dark = false
+# Death's bargain: the offer chosen from its right hand (-1 for none) and the
+# price from its left ("curse", "trial" or "").
+var bargain_pick := -1
+var bargain_price := ""
+const BARGAIN_TAKE := Rect2(48, 204, 400, 116)
+const BARGAIN_STEP := 128.0
+const CURSE_RECT := Rect2(832, 204, 400, 184)
+const TRIAL_RECT := Rect2(832, 400, 400, 184)
 var toast_text = ""
 var toast_detail = ""
 var toast_color = GOLD
@@ -117,6 +135,7 @@ var floor_title_start = -100.0
 
 func setup(owner_game: Node3D) -> void:
 	game = owner_game
+	canvas = self
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	backdrop = ColorRect.new()
@@ -131,6 +150,9 @@ func setup(owner_game: Node3D) -> void:
 	content = Control.new()
 	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(content)
+	minimap_view = MinimapView.new()
+	add_child(minimap_view)
+	minimap_view.setup(self)
 	get_viewport().size_changed.connect(resize)
 	resize()
 	show_screen("menu")
@@ -225,6 +247,9 @@ func show_screen(screen: String) -> void:
 	interaction_surface = null
 	boss_surface = null
 	backdrop.color = Color(.025, .035, .035, .74) if mode not in TITLE_MODES else Color(0, 0, 0, 0)
+	if mode == "loading": backdrop.color = Color(.012, .016, .016, 1)
+	# Death stays in view between its two hands.
+	if mode == "bargain": backdrop.color = Color(.02, .01, .03, .38)
 	place_layers()
 	build_surfaces()
 	seed_field = null
@@ -265,6 +290,7 @@ func show_screen(screen: String) -> void:
 			content.add_child(trigger)
 		"secret": build_secret_code()
 		"reward": build_rewards()
+		"bargain": build_bargain()
 		"journal": build_journal()
 		"painting": button("← Back", Rect2(812, 598, 360, 58), func(): close_painting())
 		"settings": build_settings()
@@ -274,7 +300,7 @@ func show_screen(screen: String) -> void:
 			elif not Session.online:
 				button("One more little light", Rect2(430, 457, 420, 62), func():
 					reforge()
-					game.start_run(starter_weapon().id, menu_seed, false), true)
+					game.begin_run(starter_weapon().id, menu_seed, false), true)
 			button("Leave the party" if Session.online else "Return to title", Rect2(430, 535, 420, 58), func(): game.return_to_title())
 	sync_lighting()
 	update_surface_visibility()
@@ -326,6 +352,12 @@ func build_surfaces() -> void:
 		"reward":
 			for i in offers.size():
 				make_surface(reward_rect(i), PANEL, offer_info(offers[i]).color)
+		"bargain":
+			var calm := Color("5d5068")
+			for i in offers.size():
+				make_surface(bargain_rect(i), Color("2b2433") if i == bargain_pick else Color("1f1b25"), offer_info(offers[i]).color if i == bargain_pick else calm)
+			make_surface(CURSE_RECT, Color("2b2433") if bargain_price == "curse" else Color("1f1b25"), DeathBargain.COLOR if bargain_price == "curse" else calm)
+			make_surface(TRIAL_RECT, Color("2b2433") if bargain_price == "trial" else Color("1f1b25"), DeathBargain.COLOR if bargain_price == "trial" else calm)
 		"painting": make_surface(Rect2(80, 40, 1120, 640))
 		"journal" when journal_tab == "floors":
 			for slot in FLOOR_PAGE_SIZE:
@@ -442,11 +474,11 @@ func build_menu() -> void:
 	if menu_seed == 0: reforge()
 	var y = 286.0 if Run.has_save() else 300.0
 	if Run.has_save():
-		title_button("Continue journey", Rect2(56,y,420,58), func(): game.continue_run(), true)
+		title_button("Continue journey", Rect2(56,y,420,58), func(): game.begin_continue(), true)
 		y += 68
 	title_button("New journey", Rect2(56,y,420,58), func(): show_screen("armory"), not Run.has_save())
 	y += 68
-	title_button("Daily journey", Rect2(56,y,420,58), func(): game.start_run(starter_weapon(Run.daily_seed()).id,Run.daily_seed(),true))
+	title_button("Daily journey", Rect2(56,y,420,58), func(): game.begin_run(starter_weapon(Run.daily_seed()).id,Run.daily_seed(),true))
 	y += 62
 	# Two to four players on the same network.
 	title_button("Climb together", Rect2(56,y,420,54), func(): show_screen("coop"))
@@ -512,7 +544,7 @@ func build_armory() -> void:
 	seed_field.text_changed.connect(func(value): selected_seed = value; refresh_armory_choices())
 	content.add_child(seed_field)
 	title_button("Reforge",Rect2(332,550,150,54),func(): reforge(); seed_field.text = ""; seed_field.placeholder_text = "Seed %d" % menu_seed; refresh_armory_choices())
-	title_button("Enter the tower  →",Rect2(58,622,440,62),func(): game.start_run(starter_weapon().id,chosen_seed(),false),true)
+	title_button("Enter the tower  →",Rect2(58,622,440,62),func(): game.begin_run(starter_weapon().id,chosen_seed(),false),true)
 	var back = title_button("← Hearth",Rect2(60,64,200,54),func(): show_screen("menu"))
 	back.add_theme_font_size_override("font_size",18)
 	if is_instance_valid(game.title_scene): game.title_scene.preview_weapon(starter_weapon())
@@ -569,13 +601,13 @@ func build_legacy_menu() -> void:
 		seed_field.placeholder_text = "Seed %d" % menu_seed
 		Audio.play_sound("coin", .9)
 		queue_redraw())
-	button("Begin a run   →", Rect2(64, 458, 418, 60), func(): game.start_run(starter_weapon().id, chosen_seed(), false), true)
+	button("Begin a run   →", Rect2(64, 458, 418, 60), func(): game.begin_run(starter_weapon().id, chosen_seed(), false), true)
 	if Run.has_save():
-		button("Continue saved run", Rect2(64, 530, 418, 56), func(): game.continue_run())
-		button("Today’s seed", Rect2(64, 598, 201, 54), func(): game.start_run(starter_weapon(Run.daily_seed()).id, Run.daily_seed(), true))
+		button("Continue saved run", Rect2(64, 530, 418, 56), func(): game.begin_continue())
+		button("Today’s seed", Rect2(64, 598, 201, 54), func(): game.begin_run(starter_weapon(Run.daily_seed()).id, Run.daily_seed(), true))
 		button("Journal", Rect2(281, 598, 201, 54), func(): open_journal("menu"))
 	else:
-		button("Today’s seed", Rect2(64, 536, 201, 56), func(): game.start_run(starter_weapon(Run.daily_seed()).id, Run.daily_seed(), true))
+		button("Today’s seed", Rect2(64, 536, 201, 56), func(): game.begin_run(starter_weapon(Run.daily_seed()).id, Run.daily_seed(), true))
 		button("Journal", Rect2(281, 536, 201, 56), func(): open_journal("menu"))
 	button("Settings", moved(Rect2(1080, 32, 154, 56), widen()), func(): open_settings("menu"))
 
@@ -607,13 +639,94 @@ func build_rewards() -> void:
 		var info = offer_info(offer)
 		var rect = reward_rect(i)
 		var price = int(offer.get("price", 0))
-		var affordable = (not shop or Run.coins >= price) and (not dark or (Run.can_pay_life(price) and not offer.get("sold", false)))
+		var affordable = not shop or Run.coins >= price
 		var label: String = info.take if not shop else info.buy % price
-		if dark: label = "Taken" if offer.get("sold", false) else "Give %s" % life_text(price)
 		var control = button(label, Rect2(rect.position.x + 24, 478, REWARD_WIDTH - 48, 60), func(): game.choose_offer(i), affordable)
 		control.disabled = not affordable
 		if not affordable: control.get_meta("surface").modulate = Color(.7, .7, .65)
 	button("Keep exploring", Rect2(460, 596, 360, 58), func(): game.close_reward())
+
+func bargain_rect(index: int) -> Rect2:
+	return Rect2(BARGAIN_TAKE.position + Vector2(0, index * BARGAIN_STEP), BARGAIN_TAKE.size)
+
+## Death's bargain: pick from its right hand, then a price from its left.
+func build_bargain() -> void:
+	for i in offers.size():
+		bargain_slot("Take_%d" % i, bargain_rect(i), func(): pick_bargain(i, bargain_price))
+	bargain_slot("Curse", CURSE_RECT, func(): pick_bargain(bargain_pick, "curse"))
+	bargain_slot("Trial", TRIAL_RECT, func(): pick_bargain(bargain_pick, "trial"))
+	var ready := bargain_pick >= 0 and bargain_price != ""
+	var seal := button("Seal the bargain", Rect2(470, 604, 340, 56), func(): game.seal_bargain(bargain_pick, bargain_price), ready)
+	seal.disabled = not ready
+	if not ready: seal.get_meta("surface").modulate = Color(.7, .7, .65)
+	button("Walk away", Rect2(540, 668, 200, 44), func(): game.close_reward())
+
+func bargain_slot(id: String, rect: Rect2, callback: Callable) -> void:
+	var slot := Button.new()
+	slot.name = id
+	slot.position = rect.position
+	slot.size = rect.size
+	for state in ["normal", "hover", "pressed", "disabled"]:
+		slot.add_theme_stylebox_override(state, StyleBoxEmpty.new())
+	slot.add_theme_stylebox_override("focus", style(Color(0, 0, 0, 0), GOLD, 8))
+	slot.pressed.connect(func():
+		Audio.play_sound("coin", .55)
+		callback.call()
+		# A gamepad keeps its place on the rebuilt screen.
+		if not Input.get_connected_joypads().is_empty():
+			var again = content.get_node_or_null(id)
+			if again: again.grab_focus())
+	content.add_child(slot)
+
+func pick_bargain(index: int, price: String) -> void:
+	bargain_pick = index
+	bargain_price = price
+	show_screen("bargain")
+
+func draw_bargain() -> void:
+	var violet := Color("d8c0f0")
+	centered("Death offers a bargain", 640, 92, 38, violet, heading)
+	centered("Take one thing from its right hand. Pay for it with its left.", 640, 132, 19, MUTED)
+	text("ITS RIGHT HAND · WHAT YOU TAKE", Vector2(52, 190), 14, DeathBargain.COLOR, bold)
+	text("ITS LEFT HAND · THE PRICE", Vector2(836, 190), 14, DeathBargain.COLOR, bold)
+	for i in offers.size():
+		var offer: Dictionary = offers[i]
+		var info := offer_info(offer)
+		var rect := bargain_rect(i)
+		var x := rect.position.x
+		var y := rect.position.y
+		var colour: Color = info.color
+		var picked := i == bargain_pick
+		diamond(Vector2(x + 34, y + 46), 15, Color("262f28"))
+		diamond(Vector2(x + 34, y + 44), 13, colour, picked)
+		diamond(Vector2(x + 34, y + 44), 13, colour, false)
+		text(info.name, Vector2(x + 64, y + 36), 21, GOLD if picked else INK, heading)
+		text(info.label, Vector2(x + 64, y + 57), 12, colour, bold)
+		var hint := combination_hint(offer)
+		if hint != "": text(hint, Vector2(x + 72 + bold.get_string_size(info.label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x, y + 57), 11, GOLD, bold)
+		draw_multiline_string(body, Vector2(x + 64, y + 80), info.description, HORIZONTAL_ALIGNMENT_LEFT, 318, 14, 2, MUTED)
+		# How strong it is, and so how heavy its curse.
+		for p in 5:
+			diamond(Vector2(x + 316 + p * 16, y + 24), 5, DeathBargain.COLOR, p < int(offer.get("power", 3)))
+	var chosen: Dictionary = offers[bargain_pick] if bargain_pick >= 0 and bargain_pick < offers.size() else {}
+	for card in [["curse", CURSE_RECT, "A CURSE"], ["trial", TRIAL_RECT, "A TRIAL"]]:
+		var rect: Rect2 = card[1]
+		var x := rect.position.x + 24
+		var y := rect.position.y
+		text(card[2], Vector2(x, y + 32), 13, DeathBargain.COLOR if bargain_price == card[0] else MUTED, bold)
+		if bargain_price == card[0]: diamond(Vector2(rect.end.x - 26, y + 27), 7, DeathBargain.COLOR)
+		if not chosen.has("curse"):
+			var waiting := "The stronger the thing you take, the heavier its curse." if card[0] == "curse" else "Win Death's trial and no curse falls."
+			draw_multiline_string(body, Vector2(x, y + 80), "Choose from its right hand first. " + waiting, HORIZONTAL_ALIGNMENT_LEFT, 352, 17, 3, MUTED)
+		elif card[0] == "curse":
+			text(DeathBargain.curse_name(chosen.curse), Vector2(x, y + 72), 26, violet, heading)
+			draw_multiline_string(body, Vector2(x, y + 104), DeathBargain.curse_text(chosen.curse), HORIZONTAL_ALIGNMENT_LEFT, 352, 17, 2, INK)
+			text("It falls now, and stays for the rest of the run.", Vector2(x, y + 162), 14, MUTED)
+		else:
+			text(DeathBargain.trial_name(chosen.trial), Vector2(x, y + 72), 26, violet, heading)
+			draw_multiline_string(body, Vector2(x, y + 102), DeathBargain.trial_text(chosen.trial), HORIZONTAL_ALIGNMENT_LEFT, 352, 15, 3, INK)
+			text("Fail, and the curse (%s) falls anyway." % DeathBargain.curse_name(chosen.curse), Vector2(x, y + 166), 14, MUTED)
+	centered("What you take is yours either way. Death deals once.", 640, 590, 14, MUTED)
 
 func open_journal(back: String) -> void:
 	previous_mode = back
@@ -717,7 +830,8 @@ func settings_rows(page: String) -> Array:
 		"display":
 			var pixels = Settings.render_pixels()
 			var scale = "%d%%" % roundi(Settings.values.render_scale * 100)
-			if get_viewport().scaling_3d_scale < float(Settings.values.render_scale) - .005:
+			if Settings.adaptive < .995: scale += " (adaptive)"
+			elif get_viewport().scaling_3d_scale < float(Settings.values.render_scale) - .005:
 				scale += " (limited)"
 			var vsync = ["vsync", "VSync", on_off("vsync"), true]
 			if not Settings.vsync_supported():
@@ -742,7 +856,8 @@ func settings_rows(page: String) -> Array:
 			return [["effects_detail", "Effects detail", Settings.values.effects_detail.capitalize(), true],
 				["small_details", "Small details", Settings.values.small_details.capitalize(), true],
 				["shadows", "Lantern shadows", on_off("shadows"), true],
-				["ssao", "SSAO", Settings.values.ssao.capitalize() if Settings.ssao_supported() else "Off · device safe mode", Settings.ssao_supported()]]
+				["ssao", "SSAO", Settings.values.ssao.capitalize() if Settings.ssao_supported() else "Off · device safe mode", Settings.ssao_supported()],
+				["adaptive_resolution", "Adaptive resolution", on_off("adaptive_resolution") if Settings.adaptive_supported() else "Phones only", Settings.adaptive_supported()]]
 	return [["sound", "Sound effects", on_off("sound"), true], ["music", "Ambient music", on_off("music"), true],
 		["shake", "Camera shake", on_off("shake"), true], ["touch", "Touch controls", on_off("touch"), true]]
 
@@ -856,6 +971,15 @@ func _process(delta: float) -> void:
 	update_surface_visibility()
 	sync_minimap()
 	queue_redraw()
+
+func place_minimap() -> void:
+	var on: bool = mode == "play" and game.first_person and Run.active and not game.in_menu and is_instance_valid(game.player)
+	minimap_view.visible = on
+	if not on: return
+	minimap_view.position = offset + (MINIMAP_AREA.position + Vector2(widen(), 0)) * scale_value
+	minimap_view.size = MINIMAP_AREA.size
+	minimap_view.scale = Vector2.ONE * scale_value
+	minimap_view.queue_redraw()
 
 func _input(event: InputEvent) -> void:
 	if game.first_person and game.in_menu and event.is_action_pressed("ui_cancel") and handle_title_back():
@@ -985,6 +1109,7 @@ func _draw() -> void:
 		"armory": draw_armory()
 		"coop": CoopMenus.draw_coop(self)
 		"lobby": CoopMenus.draw_lobby(self)
+		"loading": draw_loading()
 		"play":
 			draw_hud()
 			CoopMenus.draw_hud(self)
@@ -993,12 +1118,15 @@ func _draw() -> void:
 			centered("Catch your breath", 640, 204, 34, INK, heading)
 			centered("Even a little flame needs a moment.", 640, 245, 18, MUTED)
 			centered("The party climbs on while you rest; co-op climbs are not saved." if game.party.climbing() else "Your last safe room is saved automatically.", 640, 604, 16, MUTED)
+			if not Run.curses.is_empty():
+				centered("Death's curses · " + " · ".join(Run.curses.map(func(curse): return DeathBargain.curse_text(curse))), 640, 660, 15, DeathBargain.COLOR, bold)
 		"secret":
 			hearth_emblem(Vector2(640, 177), 11)
 			centered("A whispered wish", 640, 237, 34, INK, heading)
 			centered("Some little sparks know a secret.", 640, 278, 18, MUTED)
 			centered(secret_feedback, 640, 401, 17, Color("efbd9f"))
 		"reward": draw_rewards()
+		"bargain": draw_bargain()
 		"settings":
 			hearth_emblem(Vector2(640, 76), 11)
 			centered("Make yourself at home", 640, 134, 32, INK, heading)
@@ -1112,6 +1240,9 @@ func draw_legacy_menu() -> void:
 
 func draw_hud() -> void:
 	anchor(0)
+	# Watching a teammate's trial: the world a little paler, out of reach.
+	var trials = game.get("trials")
+	if trials and trials.spectating(): draw_rect(Rect2(-offset.x / scale_value, 0, view_width + offset.x * 2.0 / scale_value, 720), Color(.8, .86, .96, .08))
 	draw_hud_left()
 	anchor(widen() / 2.0)
 	draw_hud_middle()
@@ -1162,6 +1293,8 @@ func draw_hud_left() -> void:
 		diamond(Vector2(28 + i * 17, HUD_RECT.end.y + 16), 6, Content.RARITY_COLORS[item.rarity])
 	if Run.inventory.size() > 12:
 		text("+%d" % (Run.inventory.size() - 12), Vector2(232, HUD_RECT.end.y + 21), 14, GOLD)
+	if not Run.curses.is_empty():
+		text("CURSED · " + " · ".join(Run.curses.map(func(curse): return DeathBargain.curse_name(curse).to_upper())), Vector2(22, HUD_RECT.end.y + 42), 12, DeathBargain.COLOR, bold)
 	if not touch_hud_visible() and not stair_presentation_active():
 		text("WASD move · Mouse aim/cast · Space jump · Shift dash · E interact" if game.first_person else "WASD move · Mouse cast · Space dash · F item · B bomb", Vector2(28, 668), 15, MUTED)
 	text("SEED %d" % Run.seed_value, Vector2(28, 697), 13, MUTED)
@@ -1199,6 +1332,9 @@ func draw_hud_middle() -> void:
 		centered("1 little trouble remains" if remaining == 1 else "%d little troubles remain" % remaining, 640, 697, 15, MUTED)
 	else:
 		centered("Doorways are open · keep exploring", 640, 697, 15, MUTED)
+	var trials = game.get("trials")
+	var trial_line: String = trials.hud_line() if trials else ""
+	if trial_line != "": centered(trial_line, 640, 672, 17, DeathBargain.COLOR, bold)
 	if game.interaction_text != "":
 		centered(game.interaction_text, 640, 596, 21, GOLD, bold)
 		centered("Tap to interact  ·  E / A", 640, 624, 16, MUTED)
@@ -1594,22 +1730,10 @@ func draw_full_map() -> void:
 	centered("%s  ·  Floor %d of %d%s  ·  %d of %d rooms visited  ·  Outlined: you are here" % [Run.theme().name, Run.floor_number, Run.climb_length(),
 		"  ·  " + twist_name if twist_name != "" else "", main_rooms.filter(func(room): return room.visited).size(), main_rooms.size()], 640, 578, 17, MUTED)
 
-## Half-hearts of maximum health, said in hearts.
-static func life_text(half_hearts: int) -> String:
-	var whole = half_hearts / 2
-	var half = "½" if half_hearts % 2 == 1 else ""
-	if half_hearts <= 0: return "nothing"
-	if whole == 0: return "½ heart"
-	return "%d%s heart%s" % [whole, half, "" if whole == 1 and half == "" else "s"]
-
 func draw_rewards() -> void:
 	hearth_emblem(Vector2(640, 61), 12)
-	if dark:
-		centered("The dark merchant", 640, 123, 38, Color("d8c0f0"), heading)
-		centered("It takes maximum health, for the rest of the run. You have %s to give." % life_text(maxi(0, int(Run.stats.max_hp - Run.LIFE_FLOOR))), 640, 165, 20, MUTED)
-	else:
-		centered("The candle merchant" if shop else "A small kindness", 640, 123, 38, INK, heading)
-		centered("A good find is worth a few coins. You have %d." % Run.coins if shop else "Choose one. Let it change the way you play.", 640, 165, 20, MUTED)
+	centered("The candle merchant" if shop else "A small kindness", 640, 123, 38, INK, heading)
+	centered("A good find is worth a few coins. You have %d." % Run.coins if shop else "Choose one. Let it change the way you play.", 640, 165, 20, MUTED)
 	for i in offers.size():
 		var item = offer_info(offers[i])
 		var color: Color = item.color
@@ -1628,7 +1752,7 @@ func draw_rewards() -> void:
 		centered(item.tag, middle, 465, 13, color, bold)
 		var hint := combination_hint(offers[i])
 		if hint != "": centered(hint, middle, 556, 12, GOLD, bold)
-	centered("What you give stays given until the run ends." if dark else "Relics stack. Find something beautifully strange.", 640, 692, 17, MUTED)
+	centered("Relics stack. Find something beautifully strange.", 640, 692, 17, MUTED)
 
 func draw_journal() -> void:
 	text("The things we carry", Vector2(64, 146), 40, INK, heading)
@@ -1650,6 +1774,16 @@ func draw_journal() -> void:
 		draw_multiline_string(body, Vector2(x + 27, y + 73), item.description, HORIZONTAL_ALIGNMENT_LEFT, 510, 18, 2, MUTED)
 	text("%d / %d found  ·  Filled diamonds are discovered relics" % [Run.profile.discovered.size(), Content.items.size()], Vector2(66, 664), 17, MUTED)
 	centered("%d / %d" % [journal_page + 1, journal_page_count()], 976, 664, 20, GOLD)
+
+## While a run is prepared: the hearth's emblem breathing, a line of advice
+## and how far along it is.
+func draw_loading() -> void:
+	var breath := .5 + .5 * sin(elapsed_ui * 2.6)
+	hearth_emblem(Vector2(640, 262), 17.0 + breath * 3.0)
+	centered(loading_title, 640, 350, 40, INK, heading)
+	centered(LOADING_TIPS[int(elapsed_ui / 4.0) % LOADING_TIPS.size()], 640, 394, 18, MUTED)
+	draw_rect(Rect2(440, 440, 400, 6), Color(.2, .18, .14, .85))
+	draw_rect(Rect2(440, 440, 400 * clampf(loading_progress, 0, 1), 6), GOLD)
 
 ## What an offer would combine with: a pairing it completes (named once
 ## found, hinted before), or the spellbook's element it sings with.

@@ -32,7 +32,7 @@ const PULL_SPACING := .75
 # Foes keep their quarry unless another teammate is clearly closer.
 const TARGET_STICKINESS := 1.5
 # The cosmetic flight of a spell needs only these of its traits.
-const SHOT_KEYS := ["returning", "homing", "wave", "accel", "linger", "grow", "size", "range", "bounce", "pierce"]
+const SHOT_KEYS := ["returning", "homing", "wave", "accel", "linger", "grow", "size", "range", "bounce", "pierce", "ray", "smite", "erupt", "form", "anchor", "sky"]
 # Sounds a guest hears from the host's world; the rest are each player's own.
 const SHARED_SOUNDS := ["hit", "kill"]
 # Sights and sounds: sent unreliably, since a lost one is only a missed spark
@@ -163,7 +163,7 @@ func begin(seed_value: int) -> void:
 func start_local(seed_value: int, floor_data: Dictionary) -> void:
 	reset()
 	Run.incoming_floor = floor_data
-	game.start_run(Session.local_weapon, seed_value, false)
+	game.begin_run(Session.local_weapon, seed_value, false)
 	for id in Session.others(): ensure_member(id)
 	game.ui.notify("The party sets out", "%d little lights climb together." % Session.roster.size(), Color("f1cc8a"))
 
@@ -248,11 +248,27 @@ func on_session_ended(reason: String) -> void:
 ## figures standing in for the others. Fallen players are left out.
 func bodies() -> Array:
 	var result: Array = []
-	if is_instance_valid(game.player) and not downed: result.append(game.player)
+	# Whoever watches a teammate's trial is no foe's quarry.
+	if is_instance_valid(game.player) and not downed and not game.trials.spectating(): result.append(game.player)
 	if host():
-		for member in members.values():
-			if is_instance_valid(member) and not member.downed: result.append(member)
+		for id in members:
+			var member = members[id]
+			if is_instance_valid(member) and not member.downed and not bool(states.get(id, {}).get("spec", false)): result.append(member)
 	return result
+
+## The teammate facing one of Death's trials in this room (0 for none).
+func challenger() -> int:
+	if not climbing(): return 0
+	if game.trials.seals_room(): return Session.local_peer_id
+	var found := 0
+	for id in states:
+		if id == Session.local_peer_id or not members.has(id): continue
+		if str(states[id].get("tr", "")) != "" and str(states[id].get("room", Run.current_room)) == Run.current_room and (found == 0 or id < found): found = id
+	return found
+
+## How a teammate's trial stands, as their own device tells it.
+func trial_line(peer_id: int) -> String:
+	return str(states.get(peer_id, {}).get("tr", ""))
 
 func body_of(peer_id: int) -> Node3D:
 	if peer_id == 0 or peer_id == Session.local_peer_id: return game.player
@@ -553,6 +569,9 @@ func local_state() -> Dictionary:
 	var state := {"p": player.global_position, "y": game.fps.yaw, "v": player.velocity, "hp": Run.hp, "mhp": float(Run.stats.max_hp),
 		"inv": player.invulnerability > 0 or Run.has_flag("invulnerable"), "down": downed, "w": Color(Run.weapon().color),
 		"room": Run.current_room, "ep": epoch, "stair": waiting_at_stair}
+	# A trial fought now, for everyone else to watch; or watching one.
+	if game.trials.seals_room(): state["tr"] = game.trials.hud_line()
+	if game.trials.spectating(): state["spec"] = true
 	var corridors: CorridorTransit = game.corridors
 	var point := Vector2(player.position.x, player.position.z)
 	state["in"] = is_instance_valid(game.room) and game.room.geometry.contains(point, .1)
@@ -587,7 +606,9 @@ func send_snapshot() -> void:
 	for id in states:
 		var s: Dictionary = states[id]
 		players[id] = {"p": s.get("p"), "y": s.get("y", 0.0), "v": s.get("v"), "inv": s.get("inv", false), "down": s.get("down", false),
-			"hp": s.get("hp", 0.0), "mhp": s.get("mhp", 6.0), "w": s.get("w"), "stair": s.get("stair", false)}
+			"hp": s.get("hp", 0.0), "mhp": s.get("mhp", 6.0), "w": s.get("w"), "stair": s.get("stair", false), "room": s.get("room", "")}
+		if s.has("tr"): players[id]["tr"] = s.tr
+		if s.get("spec", false): players[id]["spec"] = true
 	var foes: Array = []
 	var ids := PackedInt32Array()
 	for enemy in game.enemies:
@@ -953,6 +974,9 @@ func take_acts(from: int, data) -> void:
 			"bomb":
 				if value is Array and value.size() >= 2 and value[0] is Vector3 and same_frame: game.actions.place_guest_bomb(from, value[0], float(value[1]))
 			"stair": at_stair[from] = true
+			# A guest's trial asks for its foes, or for them to go.
+			"trial":
+				if value is Array and value.size() >= 3: game.trials.raise_for(from, str(value[0]), str(value[1]), int(value[2]))
 			"fell":
 				if members.has(from):
 					members[from].downed = true
@@ -1045,6 +1069,7 @@ func on_private(kind: String, data) -> void:
 		"heal": Run.heal(float(data))
 		"hitmark": game.fps.hit_time = .13
 		"revive": rise()
+		"trial": if str(data) == "cleared": game.trials.on_cleared()
 		"haste": if is_instance_valid(game.player): game.player.haste_time = 2.0
 
 func replay_fx(method: String, args) -> void:

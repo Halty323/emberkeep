@@ -111,6 +111,7 @@ func exercise() -> void:
 		check(seen[guests[1]].distance_to(other.position) < .6, "and sees the other guest where that guest really is")
 	await gather_and_fight()
 	await fall_and_rekindle()
+	await trial_watched()
 	await climb_together()
 	await everyone_down()
 	for id in guests: await ask(id, {"cmd": "done"})
@@ -299,6 +300,43 @@ func fall_and_rekindle() -> void:
 	check(is_zero_approx(member.visual.rotation.x), "and their figure stands again")
 	var risen: Dictionary = await ask(wren, {"cmd": "report"})
 	check(not risen.get("down", true) and is_equal_approx(float(risen.get("hp", 0)), 2.0), "a rekindled player is back on one heart")
+
+## A guest faces one of Death's trials; the host and the other guest watch,
+## untouchable and unable to act, until it is done.
+func trial_watched() -> void:
+	var wren: int = guests[0]
+	var moss: int = guests[1]
+	var started: Dictionary = await ask(wren, {"cmd": "trial", "kind": "quarry"})
+	check(started.get("trial", {}).get("state", "") == "running", "a guest takes up one of Death's trials")
+	check(await until(func(): return game.party.challenger() == wren, 3.0), "the party sees who faces Death")
+	check(game.trials.spectating() and await until(func(): return not game.room.open, 1.0), "everyone else watches, behind shut doors")
+	check(not game.party.bodies().has(game.player) and game.party.bodies().has(game.party.members[wren]), "foes see only the challenger")
+	check(game.trials.hud_line().begins_with("WATCHING WREN"), "a spectator sees whose trial it is (%s)" % game.trials.hud_line())
+	var hp_before: float = run.hp
+	game.player.invulnerability = 0
+	game.player.hurt(1.0, game.player.global_position + Vector3(1, 0, 0))
+	check(run.hp == hp_before, "a spectator cannot be harmed")
+	check(game.actions.perform({"type": "use_active", "event": "spectate:1"}, game.player.owner_peer_id).get("reason", "") == "watching a trial", "a spectator cannot act")
+	check(await until(func(): return game.trials.foes.size() == 1 and game.trials.foe_peer == wren, 4.0), "the host raises the guest's champion")
+	check(await until(func(): return game.party.members[moss].ghosted, 2.0), "the other spectator shows pale and translucent")
+	var watcher: Dictionary = await ask(moss, {"cmd": "report"})
+	check(watcher.get("spectating", false) and int(watcher.get("watching", 0)) == wren and watcher.get("refused", "") == "watching a trial", "the other guest watches too, and cannot act")
+	var challenger: Dictionary = await ask(wren, {"cmd": "report"})
+	check(not challenger.get("spectating", true) and 1 in challenger.get("ghosts", []) and moss in challenger.get("ghosts", []), "the challenger sees both spectators as ghosts")
+	var curses_before := int(challenger.get("curses", 0))
+	var champion = game.trials.foes[0] if not game.trials.foes.is_empty() else null
+	for blow in 6:
+		if is_instance_valid(champion) and champion.alive:
+			champion.targetable = true
+			champion.take_hit(1.0e6, Vector3.ZERO, false, false, "shot")
+	if is_instance_valid(champion) and champion.alive:
+		champion.hp = 0.0
+		champion.die()
+	check(await until(func(): return game.party.challenger() == 0, 8.0), "once the champion falls, the trial ends for everyone")
+	var after: Dictionary = await ask(wren, {"cmd": "report"})
+	check(after.get("trial", {"x": 1}).is_empty() and int(after.get("curses", -1)) == curses_before, "the challenger wins: no curse falls")
+	check(not game.trials.spectating() and game.room.open and game.party.bodies().has(game.player), "the spectators step back into the world")
+	check(await until(func(): return not game.party.members[moss].ghosted, 2.0), "and are solid again")
 
 func climb_together() -> void:
 	var floor_before: int = run.floor_number

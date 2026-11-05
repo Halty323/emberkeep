@@ -38,6 +38,19 @@ func _process(_delta: float) -> void:
 	elif is_instance_valid(staged_room) and staged_room.building:
 		FrameWatch.mark("next room, building")
 		staged_room.resume_build()
+	elif is_instance_valid(staged_room) and int(staged_room.get_meta("warm", 0)) < WARM_FRAMES:
+		warm_staged()
+
+# Once built, the neighbour is drawn for a few frames where it stands, out
+# of sight behind the corridor's walls, so the driver compiles its shaders
+# and uploads its meshes now rather than on the step into it.
+const WARM_FRAMES := 3
+
+func warm_staged() -> void:
+	var count := int(staged_room.get_meta("warm", 0)) + 1
+	staged_room.set_meta("warm", count)
+	FrameWatch.mark("next room, first draw")
+	staged_room.visible = count < WARM_FRAMES
 
 ## Large discarded trees are deleted over several frames.
 func discard(node: Node) -> void:

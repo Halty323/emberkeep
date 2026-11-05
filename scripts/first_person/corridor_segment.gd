@@ -28,11 +28,13 @@ func build(points: Array[Vector2], preview := false, look: Dictionary = {}) -> v
 			var center := Vector2((xs[x]+xs[x+1])*.5,(zs[z]+zs[z+1])*.5)
 			if regions.any(func(rect): return rect.has_point(center)): occupied[Vector2i(x,z)]=true
 	var edges := {}
+	var fog_tiles: Array[Rect2]=[]
 	for tile in occupied:
 		var rect := Rect2(xs[tile.x],zs[tile.y],xs[tile.x+1]-xs[tile.x],zs[tile.y+1]-zs[tile.y])
 		var at := rect.get_center()
 		append_box("floor",Vector3(at.x,-.08,at.y),Vector3(rect.size.x,.16,rect.size.y))
 		append_box("stone",Vector3(at.x,HEIGHT+.08,at.y),Vector3(rect.size.x,.16,rect.size.y))
+		fog_tiles.append(rect)
 		tile_count+=1
 		for normal in [Vector2i.LEFT,Vector2i.RIGHT,Vector2i.UP,Vector2i.DOWN]:
 			if occupied.has(tile+normal): continue
@@ -73,6 +75,9 @@ func build(points: Array[Vector2], preview := false, look: Dictionary = {}) -> v
 		body.add_child(shape)
 		add_child(body)
 	if not preview: fixtures()
+	# The rooms' fog runs on through the passages between them.
+	if not preview and FloorMist.wanted() and not path.is_empty():
+		FloorMist.cover(self,fog_tiles,func(_at: Vector2) -> float: return 0.0,{},Geo.CORRIDOR_LAYER,int(path[0].x*31.0+path[0].y*17.0))
 	tools.clear()
 
 func append_box(kind: String, at: Vector3, dimensions: Vector3) -> void:

@@ -19,6 +19,11 @@ var ui: GameInterface
 var scene_root: Node3D
 var marker: Node3D
 var marker_visual: Node3D
+# Death, behind a dark altar not yet bargained with.
+var death_figure: DeathFigure
+var trials: DeathTrials
+# The Crimson Grail's kills this room.
+var bloodlust := 0
 var enemies: Array = []
 var shots: Array = []
 var pickups: Array = []
@@ -188,6 +193,9 @@ func _ready() -> void:
 		for kind in 3: DungeonStyle.surface_maps(kind)
 	Run.item_gained.connect(on_item_gained)
 	actions = GameActions.new(self)
+	trials = DeathTrials.new()
+	add_child(trials)
+	trials.setup(self)
 	party = Party.new()
 	add_child(party)
 	party.setup(self)
@@ -223,6 +231,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif ui.mode in ["journal", "settings", "map"]: ui.close_subscreen()
 		elif ui.mode == "painting": ui.close_painting()
 		elif ui.mode == "secret": ui.close_secret_code()
+		elif ui.mode == "bargain": close_reward()
 	elif event.is_action_pressed("map") and not in_menu and Run.active:
 		if ui.mode == "map": ui.close_subscreen()
 		elif is_playing(): ui.open_map("play")
@@ -280,6 +289,7 @@ func _notification(what: int) -> void:
 		if is_instance_valid(ui) and not in_menu:
 			if ui.mode == "play": pause_game()
 			elif ui.mode == "pause": resume_game()
+			elif ui.mode == "bargain": close_reward()
 			elif ui.mode in ["settings", "journal", "map"]: ui.close_subscreen()
 			elif ui.mode == "painting": ui.close_painting()
 			elif ui.mode == "secret": ui.close_secret_code()
@@ -318,6 +328,8 @@ func dispel(shot: EmberShot) -> void:
 
 ## The last heart is gone: the end of a lone climb, a fall in co-op.
 func player_fell() -> void:
+	# Last breath: falling in the trial fails it instead.
+	if trials.catch_fall(): return
 	if party.climbing(): party.fall()
 	else: end_run(false)
 
@@ -383,6 +395,10 @@ func _physics_process(delta: float) -> void:
 				aim.y = 0
 			# A click that pressed an on-screen action button never becomes fire.
 			shooting = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not ui.mouse_on_action
+	# Watching a teammate's trial: no spells, no dash.
+	if trials.spectating():
+		shooting = false
+		request_dash = false
 	if request_dash:
 		if first_person:
 			var dash_input = screen_direction(move_input)
@@ -397,6 +413,7 @@ func _physics_process(delta: float) -> void:
 		for enemy in enemies.duplicate():
 			if is_instance_valid(enemy) and is_playing() and enemy.alive: enemy.update_sim(delta)
 	enemies = enemies.filter(func(e): return is_instance_valid(e) and e.alive)
+	if is_playing() or party.climbing(): trials.update(delta)
 	party.begin_world()
 	for shot in shots.duplicate():
 		if is_instance_valid(shot) and sim_live():
@@ -425,7 +442,7 @@ func _physics_process(delta: float) -> void:
 	track_exploration()
 	# Posts and dropped lanterns never hold a room shut. A guest's room opens
 	# when the host says its fight is won.
-	if not party.client() and not room.open and deferred_encounter.is_empty() and enemies.all(func(e): return e.inert):
+	if not party.client() and not room.open and deferred_encounter.is_empty() and not trials.holds_room() and enemies.all(func(e): return e.inert):
 		for enemy in enemies:
 			enemy.alive = false
 			enemy.queue_free()
@@ -466,6 +483,8 @@ func begin_transition(portal_id: String) -> void:
 	interaction_kind = ""
 
 func advance_transition(delta: float) -> void:
+	# A floor loading behind its screen holds the arrival until it is ready.
+	if loading: return
 	transition.time += delta
 	if transition.get("kind", "") == "fps_floor":
 		light_veil.color.a = clampf(transition.time / .35, 0, 1)
@@ -543,7 +562,29 @@ func reach_next_floor() -> void:
 		light_veil.color.a = 0.0
 		end_run(true)
 		return
+	if first_person and DisplayServer.get_name() != "headless" and not loading:
+		# Every new floor loads behind its own screen: generated, its rooms
+		# built and drawn once, its shaders compiled, before the arrival.
+		transition = {"kind": "loading"}
+		loading = true
+		ui.loading_title = "The stair climbs on"
+		ui.loading_progress = .05
+		ui.show_screen("loading")
+		for frame in 2: await get_tree().process_frame
+		Run.next_floor()
+		ui.loading_title = str(Run.theme().name)
+		await prebuild_room()
+		await warm_floor_rooms(Run.current_room)
+		arrive_on_floor()
+		await close_loading()
+		ui.show_screen("play")
+		ui.announce_floor()
+		return
 	Run.next_floor()
+	arrive_on_floor()
+
+## The new floor opens: the figure rises from its stairwell into the light.
+func arrive_on_floor() -> void:
 	enter_room(Vector3(0, 0, 2.0))
 	party.floor_changed()
 	var pedestal = Vector2(room.pedestal.x, room.pedestal.z)
@@ -564,7 +605,8 @@ func reach_next_floor() -> void:
 	if first_person: stair_cinematic.begin(self,true)
 	warm_shaders()
 	Run.save_run()
-	ui.announce_floor()
+	# Behind a loading screen, the floor's name waits until it lifts.
+	if not loading: ui.announce_floor()
 
 ## Position along a path of segments with their own durations.
 static func path_point(path: Array, times: Array, time: float) -> Vector3:
@@ -837,10 +879,10 @@ func show_title_room() -> void:
 	apply_floor_light()
 	update_camera(0.0, true)
 
-func start_run(weapon: String, seed_input: int, is_daily: bool) -> void:
-	Run.start_run(weapon, seed_input, is_daily)
+func start_run(weapon: String, seed_input: int, is_daily: bool, prepared := false) -> void:
+	if not prepared: Run.start_run(weapon, seed_input, is_daily)
 	in_menu = false
-	paused = false
+	paused = prepared
 	if first_person:
 		fps.yaw = float(Run.view_angles[0])
 		fps.pitch = float(Run.view_angles[1])
@@ -853,6 +895,10 @@ func start_run(weapon: String, seed_input: int, is_daily: bool) -> void:
 	# A party spreads out a little rather than standing in one spot.
 	enter_room(Vector3((Session.local_slot() - 1.5) * .9, 0, 2.0) if party.online() else Vector3(0, 0, 2.0))
 	warm_shaders()
+	if not prepared: greet_run()
+
+## The first words of a new run, once it can be seen.
+func greet_run() -> void:
 	ui.show_screen("play")
 	var arrival: Array = Run.theme().arrival
 	if first_person and not Run.profile.get("fps_tutorial_seen", false):
@@ -871,13 +917,13 @@ func warm_shaders() -> void:
 	prewarm = ShaderPrewarm.begin(self)
 	light_veil.color.a = 1.0
 
-func continue_run() -> void:
-	if not Run.load_run():
+func continue_run(prepared := false) -> void:
+	if not prepared and not Run.load_run():
 		ui.notify("This save could not be loaded", "Start a fresh run.")
 		return
 	if first_person and VerticalPlans.upgrade_unvisited(Run.rooms,Run.portals,Run.floor_number): Run.save_run()
 	in_menu = false
-	paused = false
+	paused = prepared
 	if first_person:
 		fps.yaw = float(Run.view_angles[0])
 		fps.pitch = float(Run.view_angles[1])
@@ -886,9 +932,112 @@ func continue_run() -> void:
 	reset_combat()
 	enter_room(saved_entry())
 	warm_shaders()
+	if not prepared: greet_continue()
+
+func greet_continue() -> void:
 	ui.show_screen("play")
 	ui.notify("Welcome back, little light", "Your last safe room remembers you.")
 	ui.announce_floor()
+
+# ---------------------------------------------------------------- loading
+# A run begins behind a loading screen: the floor is generated, its first
+# room built a slice per frame and its shaders compiled before play shows,
+# so nothing freezes on an unexplained frame.
+var loading := false
+var prebuilt: DungeonRoom
+
+func begin_run(weapon: String, seed_input: int, is_daily: bool) -> void:
+	if not await open_loading("The tower stirs"):
+		if not loading: start_run(weapon, seed_input, is_daily)
+		return
+	Run.start_run(weapon, seed_input, is_daily)
+	ui.loading_title = str(Run.theme().name)
+	ui.loading_progress = .1
+	await prebuild_room()
+	await warm_floor_rooms(Run.current_room)
+	start_run(weapon, seed_input, is_daily, true)
+	await close_loading()
+	greet_run()
+
+func begin_continue() -> void:
+	if not await open_loading("Your light returns"):
+		if not loading: continue_run()
+		return
+	if not Run.load_run():
+		loading = false
+		ui.show_screen("menu")
+		ui.notify("This save could not be loaded", "Start a fresh run.")
+		return
+	ui.loading_progress = .1
+	await prebuild_room()
+	await warm_floor_rooms(Run.current_room)
+	continue_run(true)
+	await close_loading()
+	greet_continue()
+
+## Shows the loading screen and lets it draw; false where there is nothing
+## to show (headless, the old overhead view) or a load is already under way.
+func open_loading(title: String) -> bool:
+	if loading or not first_person or DisplayServer.get_name() == "headless": return false
+	loading = true
+	ui.loading_title = title
+	ui.loading_progress = .05
+	ui.show_screen("loading")
+	for i in 2: await get_tree().process_frame
+	return true
+
+## The first room, built hidden a slice per frame.
+func prebuild_room() -> void:
+	var staged := DungeonRoom.new()
+	staged.visible = false
+	staged.process_mode = Node.PROCESS_MODE_DISABLED
+	add_child(staged)
+	staged.build(self, Run.rooms[Run.current_room], false, true)
+	while staged.building:
+		await get_tree().process_frame
+		staged.resume_build()
+		ui.loading_progress = minf(.3, ui.loading_progress + .02)
+	remove_child(staged)
+	staged.visible = true
+	staged.process_mode = Node.PROCESS_MODE_INHERIT
+	prebuilt = staged
+
+## Every other room of the floor, built once and drawn for two frames in
+## front of the camera under the loading screen: each of its materials
+## meets the graphics driver now, not on the step into that room.
+func warm_floor_rooms(skip: String) -> void:
+	var ids: Array = Run.rooms.keys().filter(func(id): return id != skip)
+	var start: float = ui.loading_progress
+	for i in ids.size():
+		var staged := DungeonRoom.new()
+		staged.prepare_entry = false
+		staged.visible = false
+		staged.process_mode = Node.PROCESS_MODE_DISABLED
+		add_child(staged)
+		staged.build(self, Run.rooms[ids[i]], false, true)
+		while staged.building:
+			await get_tree().process_frame
+			staged.resume_build()
+		var ahead := -camera.global_basis.z
+		staged.global_position = camera.global_position + ahead * 55.0 + Vector3.DOWN * 3.0
+		staged.visible = true
+		FrameWatch.mark("loading: first draw of a room")
+		for frame in 2: await get_tree().process_frame
+		reaper.reap(staged)
+		ui.loading_progress = lerpf(start, .9, float(i + 1) / ids.size())
+	if is_instance_valid(room) and is_instance_valid(room.effects): EffectsPool.current = room.effects
+
+## Waits for the floor's shaders to compile, then lets play begin.
+func close_loading() -> void:
+	ui.show_screen("loading")
+	ui.loading_progress = maxf(ui.loading_progress, .7)
+	while is_instance_valid(prewarm) and prewarm.active():
+		await get_tree().process_frame
+		ui.loading_progress = minf(.98, ui.loading_progress + .01)
+	ui.loading_progress = 1.0
+	await get_tree().process_frame
+	loading = false
+	paused = false
 
 func saved_entry() -> Vector3:
 	if Run.entry.get("room", "") == Run.current_room:
@@ -896,12 +1045,19 @@ func saved_entry() -> Vector3:
 	return Vector3(0, 0, 2.0)
 
 func enter_room(spawn: Vector3, keep_view := false, walking_state: Dictionary = {}) -> void:
+	RelicPowers.room_left(self)
 	clean_room(keep_view,not walking_state.is_empty())
 	var data: Dictionary = Run.rooms[Run.current_room]
 	var first_visit: bool=not data.get("visited",false)
 	data.visited = true
 	if walking_state.get("room")!=null:
 		room=walking_state.room
+		scene_root.add_child(room)
+		room.geometry.apply_shader_mask()
+	elif is_instance_valid(prebuilt) and is_same(prebuilt.data, data):
+		# Built behind the loading screen.
+		room = prebuilt
+		prebuilt = null
 		scene_root.add_child(room)
 		room.geometry.apply_shader_mask()
 	else:
@@ -1241,6 +1397,7 @@ func on_enemy_killed(enemy: DungeonEnemy) -> void:
 
 ## Pairings this player carries that answer any foe falling.
 func kill_pairings(at: Vector3) -> void:
+	RelicPowers.on_kill(self, at)
 	if Run.has_pairing("frenzy"): Run.add_modifier("frenzy", 2.0, {"rate": 1.0})
 	if Run.has_pairing("last_stand") and Run.hp <= Run.stats.max_hp / 2.0: Run.heal(.5)
 	if Run.has_pairing("glass_cannon"):
@@ -1320,16 +1477,21 @@ func pickup_node(drop_id: String) -> DungeonPickup:
 func pickup_feedback(at: Vector3, definition: Dictionary) -> void:
 	Effects.play("pickup", at + Vector3(0, .35, 0), Color(definition.color))
 
-## The map remembers each floor cell the first time it is walked into and
-## scribbles it in. A safe room keeps it at once; in a fight, the room's own
-## save at the end keeps it.
+## The map takes in a whole room the moment the player steps into it, every
+## cell scribbled in together under one soft pass of the quill. A safe room
+## keeps it at once; in a fight, the room's own save at the end keeps it.
 func track_exploration() -> void:
 	var local = room.geometry.cell_at(Vector2(player.position.x, player.position.z))
 	if not room.geometry.cell_set.has(local): return
-	var cell: Vector2i = local + Run.room_anchor(Run.rooms[Run.current_room])
-	if not Run.uncover(cell): return
-	ui.scribble(cell)
-	Audio.play_sound("scribble", .92 + float(absi(hash(cell)) % 17) / 100.0)
+	var anchor: Vector2i = Run.room_anchor(Run.rooms[Run.current_room])
+	var fresh := false
+	for each in room.geometry.cells:
+		var cell: Vector2i = each + anchor
+		if Run.uncover(cell):
+			ui.scribble(cell)
+			fresh = true
+	if not fresh: return
+	Audio.play_sound("scribble", randf_range(.95, 1.03))
 	if room.open: Run.save_run()
 
 ## The room's stair (or stairwell) spot. Rooms generated before the stairs
@@ -1384,6 +1546,7 @@ func clear_room() -> void:
 	if data.cleared: return
 	# Every player's own rewards follow on their own device.
 	party.share("clear", Run.current_room)
+	trials.on_room_cleared()
 	room.set_open(true)
 	# New expeditions persist clear credit and its reward together, so a
 	# reload cannot lose or duplicate the chest/relic between two writes.
@@ -1467,6 +1630,7 @@ func ensure_offers(premium := false, persist := true) -> void:
 func make_marker(kind: String, at := Vector3.ZERO) -> void:
 	if marker and is_instance_valid(marker): marker.queue_free()
 	marker_visual = null
+	death_figure = null
 	marker = Node3D.new()
 	scene_root.add_child(marker)
 	marker.position = at
@@ -1481,11 +1645,20 @@ func make_marker(kind: String, at := Vector3.ZERO) -> void:
 		if first_person:
 			altar_body.material_override = DungeonStyle.wall_material(Color("37303e"))
 			altar_cap.material_override = DungeonStyle.wall_material(Color("4f4053"),true)
-		var flame = Geo.sphere(marker, Vector3(0, 1.05, 0), .2, Color("b98ae0"), 2.4)
+		# A small cold flame, low enough not to hide Death behind it.
+		var flame = Geo.sphere(marker, Vector3(0, .94, 0), .11, Color("9b74c9"), 1.3)
 		flame.scale = Vector3(.8, 1.5, .8)
 		marker_visual = flame
 		Geo.halo(marker, Vector3(0, .03, 0), 4.5, Color(.55, .3, .8, .3))
 		Geo.light(marker, Vector3(0, 1.4, 0), Color("b98ae0"), .9, 5.0)
+		# Death waits behind the altar, on the side away from the way in.
+		death_figure = DeathFigure.new()
+		marker.add_child(death_figure)
+		var away: Vector3 = at - player.position if is_instance_valid(player) else Vector3.FORWARD
+		away.y = 0
+		death_figure.position = (away.normalized() if away.length_squared() > .01 else Vector3.FORWARD) * 1.3
+		death_figure.rotation.y = atan2(-away.x, -away.z)
+		death_figure.setup(self)
 	elif kind == "rest":
 		var rest_base = Geo.cylinder(marker, Vector3(0, .2, 0), .65, .4, Color("86775f"))
 		if first_person: rest_base.material_override = DungeonStyle.wall_material(Color("86775f"))
@@ -1511,7 +1684,7 @@ func prompt_for(target: Dictionary) -> String:
 	match target.kind:
 		"treasure": return "Choose a little treasure"
 		"shop": return "Browse the merchant’s wares"
-		"dark": return "Bargain with the dark · pay in life"
+		"dark": return "Bargain with Death"
 		"rest": return "Warm your hands · heal %d" % (1 if ExpeditionBalance.active_new_run() else 3)
 		"exit":
 			if party.climbing(): return "Waiting for the party…" if party.waiting_at_stair else "Climb with the party"
@@ -1556,7 +1729,7 @@ func interaction_eligible(target: Dictionary) -> bool:
 	return true
 
 func update_interaction() -> void:
-	if in_transition():
+	if in_transition() or trials.spectating():
 		interaction_text = ""
 		interaction_kind = ""
 		return
@@ -1575,14 +1748,14 @@ func interact() -> void:
 func use_pedestal(target: Dictionary) -> Dictionary:
 	var data: Dictionary = Run.rooms[Run.current_room]
 	match target.kind:
-		"treasure", "shop", "dark":
-			if target.kind == "dark": ensure_dark_offers()
-			else: ensure_offers(data.type == "treasure")
+		"dark": open_bargain()
+		"treasure", "shop":
+			ensure_offers(data.type == "treasure")
 			chosen_reward_shop = target.kind == "shop"
-			chosen_reward_dark = target.kind == "dark"
+			chosen_reward_dark = false
 			ui.offers = data.offers
 			ui.shop = chosen_reward_shop
-			ui.dark = chosen_reward_dark
+			ui.dark = false
 			paused = true
 			ui.show_screen("reward")
 		"rest":
@@ -1631,21 +1804,12 @@ func choose_offer(index: int) -> void:
 	data.offers = ExpeditionBalance.sanitize_offers(data.offers,int(data.seed))
 	if data.claimed or index < 0 or index >= data.offers.size(): return
 	var offer: Dictionary = data.offers[index]
-	if chosen_reward_dark:
-		# Each bargain once; each costs maximum health for the rest of the run.
-		if offer.get("sold", false) or not Run.pay_life(int(offer.price)):
-			Audio.play_sound("hurt", 1.5)
-			if not offer.get("sold", false): ui.notify("Too little life left to give", "The dark never takes your last heart.", Color("b98ae0"))
-			return
-		offer["sold"] = true
-		game_shake_dark()
-	elif chosen_reward_shop:
+	if chosen_reward_shop:
 		if Run.coins < int(offer.price):
 			Audio.play_sound("hurt", 1.5)
 			return
 		Run.coins -= int(offer.price)
-	if not chosen_reward_dark or data.offers.all(func(entry): return entry.get("sold", false)):
-		data.claimed = true
+	data.claimed = true
 	if offer.kind == "weapon":
 		Run.weapon_id = offer.id
 		Run.changed.emit()
@@ -1663,26 +1827,85 @@ func choose_offer(index: int) -> void:
 		Run.gain_item(offer.id)
 	if data.claimed: remove_marker()
 	Run.save_run()
-	if chosen_reward_dark and not data.claimed:
-		ui.offers = data.offers
-		ui.show_screen("reward")
-	else:
-		close_reward()
+	close_reward()
 
 func game_shake_dark() -> void:
 	shake = maxf(shake, .12)
 	Effects.burst(scene_root, player.global_position + Vector3.UP * .8, Color("b98ae0"), 12, 1.4)
 
-## The dark store's bargains: a dark relic, a dark-forged weapon or a
-## precious relic, and something small. Prices are half-hearts of maximum
-## health, 2 to 5 by how much each is worth.
+## Death rises behind its altar.
+func death_rises(figure: DeathFigure) -> void:
+	Audio.play_sound("door", .45)
+	Effects.play("death_puff", figure.global_position + Vector3.UP * .4, DeathBargain.COLOR, 14, 1.6)
+
+## Death's bargain: one thing from its right hand, paid for with its left.
+func open_bargain() -> void:
+	var data: Dictionary = Run.rooms[Run.current_room]
+	if data.claimed: return
+	ensure_dark_offers()
+	if is_instance_valid(death_figure):
+		death_figure.appear()
+		# Face Death across its altar.
+		if first_person and fps:
+			var towards: Vector3 = death_figure.global_position - player.global_position
+			if towards.length_squared() > .01: fps.yaw = atan2(-towards.x, -towards.z)
+	chosen_reward_shop = false
+	chosen_reward_dark = true
+	ui.offers = data.offers
+	ui.bargain_pick = -1
+	ui.bargain_price = ""
+	paused = true
+	ui.show_screen("bargain")
+
+## Seals one bargain per altar: what is taken is the player's at once; the
+## price is a curse now, or a trial that holds the curse back.
+func seal_bargain(index: int, price: String) -> Dictionary:
+	var data: Dictionary = Run.rooms[Run.current_room]
+	if data.type != "dark" or data.claimed or not data.has("offers"): return GameActions.result(false, "no bargain here")
+	if index < 0 or index >= data.offers.size() or price not in ["curse", "trial"]: return GameActions.result(false, "no such bargain")
+	# Death faces one challenger at a time.
+	var other: int = party.challenger()
+	if price == "trial" and other != 0 and other != Session.local_peer_id and str(data.offers[index].get("trial", "")) in DeathBargain.AT_ONCE:
+		ui.notify("Death is busy", "Wait until %s's trial is done." % Session.name_of(other), DeathBargain.COLOR)
+		return GameActions.result(false, "another trial is under way")
+	var offer: Dictionary = data.offers[index]
+	data.claimed = true
+	offer["sealed"] = price
+	interactions.unregister(PEDESTAL_ID)
+	if is_instance_valid(death_figure): death_figure.vanish()
+	if is_instance_valid(marker_visual): marker_visual.visible = false
+	close_reward()
+	game_shake_dark()
+	if offer.kind == "weapon":
+		Run.weapon_id = offer.id
+		Run.changed.emit()
+		announce_combinations()
+	else:
+		Run.gain_item(offer.id)
+	var taken: String = Forge.lookup(offer.id).name if offer.kind == "weapon" else Content.item_by_id[offer.id].name
+	if price == "curse":
+		Run.add_curse(offer.curse)
+		ui.notify("%s · %s" % [taken, DeathBargain.curse_name(offer.curse)], DeathBargain.curse_text(offer.curse) + " For the rest of the run.", DeathBargain.COLOR)
+		Audio.play_sound("hurt", .5)
+		Run.save_run()
+	else:
+		trials.begin(str(offer.trial), offer.curse)
+	return GameActions.result(true)
+
+## Death's offers: a dark relic, a dark-forged spellbook or a precious relic,
+## and a second dark relic. Each carries its terms: a curse as heavy as the
+## offer is strong, and a trial (scripts/items/death_bargain.gd).
 func ensure_dark_offers() -> void:
 	var data: Dictionary = Run.rooms[Run.current_room]
-	if data.has("offers"):
-		data.offers = ExpeditionBalance.sanitize_offers(data.offers,int(data.seed))
-		return
 	var gen = RandomNumberGenerator.new()
 	gen.seed = int(data.seed) + 6661 + party.loot_salt()
+	if data.has("offers"):
+		data.offers = ExpeditionBalance.sanitize_offers(data.offers,int(data.seed))
+		# Offers saved by the old dark store gain Death's terms.
+		if data.offers.any(func(offer): return not offer.has("curse")):
+			gen.seed = int(data.seed) + 6662 + party.loot_salt()
+			for offer in data.offers: DeathBargain.terms(offer, gen)
+		return
 	var dark: Array = Content.items.filter(func(item): return item.rarity == "dark")
 	var relic: Dictionary = dark[gen.randi_range(0, dark.size() - 1)]
 	var offers: Array = [{"kind": "item", "id": relic.id, "price": int(relic.cost)}]
@@ -1694,6 +1917,7 @@ func ensure_dark_offers() -> void:
 	var others: Array = dark.filter(func(item): return item.id != relic.id)
 	var second: Dictionary = others[gen.randi_range(0, others.size() - 1)]
 	offers.append({"kind": "item", "id": second.id, "price": int(second.cost)})
+	for offer in offers: DeathBargain.terms(offer, gen)
 	data.offers = offers
 	Run.save_run()
 

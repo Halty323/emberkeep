@@ -64,7 +64,10 @@ func report() -> Dictionary:
 		"foes": game.party.puppets.size() if run.active else 0, "down": game.party.downed, "drawn": drawn,
 		"open": is_instance_valid(game.room) and game.room.open, "rooms": run.rooms.size(), "coins": run.coins,
 		"pickups": game.pickups.size() if run.active else 0, "position": game.player.global_position if run.active and is_instance_valid(game.player) else Vector3.ZERO,
-		"in_menu": game.in_menu, "mode": game.ui.mode, "figures": figures()}
+		"in_menu": game.in_menu, "mode": game.ui.mode, "figures": figures(),
+		"trial": run.trial.duplicate(), "curses": run.curses.size(), "watching": game.trials.watched, "spectating": game.trials.spectating(),
+		"ghosts": game.party.members.keys().filter(func(id): return is_instance_valid(game.party.members[id]) and game.party.members[id].ghosted),
+		"refused": game.actions.perform({"type": "use_active", "event": "probe:%d" % Time.get_ticks_usec()}, game.player.owner_peer_id).get("reason", "") if run.active and is_instance_valid(game.player) and game.trials.spectating() else ""}
 
 ## The other players' figures as this guest sees them: id -> position.
 func figures() -> Dictionary:
@@ -107,6 +110,11 @@ func on_message(_from: int, kind: String, data) -> void:
 			var shot = game.spawn_shot(game.player.global_position + Vector3.UP * 1.3, game.fps.forward(), 3.0, 12.0, run.projectile_stats(), Color("8fd0f0"), true)
 			check(shot != null and shot.cosmetic, "a guest's own spell is drawn at once")
 			reply({"cast": shot.net_id if shot else 0})
+		"trial":
+			# Seals a bargain's trial here, as if at Death's altar.
+			run.hp = run.stats.max_hp
+			game.trials.begin(str(data.kind), {"id": "withering", "amount": -.12})
+			reply({"trial": run.trial.duplicate()})
 		"fall":
 			game.player_fell()
 			reply({"fell": game.party.downed})

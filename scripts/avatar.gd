@@ -41,6 +41,10 @@ var push := Vector3.ZERO
 var spin_angle = 0.0
 var burst_left = 0
 var burst_timer = 0.0
+# Relics that cast on their own: casts counted for the War Drum, and echoes
+# waiting to ring out (scripts/items/relic_powers.gd).
+var casts := 0
+var echoes: Array = []
 var burst_shot: Dictionary = {}
 
 func setup(owner_game: Node3D) -> void:
@@ -182,6 +186,7 @@ func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting:
 			burst_left -= 1
 			burst_timer = float(burst_shot.gap)
 			volley(burst_shot.weapon, burst_shot.stats, burst_shot.damage, burst_shot.tint)
+	if not echoes.is_empty(): RelicPowers.play_echoes(self, delta)
 	haste_time = maxf(0, haste_time - delta)
 	recoil = move_toward(recoil, 0.0, delta * 3.0)
 	if aim_input.length_squared() > .01:
@@ -281,13 +286,19 @@ func fire() -> void:
 		stats.burn = float(stats.get("burn", 0)) + .6
 	# A kindled weapon burns hotter still with every kindle level.
 	damage *= 1.0 + float(stats.get("kindled", 0)) * .12 * game.kindle_level()
+	# What the spell is (a flying spell, a ray, lightning, an eruption) and
+	# how a flying one looks; numbers, so a co-op guest draws it the same.
+	SpellForms.mark(stats, weapon)
 	if weapon.has("trail"): stats["trail_kind"] = weapon.trail
 	# Candlemaker, and a wax book's resonance: spells leave wax as they fly.
 	elif float(stats.get("candle", 0)) > 0 or (stats.get("element", "") == "wax" and float(stats.get("resonance", 0)) > 0): stats["trail_kind"] = "wax"
 	# Last Stand: below half health, spells pierce.
 	if Run.has_pairing("last_stand") and Run.hp <= Run.stats.max_hp / 2.0: stats.pierce = float(stats.get("pierce", 0)) + 1.0
+	damage *= RelicPowers.great_cast(self, stats)
 	release_sparks(damage, stats)
 	var count = volley(weapon, stats, damage, tint)
+	RelicPowers.queue_echoes(self, weapon, stats, damage, tint)
+	RelicPowers.call_meteor(self, stats, damage, shot_origin(), aim_direction)
 	if int(weapon.get("burst", 1)) > 1:
 		burst_left = int(weapon.burst) - 1
 		burst_timer = float(weapon.burst_gap)
@@ -307,7 +318,7 @@ func fire() -> void:
 	game.make_noise(global_position, 1.0)
 	fire_cooldown = maxf(.07, weapon.cooldown / (stats.rate + (stats.kill_haste if haste_time > 0 else 0)))
 	recoil = .17
-	Audio.play_sound("shoot", 1.0 + float(count) * .015)
+	SpellSounds.cast(stats, count)
 
 ## One volley of the weapon's pattern; returns how many shots left.
 func launch_shot(at: Vector3, travel: Vector3, power: float, speed: float, effects: Dictionary, tint: Color, friendly: bool):
@@ -341,12 +352,16 @@ func volley(weapon: Dictionary, stats: Dictionary, damage: float, tint: Color) -
 			var hit = get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(origin, at, 1 | PropVisuals.FURNITURE_LAYER))
 			if not hit.is_empty(): at = origin
 		launch_shot(at, direction, damage, speed_value, stats, tint, true)
+		# Phantom Veil: the phantoms beside you cast it too.
+		for offset in RelicPowers.phantoms(stats, aim_direction.cross(aim_up()).normalized()):
+			launch_shot(at + offset, direction, damage * RelicPowers.PHANTOM_SHARE, speed_value, stats, tint.lightened(.4), true)
+			if i == 0: Effects.play("muzzle", at + offset, tint.lightened(.4), -1, 1.0, aim_direction)
 	return count
 
 ## Caught sparks leave with the next shot as homing embers.
 func release_sparks(damage: float, stats: Dictionary) -> void:
 	if game.sparks <= 0: return
-	var spark_stats = stats.duplicate()
+	var spark_stats = SpellForms.flying(stats)
 	spark_stats.homing = maxf(float(spark_stats.get("homing", 0)), 5.0)
 	spark_stats.pierce = 0
 	for i in game.sparks:
@@ -371,8 +386,12 @@ func dash() -> void:
 		return
 	dash_direction = last_move
 	dash_time = DASH_TIME
-	dash_cooldown = 1.35 * (1.0 - clampf(Run.stats.dash_cd, 0, .75))
+	# Relics shorten the cooldown; Death's Heavy Chains lengthen it.
+	dash_cooldown = 1.35 * (1.0 - clampf(Run.stats.dash_cd, -1.0, .75))
 	invulnerability = .32
+	var trials = game.get("trials")
+	if trials and game.get("player") == self: trials.on_dash()
+	if game.get("player") == self: RelicPowers.quake(self)
 	Audio.play_sound("dash")
 	game.make_noise(global_position, 2.0)
 	Effects.ring_burst(game, global_position, Color("efd1a0"), 1.1)
@@ -392,6 +411,9 @@ func hurt(amount: float, source: Vector3) -> void:
 	if net: net.splash(self, amount, source)
 	if invulnerability > 0 or not Run.active or Run.has_flag("invulnerable") or NetHooks.downed(game):
 		return
+	# Watching a teammate's trial from the edge of the dark: untouchable.
+	var trials = game.get("trials")
+	if trials and trials.spectating(): return
 	# Relic guard refreshes each room and is spent first; wards persist.
 	if shield > 0 or Run.wards > 0:
 		if shield > 0:
