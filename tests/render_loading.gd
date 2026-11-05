@@ -42,7 +42,7 @@ func go() -> void:
 	game.fps.yaw = .8
 	for i in 8: await process_frame
 	if out != "": root.get_viewport().get_texture().get_image().save_png(out.path_join("play.png"))
-	check(game.ui.minimap_view.visible, "the minimap turns with the view in first person")
+	check(is_instance_valid(game.ui.minimap_ink) and game.ui.minimap_ink.is_visible_in_tree(), "the minimap turns with the view in first person")
 	# Climbing to the next floor loads it behind its own screen.
 	var run = game.get_node("/root/Run")
 	game.raise_stairs(false)

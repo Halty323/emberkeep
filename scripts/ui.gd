@@ -45,8 +45,6 @@ const LOADING_TIPS := ["Frost on a soaked foe freezes it solid.", "Some relics a
 	"Dash past an enemy ember to catch it as a spark.", "Foes standing in lantern light take more damage.",
 	"Water carries lightning to every foe standing in it.", "Fire meeting a chilled foe cracks it open."]
 # Where the map helpers draw: this control, or the turning minimap view.
-var canvas: CanvasItem
-var minimap_view: MinimapView
 var loading_title := "The tower stirs"
 var loading_progress := 0.0
 # Screens laid out against the edges rather than centred whole.
@@ -135,7 +133,6 @@ var floor_title_start = -100.0
 
 func setup(owner_game: Node3D) -> void:
 	game = owner_game
-	canvas = self
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	backdrop = ColorRect.new()
@@ -150,9 +147,6 @@ func setup(owner_game: Node3D) -> void:
 	content = Control.new()
 	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(content)
-	minimap_view = MinimapView.new()
-	add_child(minimap_view)
-	minimap_view.setup(self)
 	get_viewport().size_changed.connect(resize)
 	resize()
 	show_screen("menu")
@@ -971,15 +965,6 @@ func _process(delta: float) -> void:
 	update_surface_visibility()
 	sync_minimap()
 	queue_redraw()
-
-func place_minimap() -> void:
-	var on: bool = mode == "play" and game.first_person and Run.active and not game.in_menu and is_instance_valid(game.player)
-	minimap_view.visible = on
-	if not on: return
-	minimap_view.position = offset + (MINIMAP_AREA.position + Vector2(widen(), 0)) * scale_value
-	minimap_view.size = MINIMAP_AREA.size
-	minimap_view.scale = Vector2.ONE * scale_value
-	minimap_view.queue_redraw()
 
 func _input(event: InputEvent) -> void:
 	if game.first_person and game.in_menu and event.is_action_pressed("ui_cancel") and handle_title_back():
