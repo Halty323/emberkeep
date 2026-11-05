@@ -1,13 +1,19 @@
 shader_type spatial;
-render_mode unshaded, blend_mix, depth_draw_never, cull_disabled;
-// Soft turbulent fire card, viewed behind real logs
-// and an iron grate. No screen/depth reads or particle/light allocations.
+render_mode unshaded, blend_mix, depth_draw_never, cull_disabled, shadows_disabled;
+// Rising ribbons, feathered edges and a pale hot heart. World-space phase
+// keeps neighbouring fires from moving in lockstep. No screen/depth reads.
 uniform bool billboard = false;
+varying float phase;
 void vertex() {
+    phase = dot(MODEL_MATRIX[3].xyz, vec3(5.37, 8.13, 3.71));
     if (billboard) {
-        mat4 facing = mat4(vec4(INV_VIEW_MATRIX[0].xyz * length(MODEL_MATRIX[0].xyz),0.0),
-                           vec4(INV_VIEW_MATRIX[1].xyz * length(MODEL_MATRIX[1].xyz),0.0),
-                           vec4(INV_VIEW_MATRIX[2].xyz * length(MODEL_MATRIX[2].xyz),0.0),MODEL_MATRIX[3]);
+        // Fire stays upright when looking down into a brazier. A full
+        // camera-facing card used to lay the flame across its bowl.
+        vec3 right = normalize(vec3(INV_VIEW_MATRIX[0].x, 0.0, INV_VIEW_MATRIX[0].z));
+        vec3 up = vec3(0.0, 1.0, 0.0);
+        mat4 facing = mat4(vec4(right * length(MODEL_MATRIX[0].xyz),0.0),
+                           vec4(up * length(MODEL_MATRIX[1].xyz),0.0),
+                           vec4(cross(right, up) * length(MODEL_MATRIX[2].xyz),0.0),MODEL_MATRIX[3]);
         MODELVIEW_MATRIX = VIEW_MATRIX * facing;
     }
 }
@@ -16,19 +22,26 @@ float noise2(vec2 p) {
     vec2 i=floor(p); vec2 f=fract(p); f=f*f*(3.0-2.0*f);
     return mix(mix(hash21(i),hash21(i+vec2(1,0)),f.x),mix(hash21(i+vec2(0,1)),hash21(i+vec2(1,1)),f.x),f.y);
 }
+float flow_noise(vec2 p) {
+    return noise2(p)*.60 + noise2(p*2.03+vec2(13.1,7.9))*.28
+           + noise2(p*4.07+vec2(3.7,19.2))*.12;
+}
 void fragment() {
     vec2 p=vec2(UV.x*2.0-1.0,1.0-UV.y);
-    vec2 flow=vec2(p.x*3.4,p.y*4.3-TIME*1.8);
-    float turbulence=noise2(flow)*.65+noise2(flow*2.1+TIME*.3)*.35;
-    float bend=sin(p.y*5.0-TIME*2.1)*p.y*.1;
-    float width=mix(.8,.06,pow(p.y,.72));
-    float body=1.0-abs(p.x+bend)/max(.05,width);
-    float density=body-p.y*.25+(turbulence-.5)*p.y*.85;
-    float alpha=smoothstep(.0,.24,density)*smoothstep(.0,.06,p.y)*(1.0-smoothstep(.72,1.0,p.y));
-    float core=smoothstep(.12,.95,density)*(1.0-p.y*.6);
-    vec3 fire=mix(vec3(.82,.12,.012),vec3(1.0,.69,.19),core);
-    fire=mix(fire,vec3(1.0,.92,.64),core*core*.45);
+    float t=TIME*1.65+phase;
+    float rise=flow_noise(vec2(p.x*2.8+phase,p.y*5.5-t*2.2));
+    float curl=sin(p.y*7.5-t*2.0)*.13*p.y+(rise-.5)*.40*p.y;
+    float width=pow(max(0.0,1.0-p.y),.72)*(.51+.24*rise);
+    float edge=width-abs(p.x+curl);
+    float filaments=noise2(vec2(p.x*9.0+rise*2.0,p.y*3.0-t*3.0));
+    float density=edge+(filaments-.5)*(.05+p.y*.22);
+    float alpha=smoothstep(-.035,.12,density);
+    alpha*=smoothstep(0.0,.065,p.y)*(1.0-smoothstep(.78,1.0,p.y));
+    float core=smoothstep(.03,.38,edge)*(1.0-smoothstep(.2,.85,p.y));
+    float ribbon=smoothstep(.4,.85,filaments)*(1.0-core)*.18;
+    vec3 fire=mix(vec3(1.0,.24,.035),vec3(1.0,.69,.16),smoothstep(-.01,.24,density)+ribbon);
+    fire=mix(fire,vec3(1.0,.94,.70),core);
     ALBEDO=fire;
-    EMISSION=fire*1.7;
-    ALPHA=alpha;
+    EMISSION=fire*.85;
+    ALPHA=alpha*.94;
 }

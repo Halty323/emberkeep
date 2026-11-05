@@ -2,6 +2,8 @@
 set -euo pipefail
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 godot_bin="${GODOT_BIN:-godot}"
+# Source checkout and CI must remain complete without contacting art hosts.
+python3 "$project_dir/tools/import_paintings.py" --check
 if command -v rg >/dev/null 2>&1; then
     search_command=(rg -q)
 else
