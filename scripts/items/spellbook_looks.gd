@@ -9,6 +9,18 @@ extends RefCounted
 ## flames move.
 ## [part, kind, colour, variant]
 const LOOKS := {
+	"echo_bell": ["book", "charm", "d9c27a", "coin"],
+	"war_drum": ["arm", "bangle", "b0603a", ""],
+	"black_pearl": ["book", "gem", "3a3f52", ""],
+	"phantom_veil": ["arm", "wrap", "c8d0e8", ""],
+	"storm_crown": ["book", "sigil", "c4b8ff", ""],
+	"phoenix_feather": ["arm", "tattoo", "ff8a4a", ""],
+	"prism_lens": ["book", "inlay", "e8f8ff", ""],
+	"seismic_boots": ["arm", "bracer", "8a7a62", ""],
+	"spyglass": ["book", "stick", "b89a5a", ""],
+	"meteor_charm": ["book", "charm", "ffb070", "stone"],
+	"fractal_seed": ["book", "crust", "c8f0f5", "frost"],
+	"crimson_grail": ["arm", "ring", "b0303a", ""],
 	"warm_wax": ["book", "candle", "efe2c4", ""],
 	"quick_wick": ["arm", "bangle", "d9b15e", "spark"],
 	"soft_boots": ["arm", "wrap", "7f9fc4", ""],

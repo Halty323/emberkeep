@@ -32,7 +32,7 @@ const PULL_SPACING := .75
 # Foes keep their quarry unless another teammate is clearly closer.
 const TARGET_STICKINESS := 1.5
 # The cosmetic flight of a spell needs only these of its traits.
-const SHOT_KEYS := ["returning", "homing", "wave", "accel", "linger", "grow", "size", "range", "bounce", "pierce"]
+const SHOT_KEYS := ["returning", "homing", "wave", "accel", "linger", "grow", "size", "range", "bounce", "pierce", "ray", "smite", "erupt", "form", "anchor", "sky"]
 # Sounds a guest hears from the host's world; the rest are each player's own.
 const SHARED_SOUNDS := ["hit", "kill"]
 # Sights and sounds: sent unreliably, since a lost one is only a missed spark

@@ -499,4 +499,7 @@ func base_stats() -> Dictionary:
 		"kill_haste": 0.0, "low_hp": 0.0, "execute": 0.0,
 		"knockback": 1.0, "backshot": 0.0, "side_shot": 0.0,
 		"returning": 0.0, "wave": 0.0, "radial": 0.0, "heal_each_room": 0.0, "paint": 0.0,
-		"accel": 0.0, "linger": 0.0, "grow": 0.0, "fork": 0.0, "kindled": 0.0}
+		"accel": 0.0, "linger": 0.0, "grow": 0.0, "fork": 0.0, "kindled": 0.0,
+		# Relics that cast spells of their own (scripts/items/relic_powers.gd).
+		"echo": 0.0, "crescendo": 0.0, "vortex": 0.0, "phantom": 0.0, "thunder": 0.0, "phoenix": 0.0,
+		"prism": 0.0, "quake": 0.0, "focus": 0.0, "meteor": 0.0, "fractal": 0.0, "bloodlust": 0.0}

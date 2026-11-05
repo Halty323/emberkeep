@@ -23,7 +23,7 @@ Interact with the altar and the bargain screen opens, with Death still visible b
 
 **Its right hand: what you take.** Three offers, the same ones the dark store had:
 
-- one of the eight dark relics,
+- one of the nine dark relics,
 - a dark-forged spellbook (a third trait) or a precious relic,
 - a second dark relic.
 

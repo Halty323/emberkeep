@@ -22,6 +22,8 @@ var marker_visual: Node3D
 # Death, behind a dark altar not yet bargained with.
 var death_figure: DeathFigure
 var trials: DeathTrials
+# The Crimson Grail's kills this room.
+var bloodlust := 0
 var enemies: Array = []
 var shots: Array = []
 var pickups: Array = []
@@ -1043,6 +1045,7 @@ func saved_entry() -> Vector3:
 	return Vector3(0, 0, 2.0)
 
 func enter_room(spawn: Vector3, keep_view := false, walking_state: Dictionary = {}) -> void:
+	RelicPowers.room_left(self)
 	clean_room(keep_view,not walking_state.is_empty())
 	var data: Dictionary = Run.rooms[Run.current_room]
 	var first_visit: bool=not data.get("visited",false)
@@ -1394,6 +1397,7 @@ func on_enemy_killed(enemy: DungeonEnemy) -> void:
 
 ## Pairings this player carries that answer any foe falling.
 func kill_pairings(at: Vector3) -> void:
+	RelicPowers.on_kill(self, at)
 	if Run.has_pairing("frenzy"): Run.add_modifier("frenzy", 2.0, {"rate": 1.0})
 	if Run.has_pairing("last_stand") and Run.hp <= Run.stats.max_hp / 2.0: Run.heal(.5)
 	if Run.has_pairing("glass_cannon"):
@@ -1473,16 +1477,21 @@ func pickup_node(drop_id: String) -> DungeonPickup:
 func pickup_feedback(at: Vector3, definition: Dictionary) -> void:
 	Effects.play("pickup", at + Vector3(0, .35, 0), Color(definition.color))
 
-## The map remembers each floor cell the first time it is walked into and
-## scribbles it in. A safe room keeps it at once; in a fight, the room's own
-## save at the end keeps it.
+## The map takes in a whole room the moment the player steps into it, every
+## cell scribbled in together under one soft pass of the quill. A safe room
+## keeps it at once; in a fight, the room's own save at the end keeps it.
 func track_exploration() -> void:
 	var local = room.geometry.cell_at(Vector2(player.position.x, player.position.z))
 	if not room.geometry.cell_set.has(local): return
-	var cell: Vector2i = local + Run.room_anchor(Run.rooms[Run.current_room])
-	if not Run.uncover(cell): return
-	ui.scribble(cell)
-	Audio.play_sound("scribble", .92 + float(absi(hash(cell)) % 17) / 100.0)
+	var anchor: Vector2i = Run.room_anchor(Run.rooms[Run.current_room])
+	var fresh := false
+	for each in room.geometry.cells:
+		var cell: Vector2i = each + anchor
+		if Run.uncover(cell):
+			ui.scribble(cell)
+			fresh = true
+	if not fresh: return
+	Audio.play_sound("scribble", randf_range(.95, 1.03))
 	if room.open: Run.save_run()
 
 ## The room's stair (or stairwell) spot. Rooms generated before the stairs
