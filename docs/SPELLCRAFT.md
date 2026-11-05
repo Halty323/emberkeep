@@ -51,9 +51,9 @@ Every relic and pairing does something whatever the spellbook. Relics that shape
 
 Everything that answers a hit (statuses, reactions, splitting, bursting, chains, lifesteal, crits, Lucky Star, Icicle, Starfall) answers a ray's, a bolt's and an eruption's hits too.
 
-## Relics that cast
+## New relics
 
-Eleven new relics cast spells of their own, through the same path any spell takes, so they work with every spellbook and in co-op:
+Twelve new relics. Seven cast spells of their own (echoes, phantoms, lightning from above, prism rays, phoenix eruptions, dash quakes, falling stars) through the same path any spell takes, so they work with every spellbook and in co-op:
 
 | Relic | Rarity | What it does |
 | --- | --- | --- |
