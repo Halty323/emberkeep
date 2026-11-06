@@ -107,6 +107,7 @@ var jelly_owner := -1
 var fire_leaps := 0
 var mark_view: Node3D
 var ice_shell: MeshInstance3D
+const HEALTH_SCALE := 1.5
 static var pip_mesh: SphereMesh
 
 func setup(owner_game: Node3D, type: String, id: int) -> void:
@@ -123,6 +124,9 @@ func setup(owner_game: Node3D, type: String, id: int) -> void:
 	if ExpeditionBalance.active_new_run(): max_hp *= ExpeditionBalance.foe_health(Run.floor_number,boss)
 	# Combinations make players stronger; the upper floors answer.
 	max_hp *= Synergies.TOUGHNESS[clampi(Run.floor_number, 0, Synergies.TOUGHNESS.size() - 1)]
+	# Spells (and the relics that multiply them) hit hard: every foe and boss
+	# carries half again as much health to answer them.
+	max_hp *= HEALTH_SCALE
 	hp = max_hp
 	restless = Run.has_twist("restless")
 	speed = spec[1] * (1.0 + (Run.floor_number - 1) * .08) * (1.15 if restless else 1.0)

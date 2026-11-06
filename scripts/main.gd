@@ -232,6 +232,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif ui.mode == "painting": ui.close_painting()
 		elif ui.mode == "secret": ui.close_secret_code()
 		elif ui.mode == "bargain": close_reward()
+		elif ui.mode == "layout": ui.show_screen("settings")
 	elif event.is_action_pressed("map") and not in_menu and Run.active:
 		if ui.mode == "map": ui.close_subscreen()
 		elif is_playing(): ui.open_map("play")
@@ -377,7 +378,7 @@ func _physics_process(delta: float) -> void:
 		corridors.prepare()
 		fps.collect_look(delta)
 		aim = fps.shot_direction(fps.shot_origin())
-		shooting = ui.fire_touch >= 0 or (Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not ui.mouse_on_action and not fps.suppress_mouse_fire) or Input.get_joy_axis(0, JOY_AXIS_TRIGGER_RIGHT) > .25
+		shooting = ui.fire_touch >= 0 or ui.aiming_casts() or (Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not ui.mouse_on_action and not fps.suppress_mouse_fire) or Input.get_joy_axis(0, JOY_AXIS_TRIGGER_RIGHT) > .25
 	else:
 		if ui.right_vector.length() > .15:
 			aim = screen_direction(ui.right_vector)

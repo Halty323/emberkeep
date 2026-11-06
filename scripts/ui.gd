@@ -22,6 +22,9 @@ const ACTION_BUTTONS := {"dash": {"center": Vector2(973, 610), "radius": 48.0},
 	"bomb": {"center": Vector2(1032, 486), "radius": 38.0},
 	"fire": {"center": Vector2(1178, 552), "radius": 56.0},
 	"jump": {"center": Vector2(1178, 660), "radius": 48.0}}
+# The move stick rests here (left group) until a thumb takes it.
+const MOVE_REST := Vector2(140, 574)
+const MOVE_RADIUS := 66.0
 const MINIMAP_RECT := Rect2(1032, 16, 164, 120)
 const MINIMAP_AREA := Rect2(1040, 24, 148, 104)
 const PAUSE_RECT := Rect2(1204, 16, 60, 56)
@@ -103,6 +106,16 @@ var floating_numbers: Array[Dictionary] = []
 var left_touch = -1
 var right_touch = -1
 var left_origin = Vector2(140, 574)
+# The touch layout being arranged (mode "layout"): {control: [x, y, scale]},
+# the control chosen, and the one a finger is dragging and from where on it.
+var layout_draft: Dictionary = {}
+var layout_selected := ""
+var layout_dragging := ""
+var layout_grab := Vector2.ZERO
+var layout_finger := -1
+# A brief glow on the crosshair's dash arc when the dash comes back.
+var dash_ready_glow := 0.0
+var dash_was_cooling := false
 var right_origin = Vector2(1112, 574)
 var left_vector = Vector2.ZERO
 var right_vector = Vector2.ZERO
@@ -248,6 +261,7 @@ func show_screen(screen: String) -> void:
 	boss_surface = null
 	backdrop.color = Color(.025, .035, .035, .74) if mode not in TITLE_MODES else Color(0, 0, 0, 0)
 	if mode == "loading": backdrop.color = Color(.012, .016, .016, 1)
+	if mode == "layout": backdrop.color = Color(.02, .03, .03, .5)
 	# Death stays in view between its two hands.
 	if mode == "bargain": backdrop.color = Color(.02, .01, .03, .38)
 	place_layers()
@@ -294,6 +308,7 @@ func show_screen(screen: String) -> void:
 		"journal": build_journal()
 		"painting": button("← Back", Rect2(812, 598, 360, 58), func(): close_painting())
 		"settings": build_settings()
+		"layout": build_layout()
 		"dead", "won":
 			if Session.online and Session.hosting:
 				button("Climb again together", Rect2(430, 457, 420, 62), func(): game.party.regroup(), true)
@@ -815,6 +830,8 @@ func build_settings() -> void:
 	var rows = settings_rows(settings_page)
 	for i in rows.size():
 		setting_row(Rect2(330, 218 + i * 61, 620, 54), rows[i])
+	if settings_page == "controls":
+		button("Arrange touch controls", Rect2(330, 218 + rows.size() * 61, 620, 54), func(): open_layout())
 	button("← Back", Rect2(396, 592, 488, 58), func(): close_subscreen())
 
 func open_settings_page(page: String) -> void:
@@ -859,7 +876,8 @@ func settings_rows(page: String) -> Array:
 				["ssao", "SSAO", Settings.values.ssao.capitalize() if Settings.ssao_supported() else "Off · device safe mode", Settings.ssao_supported()],
 				["adaptive_resolution", "Adaptive resolution", on_off("adaptive_resolution") if Settings.adaptive_supported() else "Phones only", Settings.adaptive_supported()]]
 	return [["sound", "Sound effects", on_off("sound"), true], ["music", "Ambient music", on_off("music"), true],
-		["shake", "Camera shake", on_off("shake"), true], ["touch", "Touch controls", on_off("touch"), true]]
+		["shake", "Camera shake", on_off("shake"), true], ["touch", "Touch controls", on_off("touch"), true],
+		["cast_while_aiming", "Cast while dragging to aim (touch)", on_off("cast_while_aiming"), true]]
 
 func setting_row(rect: Rect2, row: Array) -> SettingRow:
 	var control = SettingRow.new()
@@ -962,6 +980,7 @@ func _process(delta: float) -> void:
 		fps_frames = 0
 		fps_time = 0.0
 	toast_time = maxf(0, toast_time - delta)
+	dash_ready_glow = maxf(0.0, dash_ready_glow - delta)
 	for cell in scribbles.keys():
 		if elapsed_ui - scribbles[cell] > SCRIBBLE_TIME: scribbles.erase(cell)
 	for number in floating_numbers:
@@ -1001,6 +1020,9 @@ func _input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
 		mouse_on_action = false
+	if mode == "layout":
+		layout_input(event)
+		return
 	if mode != "play":
 		return
 	# Emulated mouse events from touches were already handled as touches.
@@ -1026,10 +1048,12 @@ func _input(event: InputEvent) -> void:
 			elif INTERACTION_RECT.has_point(from_middle(p)) and game.interaction_text != "":
 				game.interact()
 				get_viewport().set_input_as_handled()
-			elif p.y > 330 and p.x < 550 and left_touch == -1:
+			elif left_touch == -1 and ((p.y > 330 and p.x < 550) or p.distance_to(control_spot("move").center) < control_spot("move").radius * 1.4):
 				left_touch = event.index
-				left_origin = Vector2(clampf(p.x, 90, 420), clampf(p.y, 400, 620))
-				left_vector = (p - left_origin).limit_length(58) / 58.0
+				# The stick floats to the thumb, near where the layout rests it.
+				var rest: Vector2 = control_spot("move").center
+				left_origin = Vector2(clampf(p.x, minf(rest.x, 90), maxf(rest.x, 420)), clampf(p.y, minf(rest.y, 400), maxf(rest.y, 620)))
+				left_vector = (p - left_origin).limit_length(stick_reach()) / stick_reach()
 				get_viewport().set_input_as_handled()
 			elif right_touch == -1 and ((game.first_person and right.y > 145 and right.x > 600) or (not game.first_person and right.y > 330 and right.x > 730)):
 				right_touch = event.index
@@ -1041,6 +1065,7 @@ func _input(event: InputEvent) -> void:
 			if event.index == left_touch:
 				left_touch = -1
 				left_vector = Vector2.ZERO
+				left_origin = control_spot("move").center
 				get_viewport().set_input_as_handled()
 			if event.index == right_touch:
 				right_touch = -1
@@ -1049,7 +1074,7 @@ func _input(event: InputEvent) -> void:
 	elif event is InputEventScreenDrag:
 		var p = local_point(event.position)
 		if event.index == left_touch:
-			left_vector = (p - left_origin).limit_length(58) / 58.0
+			left_vector = (p - left_origin).limit_length(stick_reach()) / stick_reach()
 			get_viewport().set_input_as_handled()
 		# Dragging FIRE also looks, supporting ordinary two-thumb play while
 		# preserving a separate swipe finger for players who prefer it.
@@ -1071,9 +1096,120 @@ func touch_hud_visible() -> bool:
 func action_at(point: Vector2) -> String:
 	for action in ACTION_BUTTONS:
 		if action in ["fire", "jump"] and not game.first_person: continue
-		if point.distance_to(ACTION_BUTTONS[action].center) < ACTION_BUTTONS[action].radius:
+		var spot := control_spot(action)
+		if point.distance_to(spot.center) < spot.radius:
 			return action
 	return ""
+
+## Where a touch control sits and how large it is: the player's own layout
+## (Settings "touch_layout", or the one being arranged) over the defaults.
+## "move" is in the left group's layout, the rest in the right group's.
+func control_spot(control: String) -> Dictionary:
+	var base: Dictionary = {"center": MOVE_REST, "radius": MOVE_RADIUS} if control == "move" else ACTION_BUTTONS[control]
+	var layout: Dictionary = layout_draft if mode == "layout" else Settings.values.get("touch_layout", {})
+	var saved = layout.get(control)
+	if saved is Array and saved.size() == 3:
+		return {"center": Vector2(float(saved[0]), float(saved[1])), "radius": float(base.radius) * float(saved[2]), "scale": float(saved[2])}
+	return {"center": base.center, "radius": base.radius, "scale": 1.0}
+
+func stick_reach() -> float:
+	return 58.0 * float(control_spot("move").scale)
+
+## Dragging to look also casts, unless switched off.
+func aiming_casts() -> bool:
+	return game.first_person and right_touch >= 0 and bool(Settings.values.get("cast_while_aiming", true))
+
+# ---------------------------------------------------------------- arranging touch controls
+
+func open_layout() -> void:
+	layout_draft = Settings.values.get("touch_layout", {}).duplicate(true)
+	layout_selected = ""
+	layout_dragging = ""
+	show_screen("layout")
+
+func build_layout() -> void:
+	button("Smaller", Rect2(330, 18, 140, 50), func(): resize_selected(-.1))
+	button("Larger", Rect2(480, 18, 140, 50), func(): resize_selected(.1))
+	button("Reset", Rect2(630, 18, 140, 50), func():
+		layout_draft = {}
+		layout_selected = ""
+		queue_redraw())
+	button("Done", Rect2(780, 18, 170, 50), func():
+		Settings.set_value("touch_layout", layout_draft)
+		show_screen("settings"), true)
+
+func resize_selected(step: float) -> void:
+	if layout_selected == "": return
+	var spot := control_spot(layout_selected)
+	layout_draft[layout_selected] = [spot.center.x, spot.center.y, clampf(float(spot.scale) + step, .6, 1.6)]
+	queue_redraw()
+
+## A control's point in its own group, from a screen point.
+func layout_point(control: String, screen: Vector2) -> Vector2:
+	var p := local_point(screen)
+	return p if control == "move" else from_right(p)
+
+func layout_input(event: InputEvent) -> void:
+	# Touches arrive as touches; emulated mouse copies of them are ignored.
+	if (event is InputEventMouseButton or event is InputEventMouseMotion) and event.device == InputEvent.DEVICE_ID_EMULATION: return
+	var pressed := false
+	var released := false
+	var finger := 0
+	var at := Vector2.ZERO
+	if event is InputEventScreenTouch:
+		pressed = event.pressed
+		released = not event.pressed
+		finger = event.index
+		at = event.position
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		pressed = event.pressed
+		released = not event.pressed
+		finger = -2
+		at = event.position
+	elif event is InputEventScreenDrag or (event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_MASK_LEFT):
+		finger = event.index if event is InputEventScreenDrag else -2
+		if layout_dragging != "" and finger == layout_finger:
+			var moved := layout_point(layout_dragging, event.position) + layout_grab
+			var spot := control_spot(layout_dragging)
+			layout_draft[layout_dragging] = [clampf(moved.x, 30.0 if layout_dragging == "move" else -300.0, 1250.0), clampf(moved.y, 60.0, 700.0), spot.scale]
+			queue_redraw()
+			get_viewport().set_input_as_handled()
+		return
+	else:
+		return
+	if pressed:
+		var best := ""
+		var best_gap := INF
+		for control in Settings.TOUCH_CONTROLS:
+			var spot := control_spot(control)
+			var gap: float = layout_point(control, at).distance_to(spot.center)
+			if gap < float(spot.radius) * 1.15 and gap < best_gap:
+				best = control
+				best_gap = gap
+		if best == "": return
+		layout_selected = best
+		layout_dragging = best
+		layout_finger = finger
+		layout_grab = control_spot(best).center - layout_point(best, at)
+		queue_redraw()
+		get_viewport().set_input_as_handled()
+	elif released and finger == layout_finger:
+		layout_dragging = ""
+		layout_finger = -1
+
+func draw_layout() -> void:
+	anchor(widen() / 2.0)
+	centered("Drag a control to move it. Choose one, then make it smaller or larger.", 640, 104, 18, INK, bold)
+	centered("Fire, jump and the move stick are for first-person play.", 640, 130, 15, MUTED)
+	anchor(0)
+	var move := control_spot("move")
+	draw_stick(move.center, Vector2.ZERO, "MOVE", layout_selected == "move", float(move.scale))
+	if layout_selected == "move": draw_arc(move.center, float(move.radius) + 6, 0, TAU, 48, GOLD, 3, true)
+	anchor(widen())
+	draw_touch_buttons(true)
+	if layout_selected != "" and layout_selected != "move":
+		var spot := control_spot(layout_selected)
+		draw_arc(spot.center, float(spot.radius) + 6, 0, TAU, 48, GOLD, 3, true)
 
 func trigger_action(action: String) -> void:
 	match action:
@@ -1127,10 +1263,11 @@ func _draw() -> void:
 			centered(secret_feedback, 640, 401, 17, Color("efbd9f"))
 		"reward": draw_rewards()
 		"bargain": draw_bargain()
+		"layout": draw_layout()
 		"settings":
 			hearth_emblem(Vector2(640, 76), 11)
 			centered("Make yourself at home", 640, 134, 32, INK, heading)
-			draw_multiline_string(body, Vector2(340, 546), SETTINGS_NOTES[settings_page], HORIZONTAL_ALIGNMENT_CENTER, 600, 17, 2, MUTED)
+			if settings_page != "controls": draw_multiline_string(body, Vector2(340, 546), SETTINGS_NOTES[settings_page], HORIZONTAL_ALIGNMENT_CENTER, 600, 17, 2, MUTED)
 		"journal":
 			match journal_tab:
 				"relics": draw_journal()
@@ -1257,8 +1394,26 @@ func draw_hud() -> void:
 			draw_arc(aim_center, 78, angle - .35, angle + .35, 14, Color(1, .42, .28, game.fps.damage_time), 3.5)
 		for side in [-1, 1]:
 			draw_line(aim_center + Vector2(side * 7, 0), aim_center + Vector2(side * 12, 0), GOLD, 1.5)
+		draw_dash_arc(aim_center)
 	anchor(widen())
 	draw_hud_right()
+
+## The dash's recharge as a small arc under the crosshair, where a thumb on
+## the DASH button never hides it; it glows once as the dash comes back.
+func draw_dash_arc(aim_center: Vector2) -> void:
+	if not is_instance_valid(game.player): return
+	var cooling: bool = game.player.dash_cooldown > 0
+	if dash_was_cooling and not cooling: dash_ready_glow = .35
+	dash_was_cooling = cooling
+	var start := PI * .2
+	var sweep := PI * .6
+	if cooling:
+		var back := 1.0 - clampf(game.player.dash_cooldown / maxf(.01, float(game.player.dash_cooldown_full)), 0.0, 1.0)
+		draw_arc(aim_center, 22, start, start + sweep, 20, Color(.05, .06, .05, .5), 4.5, true)
+		draw_arc(aim_center, 22, start, start + sweep, 20, Color(MUTED, .5), 3.0, true)
+		draw_arc(aim_center, 22, start + sweep * (1.0 - back), start + sweep, 20, Color(GOLD, .95), 3.0, true)
+	elif dash_ready_glow > 0:
+		draw_arc(aim_center, 22, start, start + sweep, 20, Color(GOLD, dash_ready_glow / .35), 3.5, true)
 
 ## One small slab: health, resources, weapon and held item; relics beneath.
 func draw_hud_left() -> void:
@@ -1299,7 +1454,7 @@ func draw_hud_left() -> void:
 		text("WASD move · Mouse aim/cast · Space jump · Shift dash · E interact" if game.first_person else "WASD move · Mouse cast · Space dash · F item · B bomb", Vector2(28, 668), 15, MUTED)
 	text("SEED %d" % Run.seed_value, Vector2(28, 697), 13, MUTED)
 	if touch_hud_visible():
-		draw_stick(left_origin, left_vector, "MOVE", left_touch >= 0)
+		draw_stick(left_origin if left_touch >= 0 else control_spot("move").center, left_vector, "MOVE", left_touch >= 0, float(control_spot("move").scale))
 
 ## The boss's plate while it fights, the room's state and any interaction.
 ## The kindle as three small flames, lit one by one, and caught sparks as
@@ -1343,20 +1498,26 @@ func draw_hud_right() -> void:
 	draw_minimap()
 	text("%d:%02d" % [int(Run.elapsed) / 60, int(Run.elapsed) % 60], Vector2(1196, 697), 15, MUTED)
 	if not touch_hud_visible(): return
-	if game.first_person:
-		draw_action_ring("fire", 1.0, GOLD)
-		centered("CAST", 1178, 558, 18, GOLD, bold)
-		draw_action_ring("jump", 1.0, GOLD)
-		centered("JUMP", 1178, 666, 15, GOLD, bold)
-	else: draw_stick(right_origin, right_vector, "AIM + CAST", right_touch >= 0)
-	var ready: bool = game.player and game.player.dash_cooldown <= 0
+	if not game.first_person: draw_stick(right_origin, right_vector, "AIM + CAST", right_touch >= 0)
+	draw_touch_buttons(false)
+
+## The action buttons where the layout puts them (all of them while arranging).
+func draw_touch_buttons(arranging: bool) -> void:
+	if game.first_person or arranging:
+		for action in ["fire", "jump"]:
+			var spot := control_spot(action)
+			draw_action_ring(action, 1.0, GOLD)
+			centered("CAST" if action == "fire" else "JUMP", spot.center.x, spot.center.y + 6, 18 if action == "fire" else 15, GOLD, bold)
+	var ready: bool = arranging or (game.player and game.player.dash_cooldown <= 0)
+	var dash := control_spot("dash")
 	draw_action_ring("dash", 1.0 if ready else 0.0, GOLD if ready else MUTED)
-	centered("DASH" if ready else "%.1f" % game.player.dash_cooldown, DASH_CENTER.x, DASH_CENTER.y + 7, 18, GOLD if ready else MUTED, bold)
+	centered("DASH" if ready else "%.1f" % game.player.dash_cooldown, dash.center.x, dash.center.y + 7, 18, GOLD if ready else MUTED, bold)
 	draw_active_button()
-	var bomb: Dictionary = ACTION_BUTTONS.bomb
-	draw_action_ring("bomb", 1.0 if Run.bombs > 0 else 0.0, GOLD if Run.bombs > 0 else MUTED)
+	var bomb := control_spot("bomb")
+	var have_bombs: bool = arranging or Run.bombs > 0
+	draw_action_ring("bomb", 1.0 if have_bombs else 0.0, GOLD if have_bombs else MUTED)
 	resource_icon("bomb", bomb.center + Vector2(0, -8))
-	centered("×%d" % Run.bombs, bomb.center.x, bomb.center.y + 22, 15, INK if Run.bombs > 0 else MUTED, bold)
+	centered("×%d" % Run.bombs, bomb.center.x, bomb.center.y + 22, 15, INK if have_bombs else MUTED, bold)
 
 func right_text(value: String, at: Vector2, size_value := 18, color := INK, font: Font = null) -> void:
 	var f = font if font else body
@@ -1454,7 +1615,7 @@ func draw_active_line() -> void:
 	right_text(status, Vector2(HUD_RECT.end.x - 14, 119), 14, GOLD if state.remaining <= 0 else MUTED, bold)
 
 func draw_action_ring(action: String, fraction: float, color: Color) -> void:
-	var button_region: Dictionary = ACTION_BUTTONS[action]
+	var button_region: Dictionary = control_spot(action)
 	var center: Vector2 = button_region.center
 	var radius: float = button_region.radius
 	draw_circle(center + Vector2(0, 4), radius, Color(.02, .03, .03, .7))
@@ -1465,7 +1626,7 @@ func draw_action_ring(action: String, fraction: float, color: Color) -> void:
 
 ## Item icon, cooldown ring and a seconds readout while recharging.
 func draw_active_button() -> void:
-	var center: Vector2 = ACTION_BUTTONS.active.center
+	var center: Vector2 = control_spot("active").center
 	var state = active_state()
 	if state.is_empty():
 		draw_action_ring("active", 0.0, MUTED)
@@ -1476,15 +1637,15 @@ func draw_active_button() -> void:
 	diamond(center + Vector2(0, -6), 13, Color(state.definition.color), ready)
 	centered("USE" if ready else "%d" % ceili(state.remaining), center.x, center.y + 25, 15, GOLD if ready else INK, bold)
 
-func draw_stick(at: Vector2, value: Vector2, label: String, active_touch: bool) -> void:
-	draw_circle(at + Vector2(0, 4), 66, Color(.02, .03, .025, .35))
-	draw_circle(at, 66, Color(.16, .19, .16, .48))
-	draw_arc(at, 66, 0, TAU, 48, Color(GOLD, .55 if active_touch else .3), 2, true)
-	draw_arc(at, 59, 0, TAU, 48, Color(.06, .08, .065, .6), 2, true)
-	draw_circle(at + value * 48 + Vector2(0, 3), 28, Color(.02, .03, .02, .45))
-	draw_circle(at + value * 48, 28, Color(.65, .57, .39, .7 if active_touch else .4))
-	draw_arc(at + value * 48, 27, PI, TAU, 24, Color(GOLD, .65), 2, true)
-	centered(label, at.x, at.y + 91, 14, Color(INK, .8), bold)
+func draw_stick(at: Vector2, value: Vector2, label: String, active_touch: bool, size := 1.0) -> void:
+	draw_circle(at + Vector2(0, 4), 66 * size, Color(.02, .03, .025, .35))
+	draw_circle(at, 66 * size, Color(.16, .19, .16, .48))
+	draw_arc(at, 66 * size, 0, TAU, 48, Color(GOLD, .55 if active_touch else .3), 2, true)
+	draw_arc(at, 59 * size, 0, TAU, 48, Color(.06, .08, .065, .6), 2, true)
+	draw_circle(at + value * 48 * size + Vector2(0, 3), 28 * size, Color(.02, .03, .02, .45))
+	draw_circle(at + value * 48 * size, 28 * size, Color(.65, .57, .39, .7 if active_touch else .4))
+	draw_arc(at + value * 48 * size, 27 * size, PI, TAU, 24, Color(GOLD, .65), 2, true)
+	centered(label, at.x, at.y + 91 * size, 14, Color(INK, .8), bold)
 
 func draw_minimap() -> void:
 	# The first-person ink is a clipped child canvas so only the map turns;

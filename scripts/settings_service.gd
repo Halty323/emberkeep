@@ -17,7 +17,12 @@ const DEFAULTS := {"render_scale": 1.0, "fps_limit": 60, "vsync": true, "show_fp
 	# Opt out of a device's 3D pixel budget (PowerVR phones): sharper, slower.
 	"full_resolution": false,
 	# Phones: draw the dungeon smaller while the frame rate is falling short.
-	"adaptive_resolution": true}
+	"adaptive_resolution": true,
+	# Touch: dragging to look also casts; and where each touch control sits
+	# and how large it is ({control: [x, y, scale]}, empty for the defaults).
+	"cast_while_aiming": true, "touch_layout": {}}
+# Touch controls a layout may move and resize.
+const TOUCH_CONTROLS := ["move", "fire", "jump", "dash", "active", "bomb"]
 # Preferences previously stored in profile.json, migrated once.
 const LEGACY_KEYS := {"sound": "sound", "music": "music", "shake": "shake", "touch": "touch", "quality": "shadows"}
 # Provisional active-room totals; tune on real devices before changing.
@@ -77,6 +82,15 @@ func validate(key: String, value) -> Variant:
 			return value if value is String and value in DETAIL_LEVELS else null
 		"ssao":
 			return value if value is String and value in SSAO_LEVELS else null
+		"touch_layout":
+			if not value is Dictionary: return null
+			var layout := {}
+			for control in value:
+				var spot = value[control]
+				if not str(control) in TOUCH_CONTROLS or not spot is Array or spot.size() != 3: continue
+				if not spot.all(func(number): return (number is int or number is float) and is_finite(float(number))): continue
+				layout[str(control)] = [clampf(float(spot[0]), -400.0, 1680.0), clampf(float(spot[1]), 0.0, 720.0), clampf(float(spot[2]), .6, 1.6)]
+			return layout
 		_:
 			return value if value is bool else null
 

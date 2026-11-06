@@ -381,6 +381,9 @@ func show_flame(delta: float) -> void:
 		var angle = game.sim_time * 3.0 + TAU * i / 3.0
 		spark_meshes[i].position = Vector3(cos(angle) * .55, 1.45 + sin(game.sim_time * 5.0 + i) * .06, sin(angle) * .55)
 
+# How long the last dash takes to return, for its recharge ring.
+var dash_cooldown_full := 1.0
+
 func dash() -> void:
 	if dash_cooldown > 0 or dash_time > 0:
 		return
@@ -388,6 +391,7 @@ func dash() -> void:
 	dash_time = DASH_TIME
 	# Relics shorten the cooldown; Death's Heavy Chains lengthen it.
 	dash_cooldown = 1.35 * (1.0 - clampf(Run.stats.dash_cd, -1.0, .75))
+	dash_cooldown_full = dash_cooldown
 	invulnerability = .32
 	var trials = game.get("trials")
 	if trials and game.get("player") == self: trials.on_dash()
