@@ -94,7 +94,8 @@ func go() -> void:
 	clear()
 	foes()
 	cast(find(func(w): return w.get("archetype", "") == "lightning"))
-	await step(1)
+	# Lightning gathers for a breath before it strikes.
+	await step(9)
 	shot(out, "lightning")
 	clear()
 	for element in ["ember", "frost", "radiance", "tide"]:

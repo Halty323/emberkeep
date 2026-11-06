@@ -319,6 +319,7 @@ func fire() -> void:
 	fire_cooldown = maxf(.07, weapon.cooldown / (stats.rate + (stats.kill_haste if haste_time > 0 else 0)))
 	recoil = .17
 	SpellSounds.cast(stats, count)
+	SpellFx.cast(game, stats, shot_origin(), aim_direction)
 
 ## One volley of the weapon's pattern; returns how many shots left.
 func launch_shot(at: Vector3, travel: Vector3, power: float, speed: float, effects: Dictionary, tint: Color, friendly: bool):

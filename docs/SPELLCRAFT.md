@@ -86,6 +86,15 @@ Sounds where something lands or rises are placed in the room. Each player's devi
 
 Every kind of spellbook also breaks crates and barrels: lightning that strikes no foe breaks what it strikes, and an eruption breaks what stands over its rune.
 
+## Warps
+
+Every spellbook also marks the frame and the floor, in two layers:
+
+- Warps on the whole frame (`scripts/graphics/screen_fx.gd`, drawn by `shaders/post.gdshader`): ember and wax set the air shimmering, frost creeps in from the edges, storm and glass split the colours, radiance flashes, venom and the Black Pearl twist the frame in a swirl, glass and tide send a shockwave bending through it. A ray splits the colours as it fires and the air ripples along its path; lightning flashes, tears the colours and kicks the frame where it lands (harder from the sky); each eruption rises its own way (flame shimmers, ice frosts, skyfall flashes, bubbles swirl, a meteor does all of it). These need the full post pass: desktops and most phones show them, the PowerVR safe path skips them quietly.
+- Shockwave rings racing over the floor where spells land, strike and rise (`shaders/spell_wave.gdshader`), drawn by every renderer, PowerVR included.
+
+Frame warps answer only what lands close in front of the eye, and each element's landing mark comes at most every eighth of a second, so a storm of spells stays readable.
+
 ## Compatibility
 
 Forged ids now carry version 2. Version 1 ids (older saves, shops and the dark store's offers in old saves) still rebuild exactly as they were. Lances are no longer named "Ray" or "Beam" in version 2, since rays exist.
@@ -100,6 +109,7 @@ In co-op, a guest's rays, lightning and eruptions are cast by the host like any 
 - `scripts/items/spell_shapes.gd`: beams, bolts, ground runes, falling stars and what each element raises.
 - `scripts/items/relic_powers.gd`: the relics that cast spells of their own.
 - `scripts/items/spell_sounds.gd`: which sound a spell makes and when; `scripts/spell_audio.gd`: how each is synthesised.
-- `shaders/shot_beam.gdshader`, `shaders/spell_rune.gdshader`, and the looks' halos in `shaders/shot_glow.gdshader`.
+- `scripts/items/spell_fx.gd`: which warp and ring each element, kind and eruption makes.
+- `shaders/shot_beam.gdshader`, `shaders/spell_wave.gdshader`, `shaders/spell_rune.gdshader`, and the looks' halos in `shaders/shot_glow.gdshader`.
 
 `tests/tower.gd` checks that each kind comes up a quarter of the time in starters and in shops, that every element, trait and look suits its spell (starters, shop and dark-forged spellbooks), that version 1 ids rebuild unchanged, that a ray, lightning and an eruption each strike a foe ahead, that every new relic's power works with every kind of spellbook (phantoms, echoes, falling stars and lightning from above for all four), and the per-kind meanings (piercing and ricochet lightning, eruption fissures and returns, lingering rays). `tests/spell_props.gd` breaks a crate or barrel with each kind of spellbook in a real room and renders every spell sound (real signal, no clipping, all in time). `tests/render_spells.gd` is an opt-in capture; set `EMBERKEEP_SPELLS_CAPTURE`.

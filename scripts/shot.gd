@@ -187,9 +187,14 @@ func _process(delta: float) -> void:
 		# Its pieces play out; once it has struck and they are done, it goes.
 		if not SpellShapes.animate(self, delta) and not alive: queue_free()
 		return
+	# Rings a flying spell left where it landed play out after it is gone.
+	var marks := not fx.is_empty() and SpellShapes.animate(self, delta)
 	if vanish >= 0:
 		vanish += delta / VANISH
 		if vanish >= 1.0:
+			if marks:
+				for light in lights: light.visible = false
+				return
 			queue_free()
 			return
 	elif appear < 1.0:
@@ -347,6 +352,7 @@ func update_sim(delta: float) -> void:
 		else:
 			if game.first_person and not hit.is_empty(): global_position = hit.position
 			Effects.play("impact", global_position, tint)
+			if friendly and mode == "": SpellFx.impact(self, global_position)
 			splash()
 			finish()
 			return
@@ -430,6 +436,7 @@ func fork() -> void:
 func hit_enemy(enemy: DungeonEnemy) -> void:
 	hit_ids[enemy.entity_id] = true
 	splash()
+	if mode == "": SpellFx.impact(self, enemy.global_position + Vector3.UP * .6)
 	var critical = Run.rng.randf() < float(stats.get("crit", .05))
 	# Spyglass: the farther off the foe, the harder it lands (Deadeye: always critical from afar).
 	var distance := RelicPowers.reach(self, enemy) if float(stats.get("focus", 0)) > 0 or float(stats.get("deadeye", 0)) > 0 else 0.0
@@ -656,6 +663,7 @@ func trace_ray() -> void:
 			heading = direction
 	if global_position.distance_to(path.back()) > .01: path.append(global_position)
 	SpellShapes.ray(self, path, tint, float(stats.get("size", 1)), 1.3 if hold_linger > 0 else .0)
+	SpellFx.beam(self, path)
 	if not cosmetic: lay_trail(path)
 	if hold_linger > 0 and not cosmetic:
 		hold_path = path
@@ -720,6 +728,7 @@ func strike() -> void:
 	global_position = end
 	Effects.play("impact", end, tint)
 	SpellSounds.crack(self, end)
+	SpellFx.strike(self, end)
 	lay_trail([from, end])
 	if cosmetic:
 		remove()
@@ -927,6 +936,7 @@ func rise() -> void:
 	gen.randomize()
 	SpellShapes.erupt(self, center, erupt_radius, element, tint, gen)
 	SpellSounds.rise(self, center, element)
+	SpellFx.rise(self, center, element, erupt_radius)
 	Effects.play("impact", center + Vector3.UP * .3, tint, 14, 1.4)
 	if cosmetic: return
 	game.make_noise(center, 1.6)

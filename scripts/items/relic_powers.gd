@@ -123,7 +123,9 @@ static func on_hit(shot: Node, enemy: Node3D, power: float) -> void:
 			if gap.length() > 3.4 or gap.length() < .3: continue
 			foe.shove(gap.normalized() * minf(7.0, gap.length() * 3.0))
 			pulled += 1
-		if pulled > 0: Effects.ring_burst(game, at, Color("8a7ae0"), 1.4)
+		if pulled > 0:
+			Effects.ring_burst(game, at, Color("8a7ae0"), 1.4)
+			ScreenFx.swirl(at + Vector3.UP * .6, 3.4, 2.0, .6)
 		if pulled >= 3 and float(stats.get("horizon", 0)) > 0:
 			game.blast(at + Vector3.UP * .5, 2.4, power * 1.2, true, null)
 			game.reaction_word(at + Vector3.UP * 1.8, "p:event_horizon")

@@ -12,6 +12,12 @@ uniform vec4 waves[4];
 // xy: centre in screen UV; z: radius in screen heights; w: strength.
 uniform vec4 heat[6];
 uniform float aberration = 0.0;
+// Spells' marks on the frame (scripts/items/spell_fx.gd): swirls that twist
+// it round a point (x, y, reach, turn), a flash of colour (rgb, strength),
+// and frost creeping in from the edges.
+uniform vec4 swirls[2];
+uniform vec4 flash = vec4(0.0);
+uniform float chill = 0.0;
 uniform float grain = 0.025;
 uniform vec3 lift = vec3(0.0);
 uniform vec3 gain = vec3(1.0);
@@ -22,6 +28,17 @@ float hash(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * 0.1031);
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.x + p3.y) * p3.z);
+}
+
+float soft_noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
 void fragment() {
@@ -46,6 +63,17 @@ void fragment() {
         float near = 1.0 - smoothstep(0.0, h.z, length(d));
         bend += vec2(sin(uv.y * 140.0 + TIME * 7.0 + float(i) * 2.1), cos(uv.x * 110.0 + TIME * 5.3 + float(i))) * 0.0022 * h.w * near;
     }
+    for (int i = 0; i < 2; i++) {
+        vec4 s = swirls[i];
+        if (s.w == 0.0) continue;
+        vec2 d = (uv - s.xy) * scale;
+        float dist = length(d);
+        if (dist >= s.z) continue;
+        float pull = 1.0 - dist / s.z;
+        float turn = s.w * pull * pull;
+        vec2 twisted = vec2(d.x * cos(turn) - d.y * sin(turn), d.x * sin(turn) + d.y * cos(turn));
+        bend += (twisted - d) / scale;
+    }
     uv += bend;
     vec2 c = uv - 0.5;
     float fringe = (aberration + hurt * 1.4) * dot(c, c) * 0.018;
@@ -60,6 +88,15 @@ void fragment() {
     float edge = smoothstep(0.35, 1.6, length(p));
     vec3 shade = mix(vec3(0.015, 0.023, 0.033), vec3(0.55, 0.06, 0.04), hurt);
     col = mix(col, shade, clamp(edge * (strength + hurt * 0.45), 0.0, 1.0));
+    // Frost: pale crystals growing in from the edges.
+    if (chill > 0.0) {
+        vec2 q = SCREEN_UV * vec2(aspect, 1.0);
+        float crystals = soft_noise(q * 9.0) * 0.6 + soft_noise(q * 31.0) * 0.4;
+        float rime = smoothstep(0.62, 1.3, length(p) + (crystals - 0.5) * 0.5) * chill;
+        float glint = smoothstep(0.82, 0.95, soft_noise(q * 55.0)) * rime;
+        col = mix(col, vec3(0.78, 0.9, 1.0), rime * 0.55) + vec3(0.6, 0.8, 1.0) * glint * 0.4;
+    }
+    col += flash.rgb * flash.a;
     col += (hash(SCREEN_UV * 1931.7 + fract(TIME) * 61.3) - 0.5) * grain;
     COLOR = vec4(col, 1.0);
 }

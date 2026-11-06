@@ -89,6 +89,13 @@ static func jagged(a: Vector3, b: Vector3, gen: RandomNumberGenerator, roughness
 	points.append(b)
 	return points
 
+## A shockwave racing out over the floor from a point, fading as it goes.
+static func shock(shot: Node3D, at: Vector3, reach: float, color: Color, life := .45, brightness := 1.2) -> void:
+	if not rune_mesh:
+		rune_mesh = PlaneMesh.new()
+		rune_mesh.size = Vector2.ONE
+	piece(shot, rune_mesh, material("spell_wave", color), Transform3D(Basis.IDENTITY.scaled(Vector3(.2, brightness, .2)), at + Vector3.UP * .06), life, {"shock": reach * 2.0, "bright": brightness})
+
 ## The rune glowing where something is about to rise.
 static func rune(shot: Node3D, at: Vector3, radius: float, color: Color, life: float) -> Dictionary:
 	if not rune_mesh:
@@ -228,6 +235,10 @@ static func animate(shot: Node3D, delta: float) -> bool:
 			var fade := (1.0 - t) * (1.0 - t) * flicker
 			var basis: Basis = entry.base.basis
 			node.global_transform = Transform3D(Basis(basis.x, basis.y.normalized() * maxf(.001, float(entry.beam) * fade), basis.z * lerpf(1.0, .4, t)), entry.base.origin)
+		elif entry.has("shock"):
+			var spread := ease(t, .35)
+			var size := lerpf(.2, float(entry.shock), spread)
+			node.global_transform = Transform3D(Basis(Vector3.RIGHT * size, Vector3.UP * maxf(.001, float(entry.bright) * (1.0 - t)), Vector3.BACK * size), entry.base.origin)
 		elif entry.has("rune"):
 			var basis: Basis = entry.base.basis
 			var charge := 1.0 - t if entry.get("burst", false) else t
