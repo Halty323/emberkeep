@@ -700,4 +700,4 @@ func test_encounters() -> void:
 	var mote = foe("mote", Vector3.ZERO)
 	# Floors from the fourth up add the combinations update's toughness.
 	var toughness: float = load("res://scripts/items/synergies.gd").TOUGHNESS[run.floor_number]
-	check(is_equal_approx(mote.max_hp, 15.0 * (1.0 + 2 * mote.FLOOR_HEALTH) * toughness), "foes grow 30% stronger a floor")
+	check(is_equal_approx(mote.max_hp, 15.0 * (1.0 + 2 * mote.FLOOR_HEALTH) * toughness * mote.HEALTH_SCALE), "foes grow 30% stronger a floor")
