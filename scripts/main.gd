@@ -2072,9 +2072,15 @@ func destroy_prop(room_id: String, record: Dictionary, live: bool) -> void:
 		else:
 			Run.add_drop(room_id, drops[i].def, Vector2(point.x, point.z))
 	if live:
+		var sound_at: Vector3 = at + Vector3.UP * (room.floor_height(at) + .5 if first_person else .5)
 		room.break_prop(record.id)
-		Effects.play("prop_dust", at + Vector3(0, .5, 0))
-		Audio.play_sound("hit", .7)
+		Effects.play("prop_dust", sound_at)
+		# A crate or barrel splinters; a jar shatters.
+		if definition.recipe == "jar":
+			Audio.play_recorded("break_pot", scene_root, sound_at)
+		else:
+			Audio.play_recorded("break_wood", scene_root, sound_at)
+			Audio.play_recorded("break_planks", scene_root, sound_at, .9)
 		if drops.any(func(drop): return drop.has("active")): refresh_items()
 
 ## Companion views follow the saved Moth Jar modifier, so they survive room

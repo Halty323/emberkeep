@@ -38,6 +38,12 @@ func _ready() -> void:
 	sounds["item"] = tone(420, 1050, .45, .2)
 	sounds["hurt"] = tone(190, 70, .3, .3)
 	sounds["door"] = tone(260, 520, .25, .12)
+	# Recorded impacts (Kenney's Impact Sounds, CC0): a few takes of each,
+	# picked at random so no break or slam sounds twice the same.
+	for group in RECORDED:
+		for take in RECORDED[group]:
+			var stream = load("res://assets/audio/impacts/%s.ogg" % take)
+			if stream: sounds[take] = stream
 	# One soft pass of the quill over a whole room, not a stroke per square.
 	sounds["scribble"] = scratch(1.05, 7)
 	# Spell sounds are rendered off the main thread; until one is ready the
@@ -52,6 +58,22 @@ func _ready() -> void:
 	Settings.changed.connect(_on_setting_changed)
 	apply_volumes()
 	refresh()
+
+const RECORDED := {
+	"break_wood": ["impact_wood_heavy_000", "impact_wood_heavy_001", "impact_wood_heavy_002"],
+	"break_planks": ["impact_plank_medium_000", "impact_plank_medium_001"],
+	"break_pot": ["impact_plate_heavy_000", "impact_plate_medium_000", "impact_plate_medium_001"],
+	"door_slam": ["impact_wood_heavy_003", "impact_wood_heavy_004"],
+	"door_lock": ["impact_metal_heavy_001", "impact_metal_heavy_003"]}
+const RECORDED_VOLUME := {"break_wood": -3.0, "break_planks": -9.0, "break_pot": -4.0, "door_slam": -1.0, "door_lock": -8.0}
+
+## One take of a recorded group, where it happens, on this device alone
+## (each device breaks props and shuts doors itself), a little detuned.
+func play_recorded(group: String, parent: Node3D, at: Vector3, pitch := 1.0) -> void:
+	var takes: Array = RECORDED.get(group, [])
+	if takes.is_empty(): return
+	var take: String = takes[randi() % takes.size()]
+	play_local_at(take, parent, at, pitch * randf_range(.92, 1.08), float(RECORDED_VOLUME.get(group, -6.0)) + 12.0)
 
 func _on_setting_changed(key: String) -> void:
 	if key in ["sound", "music"]: refresh()

@@ -5,12 +5,18 @@ extends RefCounted
 ## material, instead of a node and draw call per detail.
 static var shared_material: StandardMaterial3D
 var chunks: Dictionary = {}
+# The prop the details being added belong to ("" for none), and once built,
+# where each prop's details ended up: {prop id: [[MultiMesh, index], ...]},
+# so a broken prop's bands and lids go with it.
+var owner := ""
+var owned: Dictionary = {}
 
 func add(cell: Vector2i, transform: Transform3D, color: Color) -> void:
 	if not chunks.has(cell):
-		chunks[cell] = {"transforms": [], "colors": []}
+		chunks[cell] = {"transforms": [], "colors": [], "owners": []}
 	chunks[cell].transforms.append(transform)
 	chunks[cell].colors.append(color)
+	chunks[cell].owners.append(owner)
 
 func count() -> int:
 	var total = 0
@@ -36,6 +42,10 @@ func build(parent: Node3D) -> Array:
 		for i in chunk.transforms.size():
 			mm.set_instance_transform(i, chunk.transforms[i])
 			mm.set_instance_color(i, chunk.colors[i])
+			var prop: String = chunk.owners[i]
+			if prop != "":
+				if not owned.has(prop): owned[prop] = []
+				owned[prop].append([mm, i])
 		var instance = MultiMeshInstance3D.new()
 		instance.multimesh = mm
 		instance.material_override = material()
@@ -43,3 +53,10 @@ func build(parent: Node3D) -> Array:
 		parent.add_child(instance)
 		meshes.append(instance)
 	return meshes
+
+## Hides every detail a prop owned (its instances shrink to nothing).
+func hide_owned(prop: String) -> void:
+	for slot in owned.get(prop, []):
+		var mm: MultiMesh = slot[0]
+		mm.set_instance_transform(int(slot[1]), Transform3D(Basis().scaled(Vector3.ZERO), Vector3.ZERO))
+	owned.erase(prop)

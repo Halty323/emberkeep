@@ -47,6 +47,8 @@ var obstacles: Array[Dictionary] = []
 var front_walls: Array[Dictionary] = []
 var navigators: Dictionary = {}
 var first_person_room := false
+# The room's batched small details, to hide a broken prop's bands with it.
+var prop_details: DetailBatch
 var terrain: FirstPersonTerrain
 var pedestal := Vector3.ZERO
 # Live view of each prop: {"record", "definition", "node", "base", "health"}.
@@ -503,7 +505,9 @@ func build_props(records: Array) -> void:
 		if definition.detail == "decor" and detail == 0:
 			continue
 		var at = Vector2(float(record.position[0]), float(record.position[1]))
+		batch.owner = str(record.id) if definition.has("breakable") else ""
 		var built = PropVisuals.build(self, record, definition, detail, batch, geometry.cell_at(at), rng)
+		batch.owner = ""
 		props[record.id] = {"record": record, "definition": definition, "node": built.node, "base": built.base,
 			"health": float(definition.get("breakable", {}).get("health", 0))}
 		if definition.recipe == "pillar":
@@ -528,6 +532,7 @@ func build_props(records: Array) -> void:
 			occluders.append(built.occluder)
 		await pace()
 	detail_meshes = batch.build(self)
+	prop_details = batch
 
 func prop_count(kind := "") -> int:
 	return props.values().filter(func(entry): return kind == "" or entry.record.kind == kind).size()
@@ -548,7 +553,14 @@ func break_prop(id: String) -> void:
 		return
 	var entry: Dictionary = props[id]
 	props.erase(id)
-	entry.node.queue_free()
+	if prop_details: prop_details.hide_owned(id)
+	# The body crumbles apart instead of vanishing; its collider goes at once.
+	var definition: Dictionary = entry.definition
+	if is_instance_valid(entry.node) and entry.node.is_inside_tree():
+		var footprint: Array = definition.get("size", [.8, .8])
+		PropDebris.crumble(self, str(definition.recipe), entry.node, Vector3(float(footprint[0]), float(definition.get("height", .9)), float(footprint[1])))
+	else:
+		entry.node.queue_free()
 	entry.base.queue_free()
 	obstacles = obstacles.filter(func(obstacle): return obstacle.get("id", "") != id)
 	occluders = occluders.filter(func(occluder): return occluder.id != id)
@@ -945,9 +957,48 @@ func set_open(value: bool) -> void:
 	for gate in gates:
 		var opened: bool=value or (not entry_portal.is_empty() and gate.get_meta("portal","")==entry_portal)
 		var barrier:=gate.get_node("Barrier")
+		var was_shut: bool = barrier.visible
 		barrier.visible = not opened
 		barrier.process_mode=Node.PROCESS_MODE_DISABLED if opened else Node.PROCESS_MODE_INHERIT
 		gate.get_node("Outline").visible = opened
+		# Doors that were standing open slam shut as a fight begins.
+		if not opened and not was_shut and is_inside_tree() and visible: slam_door(gate, barrier)
+
+## The leaves swing shut from wide open, accelerating, hit the frame,
+## rebound a hand's breadth and settle with a smaller second knock. The
+## blocking collider is up from the first instant.
+const SLAM_TIME := .13
+func slam_door(gate: Node3D, barrier: Node3D) -> void:
+	var leaves: Array = barrier.get_children().filter(func(node): return node.name in ["LeftLeaf", "RightLeaf"])
+	if leaves.is_empty(): return
+	var delay := randf_range(0.0, .05)
+	for leaf in leaves:
+		var side := -1.0 if leaf.name == "LeftLeaf" else 1.0
+		leaf.rotation.y = -side * 1.43
+		var swing: Tween = leaf.create_tween()
+		swing.tween_interval(delay)
+		swing.tween_property(leaf, "rotation:y", 0.0, SLAM_TIME).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		swing.tween_property(leaf, "rotation:y", -side * .17, .07).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		swing.tween_property(leaf, "rotation:y", 0.0, .08).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		swing.tween_property(leaf, "rotation:y", -side * .045, .05).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		swing.tween_property(leaf, "rotation:y", 0.0, .05).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	var knock := create_tween()
+	knock.tween_interval(delay + SLAM_TIME)
+	knock.tween_callback(func(): door_impact(gate))
+
+## The moment the leaves meet the frame: a heavy thud and the bolt's clank,
+## dust from the threshold, and the view kicked if the player is close.
+func door_impact(gate: Node3D) -> void:
+	if not is_instance_valid(gate) or not is_inside_tree(): return
+	var at: Vector3 = gate.global_position + Vector3.UP * 1.2
+	Audio.play_recorded("door_slam", self, at)
+	Audio.play_recorded("door_lock", self, at, .85)
+	Effects.play("prop_dust", gate.global_position + Vector3.UP * .2)
+	if game and is_instance_valid(game.get("player")):
+		var near := 1.0 - clampf(game.player.global_position.distance_to(gate.global_position) / 12.0, 0.0, 1.0)
+		if near > 0.0:
+			game.shake = maxf(float(game.shake), .16 * near)
+			ScreenFx.wave(gate.global_position + Vector3.UP, 2.2, .5 * near)
 
 func apply_lighting_quality() -> void:
 	var enabled: bool = Settings.values.shadows
