@@ -261,6 +261,12 @@ func ground_height(at: Vector3) -> float:
 func touches_floor(at: Vector3, tolerance := .35) -> bool:
 	return not first_person or absf(at.y-ground_height(at)) <= tolerance
 
+## Whether the fire here was lit by the party (harmless to them).
+func tame_at(at: Vector3) -> bool:
+	var field:=layer_at(at)
+	if field!=self: return field.tame_at(at)
+	return bool(tiles.get(key(at), {}).get("tame", false))
+
 func kind_at(at: Vector3) -> String:
 	var field:=layer_at(at)
 	if field!=self: return field.kind_at(at)
@@ -380,36 +386,39 @@ func scorch(at: Vector3, radius: float) -> void:
 		if tiles.get(tile, {}).get("kind", "") == "water": continue
 		set_tile(tile, "fire")
 
-func set_tile(tile: Vector2i, kind: String, lasting := false) -> void:
+## `tame` fire was lit by the party (a spell, a bomb, a blast of theirs): it
+## burns foes but never the players who lit it.
+func set_tile(tile: Vector2i, kind: String, lasting := false, tame := false) -> void:
 	var previous: String = tiles.get(tile, {}).get("kind", "")
 	if kind == "":
 		tiles.erase(tile)
 	else:
 		var life = -1.0 if lasting else {"fire": FIRE_LIFE, "ice": ICE_LIFE}.get(kind, -1.0)
-		tiles[tile] = {"kind": kind, "age": 0.0, "life": life, "spread": SPREAD_DELAY, "under": previous if kind in ["fire", "ice"] else ""}
+		tiles[tile] = {"kind": kind, "age": 0.0, "life": life, "spread": SPREAD_DELAY, "under": previous if kind in ["fire", "ice"] else "", "tame": tame and kind == "fire"}
 	dirty[previous] = true
 	dirty[kind] = true
 	if logging: net_tiles[tile] = [kind, lasting]
 
-## Burn, chill and poison meeting what lies here.
+## Burn, chill and poison meeting what lies here (only the party's spells
+## react, so what they light is tame).
 func react(at: Vector3, radius: float, stats: Dictionary) -> void:
 	var field:=layer_at(at)
 	if field!=self: field.react(at,radius,stats);return
 	if float(stats.get("burn", 0)) > 0 or float(stats.get("explosion", 0)) > 0:
-		ignite(at, radius)
+		ignite(at, radius, true)
 	if float(stats.get("chill", 0)) > 0:
 		freeze(at, radius)
 	if float(stats.get("poison", 0)) > 0:
 		var cloud = cloud_at(at)
 		if cloud >= 0: poison_cloud(cloud)
 
-func ignite(at: Vector3, radius: float) -> void:
+func ignite(at: Vector3, radius: float, tame := false) -> void:
 	var field:=layer_at(at)
-	if field!=self: field.ignite(at,radius);return
+	if field!=self: field.ignite(at,radius,tame);return
 	var boiled = false
 	for tile in tiles_in(at, radius):
 		var current: String = tiles.get(tile, {}).get("kind", "")
-		if current in ["wax", "moss"]: set_tile(tile, "fire")
+		if current in ["wax", "moss"]: set_tile(tile, "fire", false, tame)
 		elif current == "ice": set_tile(tile, tiles[tile].under)
 		elif current == "ink": set_tile(tile, "")
 		elif current == "water": boiled = true
@@ -417,7 +426,7 @@ func ignite(at: Vector3, radius: float) -> void:
 	for i in range(clouds.size() - 1, -1, -1):
 		if first_person and absf(at.y-clouds[i].at.y) > maxf(1.4,radius*.5): continue
 		if clouds[i].kind == "spores" and Vector2(clouds[i].at.x - at.x, clouds[i].at.z - at.z).length() < clouds[i].radius + radius * .5:
-			explode_cloud(i)
+			explode_cloud(i, tame)
 
 func freeze(at: Vector3, radius: float) -> void:
 	var field:=layer_at(at)
@@ -529,10 +538,10 @@ func poison_cloud(index: int) -> void:
 		refresh_cloud_surface()
 
 ## Fire sets spores off: everything inside is struck, and the blast lights
-## what lies beneath.
-func explode_cloud(index: int) -> void:
+## what lies beneath. Spores the party set off spare the party.
+func explode_cloud(index: int, tame := false) -> void:
 	if index>=MAX_CLOUDS and is_instance_valid(upper_field):
-		upper_field.explode_cloud(index-MAX_CLOUDS)
+		upper_field.explode_cloud(index-MAX_CLOUDS, tame)
 		return
 	var cloud: Dictionary = clouds[index]
 	remove_cloud(index)
@@ -546,9 +555,12 @@ func explode_cloud(index: int) -> void:
 		if is_instance_valid(enemy) and enemy.alive and enemy.targetable and Vector2(enemy.global_position.x - cloud.at.x, enemy.global_position.z - cloud.at.z).length() < cloud.radius + enemy.radius:
 			enemy.take_hit(CLOUD_BLAST, (enemy.global_position - cloud.at).normalized() * 2.0, false, false, "blast")
 	for body in NetHooks.bodies(game):
+		if tame: break
 		if (not first_person or absf(body.global_position.y-cloud.at.y)<=1.8) and Vector2(body.global_position.x - cloud.at.x, body.global_position.z - cloud.at.z).length() < cloud.radius:
+			game.set("harm_hint", "Bursting spores")
 			body.hurt(1.0, cloud.at)
-	ignite(cloud.at, cloud.radius * .8)
+			game.set("harm_hint", "")
+	ignite(cloud.at, cloud.radius * .8, tame)
 
 func update_sim(delta: float) -> void:
 	if is_instance_valid(upper_field): upper_field.update_sim(delta)
@@ -565,7 +577,7 @@ func update_sim(delta: float) -> void:
 				entry.spread = 99.0
 				for step in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
 					var next: Vector2i = tile + step
-					if tiles.has(next) and tiles[next].kind in ["wax", "moss"]: set_tile(next, "fire")
+					if tiles.has(next) and tiles[next].kind in ["wax", "moss"]: set_tile(next, "fire", false, bool(entry.get("tame", false)))
 		if entry.life > 0 and entry.age >= entry.life:
 			# Fire leaves nothing; ice melts back to the wax it was.
 			set_tile(tile, entry.under if entry.kind == "ice" else "")
@@ -577,7 +589,7 @@ func update_sim(delta: float) -> void:
 			continue
 		if cloud.kind != "spores": continue
 		if kind_at(cloud.at) == "fire":
-			explode_cloud(i)
+			explode_cloud(i, tame_at(cloud.at))
 			continue
 		if touch:
 			for enemy in game.enemies:
@@ -595,8 +607,10 @@ func update_sim(delta: float) -> void:
 			# Water puts a burning foe out.
 			elif under == "water": enemy.burn_time = 0.0
 		for body in NetHooks.bodies(game):
-			if (not first_person or touches_floor(body.global_position)) and kind_at(body.global_position) == "fire":
+			if (not first_person or touches_floor(body.global_position)) and kind_at(body.global_position) == "fire" and not tame_at(body.global_position):
+				game.set("harm_hint", "Flames underfoot")
 				body.hurt(1.0, body.global_position)
+				game.set("harm_hint", "")
 	for kind in dirty.keys():
 		if views.has(kind): rebuild(kind)
 	dirty.clear()

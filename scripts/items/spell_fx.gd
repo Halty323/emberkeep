@@ -8,9 +8,11 @@ extends RefCounted
 ##   PowerVR safe path, where they quietly do nothing.
 ## - Shockwave rings racing over the floor (SpellShapes.shock), drawn by
 ##   every renderer.
-## Each element has its own signature when cast and when it lands, each kind
-## of spell its own when it strikes, and each eruption its own when it rises.
-## Whole-frame marks answer only what happens close in front of the eye.
+## Each element has its own signature when it lands, each kind of spell its
+## own when it strikes, and each eruption its own when it rises. Nothing marks
+## the frame as a spell leaves the book (holding cast would keep the whole
+## view tinted), and whole-frame marks answer only what lands close in front
+## of the eye. Settings "Screen effects" scales or stops the frame warps.
 const NEAR := 14.0
 const IMPACT_GAP := .12
 static var last_impact: Dictionary = {}
@@ -21,24 +23,6 @@ static func near(game: Node, at: Vector3) -> bool:
 
 static func element_of(stats: Dictionary) -> String:
 	return str(stats.get("element", ""))
-
-## Leaving the book.
-static func cast(game: Node, stats: Dictionary, origin: Vector3, aim: Vector3) -> void:
-	match SpellForms.archetype(stats):
-		"ray":
-			ScreenFx.split(.3)
-			return
-		"lightning":
-			ScreenFx.flash(Color(.8, .78, 1.0), .035, .12)
-			return
-		"eruption": return
-	match element_of(stats):
-		"ember": ScreenFx.shimmer(origin + aim * 1.4, 1.0, .7, .25)
-		"frost": ScreenFx.frost(.16)
-		"storm": ScreenFx.split(.22)
-		"radiance": ScreenFx.flash(Color("ffe5b5"), .045, .12)
-		"glass": ScreenFx.split(.14)
-		"wax": ScreenFx.shimmer(origin + aim * 1.2, .8, .4, .2)
 
 ## A flying spell landing (a foe or a wall): its element's mark, now and then.
 static func impact(shot: Node3D, at: Vector3) -> void:
@@ -57,7 +41,7 @@ static func impact(shot: Node3D, at: Vector3) -> void:
 			SpellShapes.shock(shot, floor_at, 1.1, color.lightened(.3), .4)
 			if near(game, at): ScreenFx.frost(.08)
 		"storm":
-			ScreenFx.split(.18)
+			if near(game, at): ScreenFx.split(.18)
 			SpellShapes.shock(shot, floor_at, 1.0, color, .22, 1.6)
 		"venom":
 			ScreenFx.swirl(at, 1.6, 1.1, .5)
@@ -67,7 +51,7 @@ static func impact(shot: Node3D, at: Vector3) -> void:
 			SpellShapes.shock(shot, floor_at, 1.1, color, .3)
 		"glass":
 			ScreenFx.wave(at, 1.8, .55)
-			ScreenFx.split(.12)
+			if near(game, at): ScreenFx.split(.12)
 			SpellShapes.shock(shot, floor_at, .9, color.lightened(.3), .3, 1.6)
 		"wax":
 			ScreenFx.shimmer(at, .9, .5, .35)

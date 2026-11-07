@@ -31,6 +31,10 @@ var paused = true
 var in_menu = true
 var sim_time = 0.0
 var hitstop = 0.0
+# What last hurt the player (named on the end screen), and a name a hostile
+# shot, a trap or a cloud leaves for the very next hurt.
+var last_harm := ""
+var harm_hint := ""
 var shake = 0.0
 var hurt_flash = 0.0
 var request_dash = false
@@ -207,16 +211,8 @@ func _ready() -> void:
 		start_run("candle", 421337, false)
 
 func setup_inputs() -> void:
-	var actions = {"move_left": [KEY_A, KEY_LEFT], "move_right": [KEY_D, KEY_RIGHT],
-		"move_up": [KEY_W, KEY_UP], "move_down": [KEY_S, KEY_DOWN],
-		"dash": [KEY_SHIFT], "jump": [KEY_SPACE], "interact": [KEY_E], "pause_game": [KEY_ESCAPE, KEY_P], "journal": [KEY_TAB], "map": [KEY_M],
-		"use_active": [KEY_F], "place_bomb": [KEY_B]}
-	for action in actions:
-		if not InputMap.has_action(action): InputMap.add_action(action)
-		for key in actions[action]:
-			var event = InputEventKey.new()
-			event.physical_keycode = key
-			InputMap.action_add_event(action, event)
+	# Keys and mouse buttons: the defaults with the player's own bindings.
+	Settings.apply_keys()
 	var joy_actions = {"jump": JOY_BUTTON_A, "dash": JOY_BUTTON_RIGHT_SHOULDER, "interact": JOY_BUTTON_Y, "pause_game": JOY_BUTTON_START,
 		"use_active": JOY_BUTTON_LEFT_SHOULDER, "place_bomb": JOY_BUTTON_X}
 	for action in joy_actions:
@@ -299,6 +295,33 @@ func _notification(what: int) -> void:
 		if first_person and Run.active: Run.save_run()
 		get_tree().quit()
 
+## Why the map cannot take the player back to a room, or "" when it can:
+## only alone, between fights, to a room already walked and won.
+const TRAVEL_FADE := .3
+func travel_block(id: String) -> String:
+	if id == Run.current_room: return "You are here."
+	if not Run.rooms.has(id) or not Run.rooms[id].get("visited", false): return "Only rooms you have walked can be returned to."
+	var data: Dictionary = Run.rooms[id]
+	if data.type in ["combat", "boss"] and not data.get("cleared", false): return "That room's fight is not won yet."
+	if Session.online: return "A party walks together: go on foot."
+	if fight_on(): return "Not while a fight is on."
+	if trials.holds_room() or trials.spectating(): return "Not during Death's trial."
+	if not transition.is_empty() or loading or not Run.active: return "Not just now."
+	return ""
+
+func travel_to(id: String) -> void:
+	if travel_block(id) != "": return
+	paused = false
+	ui.show_screen("play")
+	request_dash = false
+	transition = {"kind": "travel", "room": id, "time": 0.0}
+
+## A fight is on: the room is sealed, or foes still stand in it.
+func fight_on() -> bool:
+	if not is_instance_valid(room): return false
+	if not room.open: return true
+	return enemies.any(func(enemy): return is_instance_valid(enemy) and enemy.alive and not enemy.inert)
+
 func is_playing() -> bool:
 	return Run.active and not paused and not in_menu
 
@@ -377,7 +400,7 @@ func _physics_process(delta: float) -> void:
 	elif first_person:
 		corridors.prepare()
 		fps.collect_look(delta)
-		aim = fps.shot_direction(fps.shot_origin())
+		aim = fps.assisted(fps.shot_origin(), fps.shot_direction(fps.shot_origin()))
 		shooting = ui.fire_touch >= 0 or ui.aiming_casts() or (Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not ui.mouse_on_action and not fps.suppress_mouse_fire) or Input.get_joy_axis(0, JOY_AXIS_TRIGGER_RIGHT) > .25
 	else:
 		if ui.right_vector.length() > .15:
@@ -500,6 +523,15 @@ func advance_transition(delta: float) -> void:
 		return
 	if transition.get("kind", "") == "stairs":
 		advance_climb()
+		return
+	if transition.get("kind", "") == "travel":
+		# Back to a cleared room from the map: a breath of light, then there.
+		light_veil.color.a = clampf(transition.time / TRAVEL_FADE, 0, 1)
+		if transition.time >= TRAVEL_FADE:
+			Run.current_room = str(transition.room)
+			enter_room(Vector3(0, 0, 2))
+			light_veil.color.a = 1.0 if first_person else 0.0
+			ui.notify("Back the way you came", str(Run.rooms[Run.current_room].type).capitalize() + " room", Color("e8ca8b"))
 		return
 	match transition.phase:
 		"exit":
@@ -903,7 +935,7 @@ func greet_run() -> void:
 	ui.show_screen("play")
 	var arrival: Array = Run.theme().arrival
 	if first_person and not Run.profile.get("fps_tutorial_seen", false):
-		ui.notify("Keep your little light close", "Swipe right to look · Hold CAST · Jump and dash to dodge" if ui.is_touch_platform() else "Mouse look · Click to cast · Space jump · Shift dash")
+		ui.notify("Keep your little light close", "Swipe right to look · Hold CAST · Jump and dash to dodge" if ui.is_touch_platform() else "Mouse look · Click to cast · %s jump · %s dash" % [Settings.key_label("jump"), Settings.key_label("dash")])
 		Run.profile["fps_tutorial_seen"] = true
 		Run.save_profile()
 	else: ui.notify(arrival[0], arrival[1])
@@ -1369,8 +1401,10 @@ func nearest_enemy(at: Vector3, distance: float, excluded: Dictionary = {}) -> D
 	return result
 
 func blast(at: Vector3, radius: float, damage: float, friendly: bool, excluded: DungeonEnemy) -> void:
-	Effects.ring_burst(scene_root, Vector3(at.x, room.floor_height(at) if first_person else 0, at.z), Color("edbd7b"), radius)
-	if residue: residue.ignite(Vector3(at.x, 0, at.z), radius * .7)
+	var floor_y: float = room.floor_height(at) if first_person else 0.0
+	Effects.ring_burst(scene_root, Vector3(at.x, floor_y, at.z), Color("edbd7b"), radius)
+	# The party's blasts light tame fire, which never burns the party.
+	if residue: residue.ignite(Vector3(at.x, floor_y, at.z), radius * .7, friendly)
 	if friendly:
 		make_noise(at, 2.5)
 		for enemy in enemies.duplicate():
@@ -1378,7 +1412,10 @@ func blast(at: Vector3, radius: float, damage: float, friendly: bool, excluded: 
 				enemy.take_hit(damage, (enemy.global_position - at).normalized() * 2, false, false, "blast")
 	else:
 		for body in party_bodies():
-			if body.global_position.distance_to(at) < radius: body.hurt(1, at)
+			if body.global_position.distance_to(at) < radius:
+				harm_hint = "A blast"
+				body.hurt(1, at)
+				harm_hint = ""
 
 ## A foe pays out once per run: its credit and its stable drop records are
 ## created together, so any later save holds both or neither.
@@ -2125,6 +2162,8 @@ func end_run(won: bool) -> void:
 
 func reset_combat() -> void:
 	hitstop = 0.0
+	last_harm = ""
+	harm_hint = ""
 	sparks = 0
 	kindle_heat = 0.0
 	kindle_quiet = 0.0

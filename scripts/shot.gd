@@ -108,9 +108,26 @@ func setup(owner_game: Node3D, at: Vector3, travel: Vector3, power: float, veloc
 				charge = 0.0 if float(stats.get("sky", 0)) > 0 else CHARGE
 			"eruption": mode = "eruption"
 	if mode != "": return
+	# A foe's spell is crimson whatever its caster's colour, and dark-rimmed:
+	# no spell of the party ever looks like it.
+	if not friendly:
+		color = HOSTILE.lerp(color, .25)
+		tint = color
 	build_light(color)
 	if not friendly:
-		Geo.ring(self, Vector3.ZERO, radius * 1.4, Color("f39b88"), .025)
+		if hostile_mesh == null:
+			hostile_mesh = QuadMesh.new()
+			hostile_mesh.size = Vector2.ONE
+		var rim := MeshInstance3D.new()
+		rim.mesh = hostile_mesh
+		rim.scale = Vector3.ONE * radius * 4.2
+		rim.material_override = material("hostile", HOSTILE)
+		rim.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		rim.layers = 2
+		add_child(rim)
+
+const HOSTILE := Color("ff3d64")
+static var hostile_mesh: QuadMesh
 
 static func material(name: String, color: Color, style := 0) -> ShaderMaterial:
 	var key = name + color.to_html() + (":%d" % style if style > 0 else "")
@@ -299,7 +316,9 @@ func update_sim(delta: float) -> void:
 			var high: Vector3 = body.global_position + Vector3.UP * 1.38
 			var pair = Geometry3D.get_closest_points_between_segments(global_position, target_position, low, high)
 			if pair[0].distance_to(pair[1]) < .32 + radius and global_position.distance_to(pair[0]) < wall_distance:
+				game.set("harm_hint", harm_name())
 				body.hurt(damage, pair[0])
+				game.set("harm_hint", "")
 				remove()
 				return
 	if friendly and game.first_person:
@@ -383,8 +402,23 @@ func update_sim(delta: float) -> void:
 			center.y = clampf(global_position.y, game.player.global_position.y + .32, game.player.global_position.y + 1.35)
 		var closest = Geometry3D.get_closest_point_to_segment(center, global_position - movement, global_position)
 		if closest.distance_to(center) < .32 + radius:
+			game.set("harm_hint", harm_name())
 			game.player.hurt(damage, global_position)
+			game.set("harm_hint", "")
 			remove()
+
+## Who cast a hostile spell, for the end screen: the foe nearest where it
+## was cast.
+func harm_name() -> String:
+	var caster = null
+	var best := 3.0
+	for enemy in game.enemies:
+		if not is_instance_valid(enemy): continue
+		var gap: float = enemy.global_position.distance_to(start_position)
+		if gap < best:
+			best = gap
+			caster = enemy
+	return "%s's spell" % DungeonEnemy.called(caster.kind) if caster else "A hostile spell"
 
 func shape_flight(delta: float) -> void:
 	var flown = age / lifetime

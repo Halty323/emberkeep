@@ -90,10 +90,10 @@ Every kind of spellbook also breaks crates and barrels: lightning that strikes n
 
 Every spellbook also marks the frame and the floor, in two layers:
 
-- Warps on the whole frame (`scripts/graphics/screen_fx.gd`, drawn by `shaders/post.gdshader`): ember and wax set the air shimmering, frost creeps in from the edges, storm and glass split the colours, radiance flashes, venom and the Black Pearl twist the frame in a swirl, glass and tide send a shockwave bending through it. A ray splits the colours as it fires and the air ripples along its path; lightning flashes, tears the colours and kicks the frame where it lands (harder from the sky); each eruption rises its own way (flame shimmers, ice frosts, skyfall flashes, bubbles swirl, a meteor does all of it). These need the full post pass: desktops and most phones show them, the PowerVR safe path skips them quietly.
+- Warps on the whole frame (`scripts/graphics/screen_fx.gd`, drawn by `shaders/post.gdshader`) where a spell lands: ember and wax set the air shimmering, frost creeps in from the edges, storm and glass split the colours, radiance flashes, venom and the Black Pearl twist the frame in a swirl, glass and tide send a shockwave bending through it. The air ripples along a ray's path; lightning flashes, tears the colours and kicks the frame where it lands (harder from the sky); each eruption rises its own way (flame shimmers, ice frosts, skyfall flashes, bubbles swirl, a meteor does all of it). These need the full post pass: desktops and most phones show them, the PowerVR safe path skips them quietly.
 - Shockwave rings racing over the floor where spells land, strike and rise (`shaders/spell_wave.gdshader`), drawn by every renderer, PowerVR included.
 
-Frame warps answer only what lands close in front of the eye, and each element's landing mark comes at most every eighth of a second, so a storm of spells stays readable.
+Nothing marks the frame as a spell leaves the book, so holding cast never keeps the view tinted. Whole-frame marks (flashes, split colours, frost) answer only what lands close in front of the eye, each element's landing mark comes at most every eighth of a second, and a spell's flash never covers the flash of being hurt. Settings → Graphics → Screen warps and flashes scales all of it: Full, Reduced (under half) or Off.
 
 ## Compatibility
 

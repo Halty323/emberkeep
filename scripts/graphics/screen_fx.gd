@@ -77,40 +77,51 @@ func apply_grade() -> void:
 	material.set_shader_parameter("lift", Vector3(grade.lift.r, grade.lift.g, grade.lift.b))
 	material.set_shader_parameter("saturation", grade.saturation)
 
+## How strongly the frame warps (Settings "screen_effects"): Full, Reduced
+## (under half) or Off.
+static func strength() -> float:
+	match str(Settings.values.get("screen_effects", "full")):
+		"off": return 0.0
+		"reduced": return .45
+	return 1.0
+
 ## A ring that bends the frame outward as it spreads from a world point.
 static func wave(at: Vector3, radius: float, power := 1.0) -> void:
-	if current == null or not is_instance_valid(current) or Look.quality() == 0 or not RenderPolicy.current().post_processing: return
+	if current == null or not is_instance_valid(current) or Look.quality() == 0 or not RenderPolicy.current().post_processing or strength() <= 0.0: return
 	if current.waves.size() >= MAX_WAVES: current.waves.pop_front()
-	current.waves.append({"at": at, "age": 0.0, "reach": clampf(radius * .045, .06, .3), "power": power * (1.0 if Look.quality() == 2 else .7)})
+	current.waves.append({"at": at, "age": 0.0, "reach": clampf(radius * .045, .06, .3), "power": power * strength() * (1.0 if Look.quality() == 2 else .7)})
 
 static func ready() -> bool:
-	return current != null and is_instance_valid(current) and Look.quality() > 0 and RenderPolicy.current().post_processing and current.material.shader == current.post_shader
+	return current != null and is_instance_valid(current) and Look.quality() > 0 and RenderPolicy.current().post_processing and current.material.shader == current.post_shader and strength() > 0.0
 
 ## The frame twists round a world point, turning by `turn` radians at its heart.
 static func swirl(at: Vector3, radius: float, turn: float, life := .5) -> void:
 	if not ready(): return
 	if current.swirls.size() >= MAX_SWIRLS: current.swirls.pop_front()
-	current.swirls.append({"at": at, "age": 0.0, "life": life, "reach": clampf(radius * .05, .05, .32), "turn": turn})
+	current.swirls.append({"at": at, "age": 0.0, "life": life, "reach": clampf(radius * .05, .05, .32), "turn": turn * strength()})
 
 ## A flash of colour over the whole frame, fading over `life` seconds.
-static func flash(color: Color, strength: float, life := .2) -> void:
-	if not ready() or strength * life < current.flash_left * current.flash_color.a: return
-	current.flash_color = Color(color, strength)
+static func flash(color: Color, amount: float, life := .2) -> void:
+	# Being hurt is never drowned out by a spell's flash.
+	if not ready() or float(current.game.get("hurt_flash")) > .2: return
+	amount *= strength()
+	if amount * life < current.flash_left * current.flash_color.a: return
+	current.flash_color = Color(color, amount)
 	current.flash_left = life
 	current.flash_life = life
 
 ## Colours split at the frame's edges for a moment.
 static func split(amount: float) -> void:
-	if ready(): current.fringe = maxf(current.fringe, amount)
+	if ready(): current.fringe = maxf(current.fringe, amount * strength())
 
 ## Frost creeping in from the edges.
 static func frost(amount: float) -> void:
-	if ready(): current.chill = clampf(maxf(current.chill, amount), 0.0, 1.0)
+	if ready(): current.chill = clampf(maxf(current.chill, amount * strength()), 0.0, 1.0)
 
 ## Air shimmering over a point for a while (heat, a ray's path).
 static func shimmer(at: Vector3, radius: float, power: float, life: float) -> void:
 	if not ready() or current.shimmers.size() >= MAX_HEAT: return
-	current.shimmers.append({"at": at, "reach": radius, "power": power, "age": 0.0, "life": life})
+	current.shimmers.append({"at": at, "reach": radius, "power": power * strength(), "age": 0.0, "life": life})
 
 func _process(delta: float) -> void:
 	if material.shader != post_shader: return

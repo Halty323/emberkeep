@@ -319,7 +319,6 @@ func fire() -> void:
 	fire_cooldown = maxf(.07, weapon.cooldown / (stats.rate + (stats.kill_haste if haste_time > 0 else 0)))
 	recoil = .17
 	SpellSounds.cast(stats, count)
-	SpellFx.cast(game, stats, shot_origin(), aim_direction)
 
 ## One volley of the weapon's pattern; returns how many shots left.
 func launch_shot(at: Vector3, travel: Vector3, power: float, speed: float, effects: Dictionary, tint: Color, friendly: bool):
@@ -435,7 +434,10 @@ func hurt(amount: float, source: Vector3) -> void:
 	if game.first_person:
 		game.fps.damage_time = .7
 		var towards = source - global_position
-		game.fps.damage_angle = atan2(towards.dot(game.fps.right()), towards.dot(Vector3.FORWARD.rotated(Vector3.UP, game.fps.yaw)))
+		towards.y = 0
+		# Harm from right underfoot (a burning floor) shows beneath the sight.
+		game.fps.damage_angle = PI if towards.length() < .2 else atan2(towards.dot(game.fps.right()), towards.dot(Vector3.FORWARD.rotated(Vector3.UP, game.fps.yaw)))
+	game.set("last_harm", harm_cause(source))
 	Run.hp = maxf(0, Run.hp - amount)
 	game.gutter()
 	invulnerability = 1.0
@@ -450,6 +452,21 @@ func hurt(amount: float, source: Vector3) -> void:
 	Run.changed.emit()
 	if Run.hp <= 0:
 		game.player_fell()
+
+## What hurt the player, named for the end screen: a name the harm left
+## (a hostile spell, a trap, a cloud), else the foe that struck.
+func harm_cause(source: Vector3) -> String:
+	var hint = game.get("harm_hint")
+	if hint is String and hint != "": return hint
+	var struck = null
+	var best := 2.5
+	for enemy in game.enemies:
+		if not is_instance_valid(enemy): continue
+		var gap := Vector2(enemy.global_position.x - source.x, enemy.global_position.z - source.z).length()
+		if gap < best:
+			best = gap
+			struck = enemy
+	return DungeonEnemy.called(struck.kind) if struck else "the tower itself"
 
 var star_timer := 0.0
 var star_turn := 0
