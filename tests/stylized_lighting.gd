@@ -92,7 +92,7 @@ func exercise() -> void:
 	check(game.mirror.render_target_update_mode == SubViewport.UPDATE_ALWAYS,"a wet first-person room actually starts the mirror")
 	check(game.residue.views.water.material.shader.resource_path.ends_with("/water_stylized.gdshader"),"first-person water uses the lit, screen-copy-free glaze")
 	var water_body: Mesh = game.residue.views.water.view.mesh
-	var water_vertices: int = water_body.get_mesh_arrays()[Mesh.ARRAY_VERTEX].size()
+	var water_vertices: int = water_body.surface_get_arrays(0)[Mesh.ARRAY_VERTEX].size()
 	check(water_body.get_surface_count() == 1 and water_vertices > 4 and water_vertices < 4000,"first-person water is one raised body over its own tiles (%d vertices)" % water_vertices)
 	var terrain = game.room.terrain
 	var old_ledge: Rect2 = terrain.ledge
