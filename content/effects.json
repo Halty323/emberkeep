@@ -18,6 +18,8 @@
     {"id": "candle_wisp", "channel": "ambient", "count": 1, "speed": [0.15, 0.3], "lifetime": [1.2, 1.8], "size": [0.025, 0.04], "gravity": 0.35, "spread": "up", "color": "#ffd8a0", "rate": 0.35},
     {"id": "firefly", "channel": "ambient", "count": 1, "speed": [0.2, 0.4], "lifetime": [2.5, 3.5], "size": [0.035, 0.05], "gravity": 0.05, "spread": "sphere", "color": "#e8f2a0", "rate": 0.05},
     {"id": "shelf_dust", "channel": "ambient", "count": 1, "speed": [0.05, 0.15], "lifetime": [2.5, 4.0], "size": [0.03, 0.045], "gravity": -0.08, "spread": "sphere", "color": "#b8ab90", "rate": 0.08},
+    {"id": "residue_splash", "channel": "important", "count": 4, "speed": [0.9, 2.2], "lifetime": [0.3, 0.55], "size": [0.035, 0.07], "gravity": -7.5, "spread": "up", "color": "inherit", "min_interval": 0.012},
+    {"id": "residue_wisp", "channel": "atmosphere", "count": 1, "speed": [0.08, 0.3], "lifetime": [0.8, 1.5], "size": [0.025, 0.045], "gravity": 0.45, "spread": "up", "color": "inherit"},
     {"id": "brazier_spark", "channel": "ambient", "count": 1, "speed": [0.4, 0.9], "lifetime": [0.6, 1.1], "size": [0.03, 0.05], "gravity": 0.9, "spread": "up", "color": "#ffb36b", "rate": 0.9}
   ]
 }

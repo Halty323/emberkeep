@@ -69,7 +69,10 @@ func setup(owner_game: Node3D, room_geometry: RoomGeometry, elevation := 0.0) ->
 	for kind in LOOKS:
 		var look: Array = LOOKS[kind]
 		var image = Image.create(grid_size.x, grid_size.y, false, Image.FORMAT_R8)
-		var texture = ImageTexture.create_from_image(image)
+		# The texture shows `shown`, which eases toward the mask (`image`):
+		# patches spread out and drain away instead of popping.
+		var shown = Image.create(grid_size.x, grid_size.y, false, Image.FORMAT_R8)
+		var texture = ImageTexture.create_from_image(shown)
 		var mat = ShaderMaterial.new()
 		var plane = PlaneMesh.new()
 		plane.size = Vector2(grid_size) * TILE
@@ -107,7 +110,8 @@ func setup(owner_game: Node3D, room_geometry: RoomGeometry, elevation := 0.0) ->
 		view.position = Vector3(0,look[4],0) if elevated_surface else Vector3((grid_origin.x + grid_size.x / 2.0) * TILE, look[4], (grid_origin.y + grid_size.y / 2.0) * TILE)
 		view.visible = false
 		add_child(view)
-		views[kind] = {"view": view, "image": image, "texture": texture, "count": 0, "material": mat}
+		views[kind] = {"view": view, "image": image, "shown": shown, "level": PackedFloat32Array(), "easing": false, "texture": texture, "count": 0, "material": mat}
+		views[kind].level.resize(grid_size.x * grid_size.y)
 	drizzle.seed = Content.stable_hash("drizzle:%d" % grid_origin.x)
 	setup_cloud_surface()
 
@@ -202,9 +206,162 @@ func set_mirror(active: bool) -> void:
 		views[kind].material.set_shader_parameter("reflect_strength", .65 if active else 0.0)
 
 ## Visual only: rain on the cistern's pools, wading rings, the ripple clock.
+## How fast a patch spreads in and drains away (mask units a second).
+const SPREAD_RATE := 3.2
+const DRAIN_RATE := 1.8
+# Small particles each kind gives off now and then, and its splash colour.
+const WISPS := {"fire": ["#ffb050", .05], "ink": ["#4a3a66", .3], "moss": ["#c8e08a", .45], "glass": ["#e8f6ff", .35], "wax": ["#f4e8c8", 1.6], "water": ["#9cc8d8", 1.2]}
+var wisp_wait := 0.0
+
+## Eases each kind's shown mask toward its tiles, a few texels at a time.
+func ease_masks(delta: float) -> void:
+	for kind in views:
+		var entry: Dictionary = views[kind]
+		if not entry.easing: continue
+		var level: PackedFloat32Array = entry.level
+		var target: PackedByteArray = entry.image.get_data()
+		var out := PackedByteArray()
+		out.resize(level.size())
+		var moving := false
+		var any := false
+		for i in level.size():
+			var goal := float(target[i]) / 255.0
+			var now := level[i]
+			if now != goal:
+				now = minf(goal, now + delta * SPREAD_RATE) if goal > now else maxf(goal, now - delta * DRAIN_RATE)
+				level[i] = now
+				moving = true
+			if now > 0.0: any = true
+			out[i] = int(now * 255.0)
+		entry.level = level
+		entry.shown.set_data(grid_size.x, grid_size.y, false, Image.FORMAT_R8, out)
+		entry.texture.update(entry.shown)
+		entry.easing = moving
+		entry.view.visible = any or entry.count > 0
+		# The liquid's body follows, a few times a second while it moves.
+		entry.body_wait = float(entry.get("body_wait", 0.0)) - delta
+		if first_person and (not moving or entry.body_wait <= 0.0):
+			entry.body_wait = BODY_STEP
+			build_body(kind)
+
+# ---------------------------------------------------------------- bodies
+# First person, every patch is real geometry: a low heightfield over its
+# tiles that domes up from the floor at the shore to a rounded top, so a
+# pool of wax or ink has thickness at a glance and a silhouette at grazing
+# angles. Built on the CPU from the eased mask (no vertex texture reads),
+# only while a patch spreads or drains.
+const BODY_STEP := .05
+const THICKNESS := {"wax": .14, "ink": .1, "moss": .09, "water": .07, "ice": .06, "glass": .035, "fire": .04}
+var ground_cache := {}
+
+## The eased mask at a point in tile units from the grid's corner, read
+## as the GPU's linear filter reads it.
+func level_at(level: PackedFloat32Array, gx: float, gz: float) -> float:
+	var fx := gx - .5
+	var fz := gz - .5
+	var x0 := floori(fx)
+	var z0 := floori(fz)
+	var tx := fx - x0
+	var tz := fz - z0
+	return lerpf(lerpf(texel(level, x0, z0), texel(level, x0 + 1, z0), tx), lerpf(texel(level, x0, z0 + 1), texel(level, x0 + 1, z0 + 1), tx), tz)
+
+func texel(level: PackedFloat32Array, x: int, z: int) -> float:
+	if x < 0 or z < 0 or x >= grid_size.x or z >= grid_size.y: return 0.0
+	return level[z * grid_size.x + x]
+
+## The floor under a lattice point, remembered (the room never changes).
+func ground_at(lattice: Vector2i, sub: int) -> float:
+	var key_value := Vector3i(lattice.x, lattice.y, sub)
+	if not ground_cache.has(key_value):
+		var at := Vector3((grid_origin.x + float(lattice.x) / sub) * TILE, surface_level, (grid_origin.y + float(lattice.y) / sub) * TILE)
+		ground_cache[key_value] = ground_height(at)
+	return ground_cache[key_value]
+
+func build_body(kind: String) -> void:
+	var entry: Dictionary = views[kind]
+	var level: PackedFloat32Array = entry.level
+	var cells := {}
+	for i in level.size():
+		if level[i] <= 0.0: continue
+		var x := i % grid_size.x
+		var z := i / grid_size.x
+		for dz in [-1, 0, 1]:
+			for dx in [-1, 0, 1]:
+				var cell := Vector2i(x + dx, z + dz)
+				if cell.x >= 0 and cell.y >= 0 and cell.x < grid_size.x and cell.y < grid_size.y: cells[cell] = true
+	if cells.is_empty(): return
+	# Big lasting pools take fewer steps a tile.
+	var sub := 3 if cells.size() < 140 else 2
+	var thick: float = THICKNESS.get(kind, .04)
+	var heights := {}
+	var height := func(lattice: Vector2i) -> float:
+		if heights.has(lattice): return heights[lattice]
+		var c := level_at(level, float(lattice.x) / sub, float(lattice.y) / sub)
+		var rise := clampf((c - .4) / .55, 0.0, 1.0)
+		var dome := 1.0 - (1.0 - rise) * (1.0 - rise)
+		var value: float = ground_at(lattice, sub) + thick * dome
+		heights[lattice] = value
+		return value
+	var vertices := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var indices := PackedInt32Array()
+	var span := TILE / sub
+	for cell in cells:
+		var base: Vector2i = cell * sub
+		var low := INF
+		var high := -INF
+		for corner in [Vector2i.ZERO, Vector2i(sub, 0), Vector2i(0, sub), Vector2i(sub, sub)]:
+			var g: float = ground_at(base + corner, sub)
+			low = minf(low, g)
+			high = maxf(high, g)
+		# A cliff between storeys is no floor to pool on.
+		if high - low > .65: continue
+		var start := vertices.size()
+		for j in sub + 1:
+			for i in sub + 1:
+				var lattice: Vector2i = base + Vector2i(i, j)
+				var x := (grid_origin.x + float(lattice.x) / sub) * TILE
+				var z := (grid_origin.y + float(lattice.y) / sub) * TILE
+				vertices.append(Vector3(x, height.call(lattice), z))
+				var dx: float = height.call(lattice + Vector2i(1, 0)) - height.call(lattice - Vector2i(1, 0))
+				var dz: float = height.call(lattice + Vector2i(0, 1)) - height.call(lattice - Vector2i(0, 1))
+				normals.append(Vector3(-dx / (2.0 * span), 1.0, -dz / (2.0 * span)).normalized())
+				uvs.append(Vector2(x, z))
+		for j in sub:
+			for i in sub:
+				var a := start + j * (sub + 1) + i
+				indices.append_array([a, a + 1, a + sub + 2, a, a + sub + 2, a + sub + 1])
+	if vertices.is_empty(): return
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	entry.view.mesh = mesh
+	entry.view.position = Vector3(0, float(LOOKS[kind][4]) * .6, 0)
+	entry.material.set_shader_parameter("body_mesh", true)
+
+## Embers off fire, bubbles off ink, spores off moss, glints off glass,
+## drips over wax and water: one at a time from a random tile, locally.
+func give_off(delta: float) -> void:
+	wisp_wait -= delta
+	if wisp_wait > 0 or tiles.is_empty() or EffectsPool.current == null or not is_instance_valid(EffectsPool.current): return
+	wisp_wait = .09
+	var tile: Vector2i = tiles.keys()[randi() % tiles.size()]
+	var kind: String = tiles[tile].kind
+	if not WISPS.has(kind) or randf() > float(WISPS[kind][1]) * (3.0 if kind == "fire" else 1.0): return
+	var at := cell_center(tile) + Vector3(randf_range(-.35, .35), .04, randf_range(-.35, .35))
+	EffectsPool.current.emit("residue_wisp", at, Color(WISPS[kind][0]))
+
 func animate(delta: float) -> void:
 	if is_instance_valid(upper_field): upper_field.animate(delta)
 	clock += delta
+	ease_masks(delta)
+	give_off(delta)
 	if not RenderPolicy.current().refraction: return
 	if views.water.count == 0: return
 	wade -= delta
@@ -397,6 +554,10 @@ func set_tile(tile: Vector2i, kind: String, lasting := false, tame := false) -> 
 		tiles[tile] = {"kind": kind, "age": 0.0, "life": life, "spread": SPREAD_DELAY, "under": previous if kind in ["fire", "ice"] else "", "tame": tame and kind == "fire"}
 	dirty[previous] = true
 	dirty[kind] = true
+	# A new patch lands with a splash of its own colour (only on this device).
+	if kind != "" and kind != previous and kind in LOOKS and randf() < .45 and EffectsPool.current != null and is_instance_valid(EffectsPool.current):
+		var look: Array = LOOKS[kind]
+		EffectsPool.current.emit("residue_splash", cell_center(tile) + Vector3.UP * .08, Color(look[0], 1.0).lightened(.15), 4)
 	if logging: net_tiles[tile] = [kind, lasting]
 
 ## Burn, chill and poison meeting what lies here (only the party's spells
@@ -628,9 +789,11 @@ func rebuild(kind: String) -> void:
 		if at.x < 0 or at.y < 0 or at.x >= grid_size.x or at.y >= grid_size.y: continue
 		image.set_pixelv(at, Color.WHITE)
 		count += 1
-	entry.texture.update(image)
-	entry.view.visible = count > 0
+	entry.easing = true
+	entry.view.visible = count > 0 or entry.view.visible
 	entry.count = count
+	# Headless, nothing animates: show the mask as it is.
+	if DisplayServer.get_name() == "headless" or not is_inside_tree(): ease_masks(10.0)
 
 ## Co-op host: what changed on the floor since last asked, for the guests.
 func take_changes() -> Dictionary:
