@@ -12,6 +12,10 @@ The upper gallery is 10 × 5 metres, 3.2 metres above the ground. The room has a
 
 ![The upstairs floor and staircase](images/two-storey-upstairs.png)
 
+## Every vertical room is two storeys
+
+The older optional vertical rooms (a raised annex up a ramp, or a sunken cellar down one) are gone. Every combat room that rolls a second level now gets the same real gallery as the primary chamber: an upstairs floor over usable ground, reached by a staircase. A room too small for a gallery stays flat. Across sample seeds that is about two two-storey chambers a floor. In a saved run, untouched rooms that still have an old annex or cellar become a gallery, or flat where one cannot fit. Rooms you have already entered are never changed.
+
 ## Movement, combat and persistence
 
 Height queries now distinguish feet above and below the same slab. Players can walk underneath the gallery, climb upstairs and descend without being snapped through the floor. Enemy routes use a separate navigation grid for each storey, joined at the staircase. Replanning during descent completes the stair leg instead of repeatedly sending enemies back upstairs. Static collision and sight tests prevent attacks through the slab.
