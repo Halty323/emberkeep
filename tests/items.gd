@@ -514,6 +514,35 @@ func test_touch() -> void:
 	game.ui._input(click)
 	check(not game.ui.mouse_on_action, "releasing the mouse restores normal firing")
 	root.get_node("Settings").set_value("touch", false)
+	# The player's own layout moves and resizes a control, for drawing and touch alike.
+	var settings = root.get_node("Settings")
+	var moved := Vector2(700, 300)
+	check(settings.set_value("touch_layout", {"dash": [moved.x, moved.y, 1.4]}), "a touch layout is accepted")
+	check(game.ui.control_spot("dash").center == moved and is_equal_approx(game.ui.control_spot("dash").radius, buttons.dash.radius * 1.4), "a control sits and sizes where the layout says")
+	check(game.ui.action_at(moved + Vector2(buttons.dash.radius * 1.2, 0)) == "dash" and game.ui.action_at(buttons.dash.center) != "dash", "and is touched there, not where it was")
+	check(settings.validate("touch_layout", {"dash": [1, 2, 9.0], "nonsense": [0, 0, 1]}) == {"dash": [1.0, 2.0, 1.6]}, "a layout keeps only known controls, within bounds")
+	# The arranging screen drags a control to a new place and keeps it on Done.
+	game.ui.open_layout()
+	touch(7, game.ui.offset / game.ui.scale_value + game.ui.control_spot("jump").center + Vector2(game.ui.widen(), 0))
+	drag(7, game.ui.offset / game.ui.scale_value + Vector2(1000 + game.ui.widen(), 420))
+	touch(7, Vector2.ZERO, false)
+	check(game.ui.layout_selected == "jump" and game.ui.control_spot("jump").center.distance_to(Vector2(1000, 420)) < 1.0, "arranging drags a control where the finger takes it")
+	settings.set_value("touch_layout", game.ui.layout_draft)
+	game.ui.show_screen("play")
+	check(game.ui.control_spot("jump").center.distance_to(Vector2(1000, 420)) < 1.0, "and play keeps it there")
+	settings.set_value("touch_layout", {})
+	# Dragging to look casts too, unless switched off.
+	touch(5, Vector2(1100, 300))
+	check(game.ui.aiming_casts() == game.first_person, "dragging the look pad casts in first person")
+	settings.set_value("cast_while_aiming", false)
+	check(not game.ui.aiming_casts(), "unless casting while aiming is switched off")
+	settings.set_value("cast_while_aiming", true)
+	touch(5, Vector2(1100, 300), false)
+	# The dash's recharge shows under the crosshair, filling as it returns.
+	game.player.dash_cooldown = 0
+	game.player.dash_time = 0
+	game.player.dash()
+	check(game.player.dash_cooldown_full > 0 and is_equal_approx(game.player.dash_cooldown, game.player.dash_cooldown_full), "a dash remembers how long it takes to return")
 	run.pending_bombs.clear()
 	clear_combat()
 	await process_frame

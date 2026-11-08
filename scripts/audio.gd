@@ -20,8 +20,12 @@ func _exit_tree() -> void:
 		player.stream = null
 
 func _ready() -> void:
+	# Effects and music each have their own bus, so each has its own volume.
+	make_bus("Effects")
+	make_bus("Music")
 	for i in 12:
 		var player = AudioStreamPlayer.new()
+		player.bus = "Effects"
 		add_child(player)
 		players.append(player)
 	sounds["step"] = tone(95, 48, .075, .045)
@@ -34,6 +38,12 @@ func _ready() -> void:
 	sounds["item"] = tone(420, 1050, .45, .2)
 	sounds["hurt"] = tone(190, 70, .3, .3)
 	sounds["door"] = tone(260, 520, .25, .12)
+	# Recorded impacts (Kenney's Impact Sounds, CC0): a few takes of each,
+	# picked at random so no break or slam sounds twice the same.
+	for group in RECORDED:
+		for take in RECORDED[group]:
+			var stream = load("res://assets/audio/impacts/%s.ogg" % take)
+			if stream: sounds[take] = stream
 	# One soft pass of the quill over a whole room, not a stroke per square.
 	sounds["scribble"] = scratch(1.05, 7)
 	# Spell sounds are rendered off the main thread; until one is ready the
@@ -41,14 +51,49 @@ func _ready() -> void:
 	if DisplayServer.get_name() != "headless":
 		WorkerThreadPool.add_task(render_spell_sounds)
 	music_player = AudioStreamPlayer.new()
+	music_player.bus = "Music"
 	add_child(music_player)
 	music_player.stream = make_ambient()
 	music_player.volume_db = -14
 	Settings.changed.connect(_on_setting_changed)
+	apply_volumes()
 	refresh()
+
+const RECORDED := {
+	"break_wood": ["impact_wood_heavy_000", "impact_wood_heavy_001", "impact_wood_heavy_002"],
+	"break_planks": ["impact_plank_medium_000", "impact_plank_medium_001"],
+	"break_pot": ["impact_plate_heavy_000", "impact_plate_medium_000", "impact_plate_medium_001"],
+	"door_slam": ["impact_wood_heavy_003", "impact_wood_heavy_004"],
+	"door_lock": ["impact_metal_heavy_001", "impact_metal_heavy_003"]}
+const RECORDED_VOLUME := {"break_wood": -3.0, "break_planks": -9.0, "break_pot": -4.0, "door_slam": -1.0, "door_lock": -8.0}
+
+## One take of a recorded group, where it happens, on this device alone
+## (each device breaks props and shuts doors itself), a little detuned.
+func play_recorded(group: String, parent: Node3D, at: Vector3, pitch := 1.0) -> void:
+	var takes: Array = RECORDED.get(group, [])
+	if takes.is_empty(): return
+	var take: String = takes[randi() % takes.size()]
+	play_local_at(take, parent, at, pitch * randf_range(.92, 1.08), float(RECORDED_VOLUME.get(group, -6.0)) + 12.0)
 
 func _on_setting_changed(key: String) -> void:
 	if key in ["sound", "music"]: refresh()
+	if key in ["sound_volume", "music_volume"]: apply_volumes()
+
+static func make_bus(bus_name: String) -> void:
+	if AudioServer.get_bus_index(bus_name) >= 0: return
+	AudioServer.add_bus()
+	var index := AudioServer.bus_count - 1
+	AudioServer.set_bus_name(index, bus_name)
+	AudioServer.set_bus_send(index, "Master")
+
+## Settings "sound_volume" and "music_volume", 0-100: a fader on each bus.
+func apply_volumes() -> void:
+	for pair in [["Effects", "sound_volume"], ["Music", "music_volume"]]:
+		var index := AudioServer.get_bus_index(pair[0])
+		if index < 0: continue
+		var level := clampf(float(Settings.values.get(pair[1], 100)) / 100.0, 0.0, 1.0)
+		AudioServer.set_bus_mute(index, level <= 0.0)
+		AudioServer.set_bus_volume_db(index, linear_to_db(maxf(level, .001)))
 
 func refresh() -> void:
 	if DisplayServer.get_name() == "headless": return
@@ -200,6 +245,7 @@ func play_local_at(id: String, parent: Node3D, at: Vector3, pitch := 1.0, louder
 	if spatial_players.is_empty():
 		for i in 8:
 			var player = AudioStreamPlayer3D.new()
+			player.bus = "Effects"
 			parent.get_tree().root.add_child(player)
 			player.max_distance = 24
 			player.unit_size = 4

@@ -149,7 +149,10 @@ func erupt(vent: Dictionary) -> void:
 	Effects.ring_burst(game.scene_root, at, Color("ff8a4a"), VENT_REACH)
 	game.make_noise(at, 1.5)
 	for body in NetHooks.bodies(game):
-		if body.global_position.distance_to(at) < VENT_REACH: body.hurt(1.0, at)
+		if body.global_position.distance_to(at) < VENT_REACH:
+			game.set("harm_hint", "A fire vent")
+			body.hurt(1.0, at)
+			game.set("harm_hint", "")
 	for enemy in game.enemies.duplicate():
 		if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable: continue
 		if enemy.global_position.distance_to(at) < VENT_REACH + enemy.radius:
@@ -174,7 +177,9 @@ func update_pendulum(pendulum: Dictionary, running: bool) -> void:
 	for body in NetHooks.bodies(game):
 		var player_at: Vector3 = body.global_position
 		if Geometry3D.get_closest_point_to_segment(player_at, a, b).distance_to(player_at) < .45:
+			game.set("harm_hint", "A swinging blade")
 			body.hurt(1.0, center)
+			game.set("harm_hint", "")
 	for enemy in game.enemies.duplicate():
 		if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable or enemy.boss: continue
 		var at: Vector3 = enemy.global_position

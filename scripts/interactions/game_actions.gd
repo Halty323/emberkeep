@@ -115,13 +115,15 @@ func detonate(bomb: Dictionary) -> void:
 	if live:
 		game.bomb_exploded(bomb, at, BOMB_RADIUS)
 		game.make_noise(at, 3.5)
-		if game.residue: game.residue.ignite(at, BOMB_RADIUS * .8)
+		if game.residue: game.residue.ignite(at, BOMB_RADIUS * .8, true)
 		for enemy in game.enemies.duplicate():
 			if is_instance_valid(enemy) and enemy.alive and enemy.targetable and (enemy.position.distance_to(at) if game.first_person else Vector2(enemy.position.x, enemy.position.z).distance_to(Vector2(at.x, at.z))) < BOMB_RADIUS + enemy.radius:
 				enemy.take_hit(BOMB_DAMAGE, (enemy.position - at).normalized() * 3.0, false, false, "blast")
 		for body in NetHooks.bodies(game):
 			if (body.position.distance_to(at) if game.first_person else Vector2(body.position.x, body.position.z).distance_to(Vector2(at.x, at.z))) < BOMB_RADIUS:
+				game.set("harm_hint", "Your own bomb")
 				body.hurt(BOMB_SELF_DAMAGE, at)
+				game.set("harm_hint", "")
 	if NetHooks.party(game): game.party.share("bomb_gone", bomb.id)
 	game.breach(bomb.room, at, BOMB_RADIUS, live)
 	if Run.active:

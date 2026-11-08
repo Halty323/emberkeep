@@ -22,6 +22,9 @@ const ACTION_BUTTONS := {"dash": {"center": Vector2(973, 610), "radius": 48.0},
 	"bomb": {"center": Vector2(1032, 486), "radius": 38.0},
 	"fire": {"center": Vector2(1178, 552), "radius": 56.0},
 	"jump": {"center": Vector2(1178, 660), "radius": 48.0}}
+# The move stick rests here (left group) until a thumb takes it.
+const MOVE_REST := Vector2(140, 574)
+const MOVE_RADIUS := 66.0
 const MINIMAP_RECT := Rect2(1032, 16, 164, 120)
 const MINIMAP_AREA := Rect2(1040, 24, 148, 104)
 const PAUSE_RECT := Rect2(1204, 16, 60, 56)
@@ -51,11 +54,18 @@ var loading_progress := 0.0
 const TITLE_MODES := ["play", "menu", "armory", "coop", "lobby"]
 const REWARD_WIDTH := 340.0
 const REWARD_GAP := 26.0
-const SETTINGS_PAGES := [["display", "Display"], ["graphics", "Graphics"], ["controls", "Controls"], ["camera", "Camera"]]
+const SETTINGS_PAGES := [["display", "Display"], ["graphics", "Graphics"], ["controls", "Controls"], ["camera", "Camera"], ["sound", "Sound"], ["keys", "Keys"]]
 const SETTINGS_NOTES := {"display": "Resolution scales only the dungeon; text and controls stay sharp. Your display or device can still cap the frame rate.",
 	"graphics": "SSAO shades surface contacts on supported GPUs. Detail changes appearance; room collision and combat stay identical.",
 	"camera": "Comfort settings affect presentation, never movement speed or spell damage.",
-	"controls": "Touch controls show the on-screen sticks and action buttons on any device."}
+	"controls": "Touch controls show the on-screen sticks and action buttons on any device.",
+	"sound": "Click a row to step it up; right-click steps it back down.",
+	"keys": ""}
+# The action whose key is being changed (Settings, Keys), or "".
+var rebinding := ""
+var settings_row_count := 0
+const KEY_LABELS := {"move_up": "Forward", "move_down": "Back", "move_left": "Left", "move_right": "Right", "jump": "Jump",
+	"dash": "Dash", "sprint": "Run", "interact": "Interact", "use_active": "Use item", "place_bomb": "Bomb", "map": "Map", "journal": "Journal"}
 var game: Node3D
 var body: Font = preload("res://assets/fonts/body.ttf")
 var heading: Font = preload("res://assets/fonts/display.ttf")
@@ -101,6 +111,16 @@ var floating_numbers: Array[Dictionary] = []
 var left_touch = -1
 var right_touch = -1
 var left_origin = Vector2(140, 574)
+# The touch layout being arranged (mode "layout"): {control: [x, y, scale]},
+# the control chosen, and the one a finger is dragging and from where on it.
+var layout_draft: Dictionary = {}
+var layout_selected := ""
+var layout_dragging := ""
+var layout_grab := Vector2.ZERO
+var layout_finger := -1
+# A brief glow on the crosshair's dash arc when the dash comes back.
+var dash_ready_glow := 0.0
+var dash_was_cooling := false
 var right_origin = Vector2(1112, 574)
 var left_vector = Vector2.ZERO
 var right_vector = Vector2.ZERO
@@ -242,6 +262,7 @@ func show_screen(screen: String) -> void:
 	boss_surface = null
 	backdrop.color = Color(.025, .035, .035, .74) if mode not in TITLE_MODES else Color(0, 0, 0, 0)
 	if mode == "loading": backdrop.color = Color(.012, .016, .016, 1)
+	if mode == "layout": backdrop.color = Color(.02, .03, .03, .5)
 	# Death stays in view between its two hands.
 	if mode == "bargain": backdrop.color = Color(.02, .01, .03, .38)
 	place_layers()
@@ -288,6 +309,7 @@ func show_screen(screen: String) -> void:
 		"journal": build_journal()
 		"painting": button("← Back", Rect2(812, 598, 360, 58), func(): close_painting())
 		"settings": build_settings()
+		"layout": build_layout()
 		"dead", "won":
 			if Session.online and Session.hosting:
 				button("Climb again together", Rect2(430, 457, 420, 62), func(): game.party.regroup(), true)
@@ -802,17 +824,71 @@ func open_settings(back: String) -> void:
 	settings_page = "display"
 	show_screen("settings")
 
+func settings_pages() -> Array:
+	# Phones and tablets have no keys to rebind.
+	return SETTINGS_PAGES.filter(func(page): return page[0] != "keys" or not is_touch_platform())
+
 func build_settings() -> void:
-	for i in SETTINGS_PAGES.size():
-		var page: Array = SETTINGS_PAGES[i]
-		button(page[1], Rect2(330 + i * 157, 154, 149, 56), func(): open_settings_page(page[0]), page[0] == settings_page)
-	var rows = settings_rows(settings_page)
-	for i in rows.size():
-		setting_row(Rect2(330, 218 + i * 61, 620, 54), rows[i])
+	var pages := settings_pages()
+	# Six tabs use the panel's whole width; four keep the rows' width.
+	var span := 660.0 if pages.size() > 4 else 620.0
+	var width := (span - 6.0 * (pages.size() - 1)) / pages.size()
+	for i in pages.size():
+		var page: Array = pages[i]
+		var tab := button(page[1], Rect2(640.0 - span / 2.0 + i * (width + 6.0), 154, width, 56), func(): open_settings_page(page[0]), page[0] == settings_page)
+		tab.add_theme_font_size_override("font_size", 18 if pages.size() > 4 else 20)
+	if settings_page == "keys":
+		build_keys()
+		button("← Back", Rect2(330, 592, 304, 58), func(): close_subscreen())
+		return
+	else:
+		var rows = settings_rows(settings_page)
+		settings_row_count = rows.size()
+		for i in rows.size():
+			setting_row(Rect2(330, 218 + i * 61, 620, 54), rows[i])
+		if settings_page == "controls":
+			settings_row_count += 1
+			button("Arrange touch controls", Rect2(330, 218 + rows.size() * 61, 620, 54), func(): open_layout())
 	button("← Back", Rect2(396, 592, 488, 58), func(): close_subscreen())
+
+## Every rebindable action in two columns; click one, then press its key.
+func build_keys() -> void:
+	settings_row_count = 6
+	var rows := settings_rows("keys")
+	for i in rows.size():
+		var action: String = rows[i][0]
+		var rect := Rect2(330 + (i / 6) * 316, 218 + (i % 6) * 61, 304, 54)
+		var row := setting_row(rect, rows[i], func():
+			rebinding = "" if rebinding == action else action
+			show_screen("settings"))
+		row.value_size = 17
+	button("Default keys", Rect2(646, 592, 304, 58), func():
+		rebinding = ""
+		Settings.set_value("keys", {})
+		show_screen("settings"))
+
+## While rebinding: the next key (or a mouse button other than the left)
+## becomes the action's; Escape cancels.
+func rebind_input(event: InputEvent) -> bool:
+	if rebinding == "": return false
+	var code := 0
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.physical_keycode == KEY_ESCAPE:
+			rebinding = ""
+			show_screen("settings")
+			return true
+		code = int(event.physical_keycode) if event.physical_keycode != KEY_NONE else int(event.keycode)
+	elif event is InputEventMouseButton and event.pressed and event.button_index in [MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_XBUTTON1, MOUSE_BUTTON_XBUTTON2]:
+		code = Settings.MOUSE_CODE + int(event.button_index)
+	if code <= 0: return false
+	Settings.bind_key(rebinding, code)
+	rebinding = ""
+	show_screen("settings")
+	return true
 
 func open_settings_page(page: String) -> void:
 	settings_page = page
+	rebinding = ""
 	show_screen("settings")
 
 func on_off(key: String) -> String:
@@ -842,20 +918,30 @@ func settings_rows(page: String) -> Array:
 				vsync, ["show_fps", "Show FPS", on_off("show_fps"), true], last]
 		"camera":
 			return [["fov", "Field of view", "%d°" % Settings.values.fov, true],
-				["mouse_sensitivity", "Mouse sensitivity", "%.4f" % Settings.values.mouse_sensitivity, true],
-				["touch_sensitivity", "Touch sensitivity", "%.4f" % Settings.values.touch_sensitivity, true],
+				["mouse_sensitivity", "Mouse sensitivity", "%d%%" % roundi(float(Settings.values.mouse_sensitivity) / float(Settings.DEFAULTS.mouse_sensitivity) * 100.0), true],
+				["touch_sensitivity", "Touch sensitivity", "%d%%" % roundi(float(Settings.values.touch_sensitivity) / float(Settings.DEFAULTS.touch_sensitivity) * 100.0), true],
 				["invert_y", "Invert vertical look", on_off("invert_y"), true],
 				["head_bob", "Head bob", on_off("head_bob"), true]]
 		"graphics":
 			return [["effects_detail", "Effects detail", Settings.values.effects_detail.capitalize(), true],
+				["screen_effects", "Screen warps and flashes", str(Settings.values.screen_effects).capitalize() if RenderPolicy.current().post_processing else "Off · device safe mode", bool(RenderPolicy.current().post_processing)],
 				["small_details", "Small details", Settings.values.small_details.capitalize(), true],
 				["shadows", "Lantern shadows", on_off("shadows"), true],
 				["ssao", "SSAO", Settings.values.ssao.capitalize() if Settings.ssao_supported() else "Off · device safe mode", Settings.ssao_supported()],
 				["adaptive_resolution", "Adaptive resolution", on_off("adaptive_resolution") if Settings.adaptive_supported() else "Phones only", Settings.adaptive_supported()]]
-	return [["sound", "Sound effects", on_off("sound"), true], ["music", "Ambient music", on_off("music"), true],
-		["shake", "Camera shake", on_off("shake"), true], ["touch", "Touch controls", on_off("touch"), true]]
+		"keys":
+			return Settings.REBINDABLE.map(func(action): return [action, KEY_LABELS.get(action, action), "Press a key…" if rebinding == action else Settings.key_label(action), true])
+		"sound":
+			return [["sound", "Sound effects", on_off("sound"), true],
+				["sound_volume", "Effects volume", "%d%%" % int(Settings.values.sound_volume), bool(Settings.values.sound)],
+				["music", "Ambient music", on_off("music"), true],
+				["music_volume", "Music volume", "%d%%" % int(Settings.values.music_volume), bool(Settings.values.music)]]
+	return [["shake", "Camera shake", on_off("shake"), true], ["touch", "Touch controls", on_off("touch"), true],
+		["cast_while_aiming", "Drag to aim casts in fights", on_off("cast_while_aiming"), true],
+		["aim_assist", "Aim assist (touch, gamepad)", on_off("aim_assist"), true],
+		["touch_run", "Run at the stick's edge (touch)", on_off("touch_run"), true]]
 
-func setting_row(rect: Rect2, row: Array) -> SettingRow:
+func setting_row(rect: Rect2, row: Array, action := Callable()) -> SettingRow:
 	var control = SettingRow.new()
 	control.name = "Setting_" + row[0]
 	control.setting_key = row[0]
@@ -873,12 +959,22 @@ func setting_row(rect: Rect2, row: Array) -> SettingRow:
 	control.mouse_exited.connect(func(): slab.modulate = Color(.7, .7, .65) if control.disabled else Color.WHITE)
 	if control.disabled: slab.modulate = Color(.7, .7, .65)
 	var key: String = row[0]
-	control.pressed.connect(func(): Audio.play_sound("coin", .7); Settings.cycle(key); show_screen("settings"))
+	if action.is_valid():
+		control.pressed.connect(func(): Audio.play_sound("coin", .7); action.call())
+	else:
+		control.pressed.connect(func(): Audio.play_sound("coin", .7); Settings.cycle(key); show_screen("settings"))
+		# A right click steps a setting back.
+		control.gui_input.connect(func(event):
+			if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT and not control.disabled:
+				Audio.play_sound("coin", .6)
+				Settings.cycle(key, -1)
+				show_screen("settings"))
 	content.add_child(control)
 	return control
 
 func open_map(back: String) -> void:
 	previous_mode = back
+	map_message = ""
 	game.paused = true
 	show_screen("map")
 
@@ -956,6 +1052,7 @@ func _process(delta: float) -> void:
 		fps_frames = 0
 		fps_time = 0.0
 	toast_time = maxf(0, toast_time - delta)
+	dash_ready_glow = maxf(0.0, dash_ready_glow - delta)
 	for cell in scribbles.keys():
 		if elapsed_ui - scribbles[cell] > SCRIBBLE_TIME: scribbles.erase(cell)
 	for number in floating_numbers:
@@ -968,6 +1065,9 @@ func _process(delta: float) -> void:
 
 func _input(event: InputEvent) -> void:
 	if game.first_person and game.in_menu and event.is_action_pressed("ui_cancel") and handle_title_back():
+		get_viewport().set_input_as_handled()
+		return
+	if mode == "settings" and rebind_input(event):
 		get_viewport().set_input_as_handled()
 		return
 	if mode == "secret" and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
@@ -986,6 +1086,12 @@ func _input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
 		mouse_on_action = false
+	if mode == "layout":
+		layout_input(event)
+		return
+	if mode == "map" and map_input(event):
+		get_viewport().set_input_as_handled()
+		return
 	if mode != "play":
 		return
 	# Emulated mouse events from touches were already handled as touches.
@@ -1008,13 +1114,15 @@ func _input(event: InputEvent) -> void:
 				if action == "fire": fire_touch = event.index
 				trigger_action(action)
 				get_viewport().set_input_as_handled()
-			elif INTERACTION_RECT.has_point(from_middle(p)) and game.interaction_text != "":
+			elif INTERACTION_RECT.has_point(from_middle(p)) and game.interaction_text != "" and not in_move_zone(p):
 				game.interact()
 				get_viewport().set_input_as_handled()
-			elif p.y > 330 and p.x < 550 and left_touch == -1:
+			elif left_touch == -1 and in_move_zone(p):
 				left_touch = event.index
-				left_origin = Vector2(clampf(p.x, 90, 420), clampf(p.y, 400, 620))
-				left_vector = (p - left_origin).limit_length(58) / 58.0
+				# The stick floats to the thumb, near where the layout rests it.
+				var rest: Vector2 = control_spot("move").center
+				left_origin = Vector2(clampf(p.x, minf(rest.x, 90), maxf(rest.x, 420)), clampf(p.y, minf(rest.y, 400), maxf(rest.y, 620)))
+				left_vector = (p - left_origin).limit_length(stick_reach()) / stick_reach()
 				get_viewport().set_input_as_handled()
 			elif right_touch == -1 and ((game.first_person and right.y > 145 and right.x > 600) or (not game.first_person and right.y > 330 and right.x > 730)):
 				right_touch = event.index
@@ -1026,6 +1134,7 @@ func _input(event: InputEvent) -> void:
 			if event.index == left_touch:
 				left_touch = -1
 				left_vector = Vector2.ZERO
+				left_origin = control_spot("move").center
 				get_viewport().set_input_as_handled()
 			if event.index == right_touch:
 				right_touch = -1
@@ -1034,7 +1143,7 @@ func _input(event: InputEvent) -> void:
 	elif event is InputEventScreenDrag:
 		var p = local_point(event.position)
 		if event.index == left_touch:
-			left_vector = (p - left_origin).limit_length(58) / 58.0
+			left_vector = (p - left_origin).limit_length(stick_reach()) / stick_reach()
 			get_viewport().set_input_as_handled()
 		# Dragging FIRE also looks, supporting ordinary two-thumb play while
 		# preserving a separate swipe finger for players who prefer it.
@@ -1056,9 +1165,126 @@ func touch_hud_visible() -> bool:
 func action_at(point: Vector2) -> String:
 	for action in ACTION_BUTTONS:
 		if action in ["fire", "jump"] and not game.first_person: continue
-		if point.distance_to(ACTION_BUTTONS[action].center) < ACTION_BUTTONS[action].radius:
+		var spot := control_spot(action)
+		if point.distance_to(spot.center) < spot.radius:
 			return action
 	return ""
+
+## Where a touch control sits and how large it is: the player's own layout
+## (Settings "touch_layout", or the one being arranged) over the defaults.
+## "move" is in the left group's layout, the rest in the right group's.
+func control_spot(control: String) -> Dictionary:
+	var base: Dictionary = {"center": MOVE_REST, "radius": MOVE_RADIUS} if control == "move" else ACTION_BUTTONS[control]
+	var layout: Dictionary = layout_draft if mode == "layout" else Settings.values.get("touch_layout", {})
+	var saved = layout.get(control)
+	if saved is Array and saved.size() == 3:
+		return {"center": Vector2(float(saved[0]), float(saved[1])), "radius": float(base.radius) * float(saved[2]), "scale": float(saved[2])}
+	return {"center": base.center, "radius": base.radius, "scale": 1.0}
+
+func stick_reach() -> float:
+	return 58.0 * float(control_spot("move").scale)
+
+## Where a thumb takes the movement stick; an interaction prompt never
+## steals a touch from here.
+func in_move_zone(p: Vector2) -> bool:
+	return (p.y > 330 and p.x < 550) or p.distance_to(control_spot("move").center) < control_spot("move").radius * 1.4
+
+## Dragging to look also casts while a fight is on, unless switched off:
+## looking round a cleared room never fires.
+func aiming_casts() -> bool:
+	return game.first_person and right_touch >= 0 and bool(Settings.values.get("cast_while_aiming", true)) and game.fight_on()
+
+# ---------------------------------------------------------------- arranging touch controls
+
+func open_layout() -> void:
+	layout_draft = Settings.values.get("touch_layout", {}).duplicate(true)
+	layout_selected = ""
+	layout_dragging = ""
+	show_screen("layout")
+
+func build_layout() -> void:
+	button("Smaller", Rect2(330, 18, 140, 50), func(): resize_selected(-.1))
+	button("Larger", Rect2(480, 18, 140, 50), func(): resize_selected(.1))
+	button("Reset", Rect2(630, 18, 140, 50), func():
+		layout_draft = {}
+		layout_selected = ""
+		queue_redraw())
+	button("Done", Rect2(780, 18, 170, 50), func():
+		Settings.set_value("touch_layout", layout_draft)
+		show_screen("settings"), true)
+
+func resize_selected(step: float) -> void:
+	if layout_selected == "": return
+	var spot := control_spot(layout_selected)
+	layout_draft[layout_selected] = [spot.center.x, spot.center.y, clampf(float(spot.scale) + step, .6, 1.6)]
+	queue_redraw()
+
+## A control's point in its own group, from a screen point.
+func layout_point(control: String, screen: Vector2) -> Vector2:
+	var p := local_point(screen)
+	return p if control == "move" else from_right(p)
+
+func layout_input(event: InputEvent) -> void:
+	# Touches arrive as touches; emulated mouse copies of them are ignored.
+	if (event is InputEventMouseButton or event is InputEventMouseMotion) and event.device == InputEvent.DEVICE_ID_EMULATION: return
+	var pressed := false
+	var released := false
+	var finger := 0
+	var at := Vector2.ZERO
+	if event is InputEventScreenTouch:
+		pressed = event.pressed
+		released = not event.pressed
+		finger = event.index
+		at = event.position
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		pressed = event.pressed
+		released = not event.pressed
+		finger = -2
+		at = event.position
+	elif event is InputEventScreenDrag or (event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_MASK_LEFT):
+		finger = event.index if event is InputEventScreenDrag else -2
+		if layout_dragging != "" and finger == layout_finger:
+			var moved := layout_point(layout_dragging, event.position) + layout_grab
+			var spot := control_spot(layout_dragging)
+			layout_draft[layout_dragging] = [clampf(moved.x, 30.0 if layout_dragging == "move" else -300.0, 1250.0), clampf(moved.y, 60.0, 700.0), spot.scale]
+			queue_redraw()
+			get_viewport().set_input_as_handled()
+		return
+	else:
+		return
+	if pressed:
+		var best := ""
+		var best_gap := INF
+		for control in Settings.TOUCH_CONTROLS:
+			var spot := control_spot(control)
+			var gap: float = layout_point(control, at).distance_to(spot.center)
+			if gap < float(spot.radius) * 1.15 and gap < best_gap:
+				best = control
+				best_gap = gap
+		if best == "": return
+		layout_selected = best
+		layout_dragging = best
+		layout_finger = finger
+		layout_grab = control_spot(best).center - layout_point(best, at)
+		queue_redraw()
+		get_viewport().set_input_as_handled()
+	elif released and finger == layout_finger:
+		layout_dragging = ""
+		layout_finger = -1
+
+func draw_layout() -> void:
+	anchor(widen() / 2.0)
+	centered("Drag a control to move it. Choose one, then make it smaller or larger.", 640, 104, 18, INK, bold)
+	centered("Fire, jump and the move stick are for first-person play.", 640, 130, 15, MUTED)
+	anchor(0)
+	var move := control_spot("move")
+	draw_stick(move.center, Vector2.ZERO, "MOVE", layout_selected == "move", float(move.scale))
+	if layout_selected == "move": draw_arc(move.center, float(move.radius) + 6, 0, TAU, 48, GOLD, 3, true)
+	anchor(widen())
+	draw_touch_buttons(true)
+	if layout_selected != "" and layout_selected != "move":
+		var spot := control_spot(layout_selected)
+		draw_arc(spot.center, float(spot.radius) + 6, 0, TAU, 48, GOLD, 3, true)
 
 func trigger_action(action: String) -> void:
 	match action:
@@ -1112,10 +1338,11 @@ func _draw() -> void:
 			centered(secret_feedback, 640, 401, 17, Color("efbd9f"))
 		"reward": draw_rewards()
 		"bargain": draw_bargain()
+		"layout": draw_layout()
 		"settings":
 			hearth_emblem(Vector2(640, 76), 11)
 			centered("Make yourself at home", 640, 134, 32, INK, heading)
-			draw_multiline_string(body, Vector2(340, 546), SETTINGS_NOTES[settings_page], HORIZONTAL_ALIGNMENT_CENTER, 600, 17, 2, MUTED)
+			if settings_row_count <= 5 and str(SETTINGS_NOTES.get(settings_page, "")) != "": draw_multiline_string(body, Vector2(340, 546), SETTINGS_NOTES[settings_page], HORIZONTAL_ALIGNMENT_CENTER, 600, 17, 2, MUTED)
 		"journal":
 			match journal_tab:
 				"relics": draw_journal()
@@ -1228,6 +1455,7 @@ func draw_hud() -> void:
 	# Watching a teammate's trial: the world a little paler, out of reach.
 	var trials = game.get("trials")
 	if trials and trials.spectating(): draw_rect(Rect2(-offset.x / scale_value, 0, view_width + offset.x * 2.0 / scale_value, 720), Color(.8, .86, .96, .08))
+	draw_foe_bars()
 	draw_hud_left()
 	anchor(widen() / 2.0)
 	draw_hud_middle()
@@ -1242,8 +1470,106 @@ func draw_hud() -> void:
 			draw_arc(aim_center, 78, angle - .35, angle + .35, 14, Color(1, .42, .28, game.fps.damage_time), 3.5)
 		for side in [-1, 1]:
 			draw_line(aim_center + Vector2(side * 7, 0), aim_center + Vector2(side * 12, 0), GOLD, 1.5)
+		draw_threats(aim_center)
+		draw_dash_arc(aim_center)
+		draw_stamina_arc(aim_center)
 	anchor(widen())
 	draw_hud_right()
+
+## A small health bar over each foe hurt in the last few seconds (bosses keep
+## their plate at the top).
+const FOE_BAR_TIME := 3.0
+func draw_foe_bars() -> void:
+	if stair_presentation_active() or not is_instance_valid(game.camera): return
+	var camera: Camera3D = game.camera
+	var eye: Vector3 = camera.global_position
+	for enemy in game.enemies:
+		if not is_instance_valid(enemy) or not enemy.alive or enemy.boss or enemy.inert or not enemy.targetable: continue
+		var since: float = enemy.age - enemy.hurt_at
+		if since > FOE_BAR_TIME or enemy.hp >= enemy.max_hp: continue
+		var head: Vector3 = enemy.global_position + Vector3.UP * ((float(enemy.hit_height) if game.first_person else float(enemy.radius) * 2.4) + .3)
+		var distance := eye.distance_to(head)
+		if camera.is_position_behind(head) or distance > 26.0: continue
+		var at := local_point(camera.unproject_position(head))
+		var fade := clampf((FOE_BAR_TIME - since) / .6, 0.0, 1.0)
+		var width := clampf(300.0 / maxf(1.0, distance), 24.0, 56.0)
+		var bar := Rect2(at - Vector2(width / 2.0, 0), Vector2(width, 4))
+		draw_rect(bar.grow(1.5), Color(.04, .05, .04, .75 * fade))
+		draw_rect(Rect2(bar.position, Vector2(width * clampf(enemy.health_fraction(), 0.0, 1.0), 4)), Color(Color("eda07a"), fade))
+
+## Danger the eye cannot see: a marker round the sight toward each foe close
+## by and off screen (larger and pulsing while it winds up or charges), and
+## toward each hostile spell flying at the player from out of view.
+const THREAT_REACH := 6.0
+func draw_threats(center: Vector2) -> void:
+	var player = game.player
+	if not is_instance_valid(player) or not is_instance_valid(game.camera): return
+	var camera: Camera3D = game.camera
+	var size := get_viewport_rect().size
+	var screen := Rect2(Vector2.ZERO, size).grow(-size.y * .05)
+	var feet: Vector3 = player.global_position
+	var right: Vector3 = game.fps.right()
+	var ahead := Vector3.FORWARD.rotated(Vector3.UP, game.fps.yaw)
+	for enemy in game.enemies:
+		if not is_instance_valid(enemy) or not enemy.alive or enemy.inert or not enemy.targetable: continue
+		var striking: bool = enemy.windup > 0 or enemy.charge_time > 0
+		var reach := THREAT_REACH * (1.7 if striking else 1.0) + float(enemy.radius)
+		var towards: Vector3 = enemy.global_position - feet
+		var gap := Vector2(towards.x, towards.z).length()
+		if gap > reach: continue
+		var chest: Vector3 = enemy.global_position + Vector3.UP * .9
+		if not camera.is_position_behind(chest) and screen.has_point(camera.unproject_position(chest)): continue
+		var near := 1.0 - gap / reach
+		var alpha := .35 + .6 * near
+		if striking: alpha = .55 + .45 * absf(sin(elapsed_ui * 14.0))
+		threat_mark(center, atan2(towards.dot(right), towards.dot(ahead)), Color(1.0, .42, .28, alpha), 1.3 if striking else .8 + .3 * near)
+	for shot in game.shots:
+		if not is_instance_valid(shot) or not shot.alive or shot.friendly: continue
+		var to_player: Vector3 = feet + Vector3.UP * .9 - shot.global_position
+		var distance := to_player.length()
+		if distance > 8.0 or distance < .01 or shot.direction.dot(to_player / distance) < .82: continue
+		if not camera.is_position_behind(shot.global_position) and screen.has_point(camera.unproject_position(shot.global_position)): continue
+		var towards: Vector3 = shot.global_position - feet
+		threat_mark(center, atan2(towards.dot(right), towards.dot(ahead)), Color(EmberShot.HOSTILE, .5 + .5 * (1.0 - distance / 8.0)), .7)
+
+## One marker: a small arrowhead pointing out from the sight at `angle`
+## (0 ahead, positive to the right).
+func threat_mark(center: Vector2, angle: float, color: Color, size_value: float) -> void:
+	var direction := Vector2(sin(angle), -cos(angle))
+	var side := Vector2(-direction.y, direction.x)
+	var tip := center + direction * (60.0 + 10.0 * size_value)
+	var back := tip - direction * 11.0 * size_value
+	draw_colored_polygon(PackedVector2Array([tip + direction, back + side * 8.0 * size_value + direction, back - side * 8.0 * size_value + direction]), Color(0.04, 0.03, 0.03, color.a * .6))
+	draw_colored_polygon(PackedVector2Array([tip, back + side * 7.0 * size_value, back - side * 7.0 * size_value]), color)
+
+## Stamina as a small arc left of the sight, shown only while it is not
+## full; red while winded.
+func draw_stamina_arc(aim_center: Vector2) -> void:
+	var player = game.player
+	if not is_instance_valid(player) or player.stamina >= player.STAMINA - .01: return
+	var start := PI * .7
+	var sweep := PI * .6
+	var left: float = player.stamina / player.STAMINA
+	var tint := Color("e07a5f") if player.winded else Color("b7ddc0")
+	draw_arc(aim_center, 26, start, start + sweep, 20, Color(.05, .06, .05, .5), 4.5, true)
+	draw_arc(aim_center, 26, start + sweep * (1.0 - left), start + sweep, 20, Color(tint, .9), 3.0, true)
+
+## The dash's recharge as a small arc under the crosshair, where a thumb on
+## the DASH button never hides it; it glows once as the dash comes back.
+func draw_dash_arc(aim_center: Vector2) -> void:
+	if not is_instance_valid(game.player): return
+	var cooling: bool = game.player.dash_cooldown > 0
+	if dash_was_cooling and not cooling: dash_ready_glow = .35
+	dash_was_cooling = cooling
+	var start := PI * .2
+	var sweep := PI * .6
+	if cooling:
+		var back := 1.0 - clampf(game.player.dash_cooldown / maxf(.01, float(game.player.dash_cooldown_full)), 0.0, 1.0)
+		draw_arc(aim_center, 22, start, start + sweep, 20, Color(.05, .06, .05, .5), 4.5, true)
+		draw_arc(aim_center, 22, start, start + sweep, 20, Color(MUTED, .5), 3.0, true)
+		draw_arc(aim_center, 22, start + sweep * (1.0 - back), start + sweep, 20, Color(GOLD, .95), 3.0, true)
+	elif dash_ready_glow > 0:
+		draw_arc(aim_center, 22, start, start + sweep, 20, Color(GOLD, dash_ready_glow / .35), 3.5, true)
 
 ## One small slab: health, resources, weapon and held item; relics beneath.
 func draw_hud_left() -> void:
@@ -1281,10 +1607,22 @@ func draw_hud_left() -> void:
 	if not Run.curses.is_empty():
 		text("CURSED · " + " · ".join(Run.curses.map(func(curse): return DeathBargain.curse_name(curse).to_upper())), Vector2(22, HUD_RECT.end.y + 42), 12, DeathBargain.COLOR, bold)
 	if not touch_hud_visible() and not stair_presentation_active():
-		text("WASD move · Mouse aim/cast · Space jump · Shift dash · E interact" if game.first_person else "WASD move · Mouse cast · Space dash · F item · B bomb", Vector2(28, 668), 15, MUTED)
+		text("%s move · %s run · Mouse aim/cast · %s jump · %s dash · %s interact" % [move_keys(), Settings.key_label("sprint"), Settings.key_label("jump"), Settings.key_label("dash"), Settings.key_label("interact")] if game.first_person else "%s move · Mouse cast · %s dash · %s item · %s bomb" % [move_keys(), Settings.key_label("dash"), Settings.key_label("use_active"), Settings.key_label("place_bomb")], Vector2(28, 668), 15, MUTED)
 	text("SEED %d" % Run.seed_value, Vector2(28, 697), 13, MUTED)
 	if touch_hud_visible():
-		draw_stick(left_origin, left_vector, "MOVE", left_touch >= 0)
+		draw_stick(left_origin if left_touch >= 0 else control_spot("move").center, left_vector, "RUN" if game.player and game.player.sprinting else "MOVE", left_touch >= 0, float(control_spot("move").scale))
+
+## The four movement keys as one word when they are letters ("WASD").
+func move_keys() -> String:
+	var keys: Array = ["move_up", "move_left", "move_down", "move_right"].map(func(action): return Settings.key_label(action))
+	return "".join(keys) if keys.all(func(key): return str(key).length() == 1) else " ".join(keys)
+
+## How to interact on this device: a tap, the bound key, a gamepad's Y.
+func interact_hint() -> String:
+	if touch_hud_visible(): return "Tap to interact"
+	var hint := "Press %s" % Settings.key_label("interact")
+	if not Input.get_connected_joypads().is_empty(): hint += "  ·  Y"
+	return hint
 
 ## The boss's plate while it fights, the room's state and any interaction.
 ## The kindle as three small flames, lit one by one, and caught sparks as
@@ -1322,26 +1660,32 @@ func draw_hud_middle() -> void:
 	if trial_line != "": centered(trial_line, 640, 672, 17, DeathBargain.COLOR, bold)
 	if game.interaction_text != "":
 		centered(game.interaction_text, 640, 596, 21, GOLD, bold)
-		centered("Tap to interact  ·  E / A", 640, 624, 16, MUTED)
+		centered(interact_hint(), 640, 624, 16, MUTED)
 
 func draw_hud_right() -> void:
 	draw_minimap()
 	text("%d:%02d" % [int(Run.elapsed) / 60, int(Run.elapsed) % 60], Vector2(1196, 697), 15, MUTED)
 	if not touch_hud_visible(): return
-	if game.first_person:
-		draw_action_ring("fire", 1.0, GOLD)
-		centered("CAST", 1178, 558, 18, GOLD, bold)
-		draw_action_ring("jump", 1.0, GOLD)
-		centered("JUMP", 1178, 666, 15, GOLD, bold)
-	else: draw_stick(right_origin, right_vector, "AIM + CAST", right_touch >= 0)
-	var ready: bool = game.player and game.player.dash_cooldown <= 0
+	if not game.first_person: draw_stick(right_origin, right_vector, "AIM + CAST", right_touch >= 0)
+	draw_touch_buttons(false)
+
+## The action buttons where the layout puts them (all of them while arranging).
+func draw_touch_buttons(arranging: bool) -> void:
+	if game.first_person or arranging:
+		for action in ["fire", "jump"]:
+			var spot := control_spot(action)
+			draw_action_ring(action, 1.0, GOLD)
+			centered("CAST" if action == "fire" else "JUMP", spot.center.x, spot.center.y + 6, 18 if action == "fire" else 15, GOLD, bold)
+	var ready: bool = arranging or (game.player and game.player.dash_cooldown <= 0)
+	var dash := control_spot("dash")
 	draw_action_ring("dash", 1.0 if ready else 0.0, GOLD if ready else MUTED)
-	centered("DASH" if ready else "%.1f" % game.player.dash_cooldown, DASH_CENTER.x, DASH_CENTER.y + 7, 18, GOLD if ready else MUTED, bold)
+	centered("DASH" if ready else "%.1f" % game.player.dash_cooldown, dash.center.x, dash.center.y + 7, 18, GOLD if ready else MUTED, bold)
 	draw_active_button()
-	var bomb: Dictionary = ACTION_BUTTONS.bomb
-	draw_action_ring("bomb", 1.0 if Run.bombs > 0 else 0.0, GOLD if Run.bombs > 0 else MUTED)
+	var bomb := control_spot("bomb")
+	var have_bombs: bool = arranging or Run.bombs > 0
+	draw_action_ring("bomb", 1.0 if have_bombs else 0.0, GOLD if have_bombs else MUTED)
 	resource_icon("bomb", bomb.center + Vector2(0, -8))
-	centered("×%d" % Run.bombs, bomb.center.x, bomb.center.y + 22, 15, INK if Run.bombs > 0 else MUTED, bold)
+	centered("×%d" % Run.bombs, bomb.center.x, bomb.center.y + 22, 15, INK if have_bombs else MUTED, bold)
 
 func right_text(value: String, at: Vector2, size_value := 18, color := INK, font: Font = null) -> void:
 	var f = font if font else body
@@ -1439,7 +1783,7 @@ func draw_active_line() -> void:
 	right_text(status, Vector2(HUD_RECT.end.x - 14, 119), 14, GOLD if state.remaining <= 0 else MUTED, bold)
 
 func draw_action_ring(action: String, fraction: float, color: Color) -> void:
-	var button_region: Dictionary = ACTION_BUTTONS[action]
+	var button_region: Dictionary = control_spot(action)
 	var center: Vector2 = button_region.center
 	var radius: float = button_region.radius
 	draw_circle(center + Vector2(0, 4), radius, Color(.02, .03, .03, .7))
@@ -1450,7 +1794,7 @@ func draw_action_ring(action: String, fraction: float, color: Color) -> void:
 
 ## Item icon, cooldown ring and a seconds readout while recharging.
 func draw_active_button() -> void:
-	var center: Vector2 = ACTION_BUTTONS.active.center
+	var center: Vector2 = control_spot("active").center
 	var state = active_state()
 	if state.is_empty():
 		draw_action_ring("active", 0.0, MUTED)
@@ -1461,15 +1805,15 @@ func draw_active_button() -> void:
 	diamond(center + Vector2(0, -6), 13, Color(state.definition.color), ready)
 	centered("USE" if ready else "%d" % ceili(state.remaining), center.x, center.y + 25, 15, GOLD if ready else INK, bold)
 
-func draw_stick(at: Vector2, value: Vector2, label: String, active_touch: bool) -> void:
-	draw_circle(at + Vector2(0, 4), 66, Color(.02, .03, .025, .35))
-	draw_circle(at, 66, Color(.16, .19, .16, .48))
-	draw_arc(at, 66, 0, TAU, 48, Color(GOLD, .55 if active_touch else .3), 2, true)
-	draw_arc(at, 59, 0, TAU, 48, Color(.06, .08, .065, .6), 2, true)
-	draw_circle(at + value * 48 + Vector2(0, 3), 28, Color(.02, .03, .02, .45))
-	draw_circle(at + value * 48, 28, Color(.65, .57, .39, .7 if active_touch else .4))
-	draw_arc(at + value * 48, 27, PI, TAU, 24, Color(GOLD, .65), 2, true)
-	centered(label, at.x, at.y + 91, 14, Color(INK, .8), bold)
+func draw_stick(at: Vector2, value: Vector2, label: String, active_touch: bool, size := 1.0) -> void:
+	draw_circle(at + Vector2(0, 4), 66 * size, Color(.02, .03, .025, .35))
+	draw_circle(at, 66 * size, Color(.16, .19, .16, .48))
+	draw_arc(at, 66 * size, 0, TAU, 48, Color(GOLD, .55 if active_touch else .3), 2, true)
+	draw_arc(at, 59 * size, 0, TAU, 48, Color(.06, .08, .065, .6), 2, true)
+	draw_circle(at + value * 48 * size + Vector2(0, 3), 28 * size, Color(.02, .03, .02, .45))
+	draw_circle(at + value * 48 * size, 28 * size, Color(.65, .57, .39, .7 if active_touch else .4))
+	draw_arc(at + value * 48 * size, 27 * size, PI, TAU, 24, Color(GOLD, .65), 2, true)
+	centered(label, at.x, at.y + 91 * size, 14, Color(INK, .8), bold)
 
 func draw_minimap() -> void:
 	# The first-person ink is a clipped child canvas so only the map turns;
@@ -1697,19 +2041,54 @@ static func partial_path(points: PackedVector2Array, progress: float) -> PackedV
 			break
 	return out
 
-func draw_full_map() -> void:
-	hearth_emblem(Vector2(640, 96), 11)
-	centered("The way home", 640, 140, 32, INK, heading)
-	var known = map_rooms()
+## The full map's focus and cell size: [focus, cell size].
+func full_map_frame() -> Array:
 	var low = Vector2(INF, INF)
 	var high = -low
-	for id in known:
+	for id in map_rooms():
 		for cell in FloorGenerator.room_cells(Run.rooms[id]):
 			low = Vector2(minf(low.x, cell.x), minf(low.y, cell.y))
 			high = Vector2(maxf(high.x, cell.x), maxf(high.y, cell.y))
 	var span = high - low + Vector2.ONE
-	var cell_size = minf(48.0, minf(FULL_MAP_AREA.size.x / (span.x + 1), FULL_MAP_AREA.size.y / (span.y + 1)))
-	draw_floor_map(FULL_MAP_AREA, (low + high) / 2.0, cell_size)
+	return [(low + high) / 2.0, minf(48.0, minf(FULL_MAP_AREA.size.x / (span.x + 1), FULL_MAP_AREA.size.y / (span.y + 1)))]
+
+## The room drawn under a point of the full map, or "".
+func map_room_at(point: Vector2) -> String:
+	var frame := full_map_frame()
+	var cell_size: float = frame[1]
+	var origin: Vector2 = FULL_MAP_AREA.get_center() - frame[0] * cell_size
+	for id in map_rooms():
+		for cell in FloorGenerator.room_cells(Run.rooms[id]):
+			if Rect2(origin + (Vector2(cell) - Vector2(.5, .5)) * cell_size, Vector2.ONE * cell_size).has_point(point): return id
+	return ""
+
+## A tap or click on a room of the full map walks back there, when it can.
+var map_message := ""
+func map_input(event: InputEvent) -> bool:
+	var at := Vector2.ZERO
+	if event is InputEventScreenTouch and event.pressed: at = event.position
+	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and event.device != InputEvent.DEVICE_ID_EMULATION: at = event.position
+	else: return false
+	var point := local_point(at) - Vector2(layer_shift(), 0)
+	if not FULL_MAP_AREA.has_point(point) or not Run.active: return false
+	var id := map_room_at(point)
+	if id == "": return false
+	var why: String = game.travel_block(id)
+	if why != "":
+		map_message = why
+		queue_redraw()
+		return true
+	map_message = ""
+	game.travel_to(id)
+	return true
+
+func draw_full_map() -> void:
+	hearth_emblem(Vector2(640, 96), 11)
+	centered("The way home", 640, 140, 32, INK, heading)
+	var frame := full_map_frame()
+	draw_floor_map(FULL_MAP_AREA, frame[0], frame[1])
+	if map_message != "": centered(map_message, 640, 166, 15, Color("efbd9f"), bold)
+	else: centered(("Tap" if touch_hud_visible() else "Click") + " a room you have cleared to go back to it", 640, 166, 15, MUTED)
 	var main_rooms = Run.rooms.values().filter(func(room): return not room.get("secret", false))
 	var twist_name = str(Content.record("twists", Run.twist_id()).get("name", ""))
 	centered("%s  ·  Floor %d of %d%s  ·  %d of %d rooms visited  ·  Outlined: you are here" % [Run.theme().name, Run.floor_number, Run.climb_length(),
@@ -1895,4 +2274,8 @@ func draw_end() -> void:
 	centered("You carried a little warmth all the way home." if mode == "won" else "There is always another little spark.", 640, 284, 19, MUTED)
 	centered("Floor %d of %d  ·  %d rooms  ·  %d foes" % [mini(Run.floor_number, Run.climb_length()), Run.climb_length(), Run.cleared, Run.kills], 640, 343, 22, GOLD)
 	centered("%d relics  ·  %d:%02d  ·  seed %d" % [Run.inventory.size(), int(Run.elapsed) / 60, int(Run.elapsed) % 60, Run.seed_value], 640, 383, 18, MUTED)
-	centered("Your next combination is still out there.", 640, 425, 17, MUTED)
+	var harm: String = str(game.get("last_harm")) if game.get("last_harm") != null else ""
+	if mode == "dead" and harm != "":
+		centered("Felled by %s" % (harm.left(1).to_lower() + harm.substr(1) if not harm.begins_with("The ") else harm), 640, 425, 19, Color("efbd9f"), bold)
+	else:
+		centered("Your next combination is still out there.", 640, 425, 17, MUTED)

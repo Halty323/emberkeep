@@ -17,7 +17,33 @@ const DEFAULTS := {"render_scale": 1.0, "fps_limit": 60, "vsync": true, "show_fp
 	# Opt out of a device's 3D pixel budget (PowerVR phones): sharper, slower.
 	"full_resolution": false,
 	# Phones: draw the dungeon smaller while the frame rate is falling short.
-	"adaptive_resolution": true}
+	"adaptive_resolution": true,
+	# Touch: dragging to look also casts; and where each touch control sits
+	# and how large it is ({control: [x, y, scale]}, empty for the defaults).
+	"cast_while_aiming": true, "touch_layout": {},
+	# How strongly spells, blasts and hurts warp the frame: full, reduced, off.
+	"screen_effects": "full",
+	# Touch and gamepad: the sight slows over a foe and spells bend onto one
+	# just off the crosshair. Never applies to a mouse.
+	"aim_assist": true,
+	# Touch: pushing the movement stick to its edge runs.
+	"touch_run": true,
+	# Loudness of sound effects and of the music, 0-100 in tens.
+	"sound_volume": 100, "music_volume": 100,
+	# Rebound keys: {action: code}; a key's physical keycode, or a mouse
+	# button as MOUSE_CODE + its index. Empty for the defaults.
+	"keys": {}}
+const SCREEN_EFFECTS := ["full", "reduced", "off"]
+const VOLUMES := [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+# Keyboard actions and their default keys; the first of each may be rebound.
+const KEY_DEFAULTS := {"move_up": [KEY_W, KEY_UP], "move_down": [KEY_S, KEY_DOWN],
+	"move_left": [KEY_A, KEY_LEFT], "move_right": [KEY_D, KEY_RIGHT],
+	"jump": [KEY_SPACE], "dash": [KEY_SHIFT], "sprint": [KEY_CTRL], "interact": [KEY_E], "use_active": [KEY_F],
+	"place_bomb": [KEY_B], "map": [KEY_M], "journal": [KEY_TAB], "pause_game": [KEY_ESCAPE, KEY_P]}
+const REBINDABLE := ["move_up", "move_down", "move_left", "move_right", "jump", "dash", "sprint", "interact", "use_active", "place_bomb", "map", "journal"]
+const MOUSE_CODE := 1 << 30
+# Touch controls a layout may move and resize.
+const TOUCH_CONTROLS := ["move", "fire", "jump", "dash", "active", "bomb"]
 # Preferences previously stored in profile.json, migrated once.
 const LEGACY_KEYS := {"sound": "sound", "music": "music", "shake": "shake", "touch": "touch", "quality": "shadows"}
 # Provisional active-room totals; tune on real devices before changing.
@@ -75,8 +101,30 @@ func validate(key: String, value) -> Variant:
 			return int(value) if int(value) in FPS_LIMITS else null
 		"effects_detail", "small_details":
 			return value if value is String and value in DETAIL_LEVELS else null
+		"screen_effects":
+			return value if value is String and value in SCREEN_EFFECTS else null
+		"sound_volume", "music_volume":
+			if not (value is int or value is float) or float(value) != floorf(float(value)): return null
+			return int(value) if int(value) in VOLUMES else null
+		"keys":
+			if not value is Dictionary: return null
+			var keys := {}
+			for action in value:
+				var code = value[action]
+				if str(action) in REBINDABLE and (code is int or code is float) and float(code) == floorf(float(code)) and int(code) > 0 and int(code) != KEY_ESCAPE:
+					keys[str(action)] = int(code)
+			return keys
 		"ssao":
 			return value if value is String and value in SSAO_LEVELS else null
+		"touch_layout":
+			if not value is Dictionary: return null
+			var layout := {}
+			for control in value:
+				var spot = value[control]
+				if not str(control) in TOUCH_CONTROLS or not spot is Array or spot.size() != 3: continue
+				if not spot.all(func(number): return (number is int or number is float) and is_finite(float(number))): continue
+				layout[str(control)] = [clampf(float(spot[0]), -400.0, 1680.0), clampf(float(spot[1]), 0.0, 720.0), clampf(float(spot[2]), .6, 1.6)]
+			return layout
 		_:
 			return value if value is bool else null
 
@@ -105,6 +153,8 @@ func options(key: String) -> Array:
 		"fps_limit": return FPS_LIMITS
 		"effects_detail", "small_details": return DETAIL_LEVELS
 		"ssao": return SSAO_LEVELS
+		"screen_effects": return SCREEN_EFFECTS
+		"sound_volume", "music_volume": return VOLUMES
 	return [false, true]
 
 func cycle(key: String, step := 1) -> void:
@@ -139,6 +189,59 @@ func apply(key: String) -> void:
 		"vsync":
 			if vsync_supported():
 				DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if values.vsync else DisplayServer.VSYNC_DISABLED)
+		"keys":
+			apply_keys()
+
+# ---------------------------------------------------------------- keys
+
+## The keyboard and mouse half of every action: the defaults, with the first
+## key of each replaced by the player's own. Gamepad buttons stay as they are.
+func apply_keys() -> void:
+	for action in KEY_DEFAULTS:
+		if not InputMap.has_action(action): InputMap.add_action(action)
+		for event in InputMap.action_get_events(action):
+			if event is InputEventKey or event is InputEventMouseButton: InputMap.action_erase_event(action, event)
+		var codes: Array = KEY_DEFAULTS[action].duplicate()
+		if values.keys.has(action): codes[0] = int(values.keys[action])
+		for code in codes:
+			InputMap.action_add_event(action, input_for(code))
+
+static func input_for(code: int) -> InputEvent:
+	if code >= MOUSE_CODE:
+		var click := InputEventMouseButton.new()
+		click.button_index = code - MOUSE_CODE
+		return click
+	var key := InputEventKey.new()
+	key.physical_keycode = code
+	return key
+
+## The key an action answers first, as the player reads it.
+func key_label(action: String) -> String:
+	var code := int(values.keys.get(action, KEY_DEFAULTS.get(action, [0])[0]))
+	return code_label(code)
+
+static func code_label(code: int) -> String:
+	if code >= MOUSE_CODE:
+		match code - MOUSE_CODE:
+			MOUSE_BUTTON_RIGHT: return "Right click"
+			MOUSE_BUTTON_MIDDLE: return "Middle click"
+			MOUSE_BUTTON_XBUTTON1: return "Mouse 4"
+			MOUSE_BUTTON_XBUTTON2: return "Mouse 5"
+		return "Mouse %d" % (code - MOUSE_CODE)
+	var label := OS.get_keycode_string(code)
+	return label if label != "" else "Key %d" % code
+
+## Binds an action's first key; an action that had it takes the old one.
+func bind_key(action: String, code: int) -> void:
+	var keys: Dictionary = values.keys.duplicate()
+	var old := int(keys.get(action, KEY_DEFAULTS[action][0]))
+	for other in REBINDABLE:
+		if other != action and int(keys.get(other, KEY_DEFAULTS[other][0])) == code:
+			keys[other] = old
+	keys[action] = code
+	for other in keys.keys():
+		if int(keys[other]) == int(KEY_DEFAULTS[other][0]): keys.erase(other)
+	set_value("keys", keys)
 
 func apply_render_policy() -> void:
 	var viewport = get_tree().root

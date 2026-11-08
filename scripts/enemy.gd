@@ -29,6 +29,8 @@ var charge_time = 0.0
 var charge_direction = Vector3.ZERO
 var charges_left = 0
 var windup = 0.0
+# When it was last hurt (its own age): a small health bar shows for a while.
+var hurt_at := -100.0
 var warning: MeshInstance3D
 var boss = false
 var color = Color("bb7667")
@@ -107,7 +109,29 @@ var jelly_owner := -1
 var fire_leaps := 0
 var mark_view: Node3D
 var ice_shell: MeshInstance3D
+const HEALTH_SCALE := 1.5
+# A foe that has just appeared cannot hurt by touch yet: a moment to see it.
+const SPAWN_GRACE := .6
 static var pip_mesh: SphereMesh
+
+## How much tougher foes are against the player's power: none with a
+## starting spellbook, rising to HEALTH_SCALE as relics (eight) or doubled
+## damage-and-rate arrive, whichever comes first.
+static func health_scale() -> float:
+	var power := float(Run.stats.get("damage", 1.0)) * float(Run.stats.get("rate", 1.0))
+	var growth := maxf(Run.inventory.size() / 8.0, power - 1.0)
+	return 1.0 + (HEALTH_SCALE - 1.0) * clampf(growth, 0.0, 1.0)
+
+## A foe's name for the player: a boss as its floor calls it.
+static func display_name(type: String) -> String:
+	if type in Foes.BOSSES: return Foes.boss_name(type)
+	return type.replace("_", " ").capitalize()
+
+## The same name with its article: "A Spitter", "The Hearth Warden".
+static func called(type: String) -> String:
+	var name := display_name(type)
+	if name.begins_with("The "): return name
+	return ("An " if name.left(1) in ["A", "E", "I", "O", "U"] else "A ") + name
 
 func setup(owner_game: Node3D, type: String, id: int) -> void:
 	game = owner_game
@@ -123,6 +147,9 @@ func setup(owner_game: Node3D, type: String, id: int) -> void:
 	if ExpeditionBalance.active_new_run(): max_hp *= ExpeditionBalance.foe_health(Run.floor_number,boss)
 	# Combinations make players stronger; the upper floors answer.
 	max_hp *= Synergies.TOUGHNESS[clampi(Run.floor_number, 0, Synergies.TOUGHNESS.size() - 1)]
+	# Spells (and the relics that multiply them) hit hard: foes answer the
+	# party's power, up to half again as much health.
+	max_hp *= health_scale()
 	hp = max_hp
 	restless = Run.has_twist("restless")
 	speed = spec[1] * (1.0 + (Run.floor_number - 1) * .08) * (1.15 if restless else 1.0)
@@ -404,7 +431,7 @@ func update_sim(delta: float) -> void:
 	if turns():
 		visual.rotation.y = lerp_angle(visual.rotation.y, atan2(-direction.x, -direction.z), delta * 8)
 	if is_instance_valid(thread) and is_instance_valid(twin) and twin.alive: stretch(thread, global_position + Vector3.UP * .6, twin.global_position + Vector3.UP * .6)
-	if contact_damage and targetable and distance < radius + .45 and (not game.first_person or absf(game.player.global_position.y - global_position.y) < maxf(1.1, radius * 2.5)):
+	if contact_damage and targetable and age > SPAWN_GRACE and distance < radius + .45 and (not game.first_person or absf(game.player.global_position.y - global_position.y) < maxf(1.1, radius * 2.5)):
 		game.player.hurt(1.0, global_position)
 	after_move(delta, distance, direction)
 
@@ -573,6 +600,7 @@ func receive_hit(damage: float, impulse: Vector3, critical: bool, dot: bool, cau
 	if elite == "twinned" and is_instance_valid(twin) and twin.alive:
 		twin.hp -= damage
 	hp -= damage
+	hurt_at = age
 	knock_velocity += impulse / (2.5 if boss else 1.0)
 	if not dot:
 		visual.scale = Vector3(1.17, .85, 1.17)
@@ -890,7 +918,7 @@ func react(id: String, arriving: String, power: float, stats: Dictionary) -> voi
 			burn_power = maxf(burn_power * 2.0, 4.0)
 			if game.residue:
 				game.residue.add("wax", global_position, 1.3)
-				game.residue.ignite(global_position, 1.3)
+				game.residue.ignite(global_position, 1.3, true)
 			take_hit(blow, Vector3.ZERO, false, false, "reaction")
 		"freeze": freeze(2.6)
 		"brittle":

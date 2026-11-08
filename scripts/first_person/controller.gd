@@ -29,6 +29,15 @@ const VIEW_JUMP := 2.0
 var view_from := Vector3.ZERO
 var view_to := Vector3.ZERO
 var view_body: Object = null
+# Aim assist (touch and gamepad, never a mouse): the sight slows while it is
+# over a foe, and spells bend onto a foe just off the crosshair.
+const ASSIST_CONE := 4.0
+const ASSIST_REACH := 22.0
+const ASSIST_FRICTION := .55
+var assist_target: Node3D = null
+var assist_point := Vector3.ZERO
+var on_target := false
+var pad_look := 0.0
 
 func setup(owner_game) -> void:
 	game = owner_game
@@ -134,7 +143,7 @@ func update_view(delta: float, snap := false) -> void:
 	var bob := sin(player.walk_time * 2.0) * .016 if Settings.values.head_bob and player.is_on_floor() else 0.0
 	# Touch look turns the view every drawn frame, not only on fixed ticks.
 	if playing:
-		look(game.ui.look_delta * float(Settings.values.touch_sensitivity))
+		look(game.ui.look_delta * float(Settings.values.touch_sensitivity) * friction())
 		game.ui.look_delta = Vector2.ZERO
 	# A fallen player sees the room from the floor.
 	game.camera.global_position = view_position(player, snap) + Vector3(0, (EYE * .3 if NetHooks.downed(game) else EYE) + bob, 0)
@@ -155,12 +164,52 @@ func collect_look(delta: float) -> void:
 	if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT): suppress_mouse_fire = false
 	var eye: Vector3 = game.player.global_position + Vector3.UP * EYE
 	near_wall = not game.get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(eye, eye + forward() * .9, 1 | PropVisuals.FURNITURE_LAYER)).is_empty()
-	look(game.ui.look_delta * float(Settings.values.touch_sensitivity))
+	pad_look = maxf(0.0, pad_look - delta)
+	find_assist()
+	look(game.ui.look_delta * float(Settings.values.touch_sensitivity) * friction())
 	game.ui.look_delta = Vector2.ZERO
 	Run.view_angles = [yaw, pitch]
 	var stick = Vector2(Input.get_joy_axis(0, JOY_AXIS_RIGHT_X), Input.get_joy_axis(0, JOY_AXIS_RIGHT_Y))
 	if stick.length() > .18:
-		look(stick * delta * 2.5)
+		pad_look = 2.0
+		look(stick * delta * 2.5 * friction())
+
+func assist_active() -> bool:
+	return bool(Settings.values.get("aim_assist", true)) and (game.ui.touch_hud_visible() or pad_look > 0.0)
+
+## How much the sight slows: only over a foe, only with assist on.
+func friction() -> float:
+	return ASSIST_FRICTION if on_target and assist_active() else 1.0
+
+## The foe nearest the crosshair within a few degrees (more for a near or
+## large one) that the eye can see.
+func find_assist() -> void:
+	assist_target = null
+	on_target = false
+	if not assist_active() or not is_instance_valid(game.player): return
+	var eye: Vector3 = game.player.global_position + Vector3.UP * EYE
+	var ahead := forward()
+	var best := INF
+	var space: PhysicsDirectSpaceState3D = game.get_world_3d().direct_space_state
+	for enemy in game.enemies:
+		if not is_instance_valid(enemy) or not enemy.alive or not enemy.targetable or enemy.inert: continue
+		var chest: Vector3 = enemy.global_position + Vector3.UP * clampf(float(enemy.hit_height) * .5, .4, 1.6)
+		var to := chest - eye
+		var distance := to.length()
+		if distance > ASSIST_REACH or distance < .4: continue
+		var body := atan(float(enemy.radius) / distance)
+		var angle := ahead.angle_to(to)
+		if angle > deg_to_rad(ASSIST_CONE) + body or angle >= best: continue
+		if not space.intersect_ray(PhysicsRayQueryParameters3D.create(eye, chest, 1 | PropVisuals.FURNITURE_LAYER)).is_empty(): continue
+		best = angle
+		assist_target = enemy
+		assist_point = chest
+		on_target = angle < body * 1.4 + deg_to_rad(1.0)
+
+## A spell's direction with assist: onto the foe found this tick, if any.
+func assisted(muzzle: Vector3, aim: Vector3) -> Vector3:
+	if not is_instance_valid(assist_target) or not assist_active(): return aim
+	return (assist_point - muzzle).normalized()
 
 func move_player(player, delta: float, move_input: Vector2) -> void:
 	jump_buffer = maxf(0, jump_buffer - delta)
@@ -176,7 +225,7 @@ func move_player(player, delta: float, move_input: Vector2) -> void:
 		player.graze_grace = player.GRAZE_GRACE
 	else:
 		var drag: float = game.residue.slows(player.global_position) if game.residue else 1.0
-		var speed: float = player.RUN_SPEED * Run.stats.speed * drag
+		var speed: float = player.RUN_SPEED * Run.stats.speed * player.stride() * drag
 		if player.leaving_dash:
 			# A short dodge must end at running pace rather than carrying
 			# another few metres of slide off the far edge of a gallery.

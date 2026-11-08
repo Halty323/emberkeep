@@ -61,7 +61,7 @@ static func layout(room) -> Dictionary:
 			var p = at + Vector3(offset, -.23, 0).rotated(Vector3.UP, yaw)
 			# Wall mechanisms and memorials occupy authored niches. Leave the
 			# supporting mouldings, but do not put a pilaster through their face.
-			if niche_reserved(room, Vector2(p.x,p.z), segment.dir): continue
+			if niche_reserved(room, Vector2(p.x,p.z), segment.dir) or painting_reserved(room, Vector2(p.x,p.z), segment.dir): continue
 			box(stone, p + Vector3.UP * (2.51+lift*.5), Vector3(.28, 4.7+lift, .13), yaw)
 			box(dressed, p + Vector3.UP * .38, Vector3(.49, .16, .19), yaw)
 			box(dressed, p + Vector3.UP * 3.18, Vector3(.47, .2, .2), yaw)
@@ -121,6 +121,13 @@ static func batch(room, label: String, transforms: Array[Transform3D], material:
 	view.material_override = material
 	view.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	room.add_child(view)
+
+## A painting's wall: no pilaster stands across its frame or close beside.
+static func painting_reserved(room, at: Vector2, direction: Vector2i) -> bool:
+	for mount in room.data.get("mounts", []):
+		if Vector2i(int(mount.dir[0]), int(mount.dir[1])) != direction: continue
+		if Vector2(float(mount.position[0]), float(mount.position[1])).distance_to(at) < float(mount.width) / 2.0 + .6: return true
+	return false
 
 static func niche_reserved(room, at: Vector2, direction: Vector2i) -> bool:
 	for anchor in room.interiors_report.get("walls", []):

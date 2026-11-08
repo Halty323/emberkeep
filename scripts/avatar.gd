@@ -45,6 +45,19 @@ var burst_timer = 0.0
 # waiting to ring out (scripts/items/relic_powers.gd).
 var casts := 0
 var echoes: Array = []
+# Stamina: running drains it and a dash spends a share; it refills after a
+# short breath. Run dry and you are winded until a third has come back.
+const STAMINA := 100.0
+const RUN_DRAIN := 24.0
+const DASH_COST := 22.0
+const RECOVER := 34.0
+const RECOVER_DELAY := .7
+const SPRINT := 1.45
+var stamina := STAMINA
+var stamina_wait := 0.0
+var winded := false
+var sprint_wanted := false
+var sprinting := false
 var burst_shot: Dictionary = {}
 
 func setup(owner_game: Node3D) -> void:
@@ -175,8 +188,24 @@ func refresh_orbitals() -> void:
 		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		orbit_meshes.append(mesh)
 
+## How fast the player is going on foot: running is SPRINT times walking.
+func stride() -> float:
+	return SPRINT if sprinting else 1.0
+
+func breathe(delta: float, moving: bool) -> void:
+	sprinting = sprint_wanted and moving and not winded and stamina > 0.0 and dash_time <= 0
+	if sprinting:
+		stamina = maxf(0.0, stamina - RUN_DRAIN * delta)
+		stamina_wait = RECOVER_DELAY
+		if stamina <= 0.0: winded = true
+	else:
+		stamina_wait -= delta
+		if stamina_wait <= 0.0: stamina = minf(STAMINA, stamina + RECOVER * delta)
+	if winded and stamina >= STAMINA / 3.0: winded = false
+
 func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting: bool) -> void:
 	invulnerability = maxf(0, invulnerability - delta)
+	breathe(delta, move_input.length() > .3)
 	refresh_shelter()
 	dash_cooldown = maxf(0, dash_cooldown - delta)
 	fire_cooldown -= delta
@@ -223,7 +252,7 @@ func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting:
 			collision_mask = 5 | PropVisuals.FURNITURE_LAYER
 			# Moss and spores drag at the feet; ice keeps whatever speed you had.
 			var footing: ResidueField = game.residue
-			var top_speed = RUN_SPEED * float(Run.stats.speed) * (footing.slows(global_position) if footing else 1.0)
+			var top_speed = RUN_SPEED * float(Run.stats.speed) * stride() * (footing.slows(global_position) if footing else 1.0)
 			var slippery = footing != null and footing.kind_at(global_position) == "ice"
 			if leaving_dash:
 				velocity = velocity.limit_length(top_speed)
@@ -381,13 +410,23 @@ func show_flame(delta: float) -> void:
 		var angle = game.sim_time * 3.0 + TAU * i / 3.0
 		spark_meshes[i].position = Vector3(cos(angle) * .55, 1.45 + sin(game.sim_time * 5.0 + i) * .06, sin(angle) * .55)
 
+# How long the last dash takes to return, for its recharge ring.
+var dash_cooldown_full := 1.0
+
 func dash() -> void:
 	if dash_cooldown > 0 or dash_time > 0:
 		return
+	# Too winded to dash: a short huff instead.
+	if stamina < DASH_COST:
+		Audio.play_sound("dash", .55)
+		return
+	stamina -= DASH_COST
+	stamina_wait = RECOVER_DELAY
 	dash_direction = last_move
 	dash_time = DASH_TIME
 	# Relics shorten the cooldown; Death's Heavy Chains lengthen it.
 	dash_cooldown = 1.35 * (1.0 - clampf(Run.stats.dash_cd, -1.0, .75))
+	dash_cooldown_full = dash_cooldown
 	invulnerability = .32
 	var trials = game.get("trials")
 	if trials and game.get("player") == self: trials.on_dash()
@@ -430,7 +469,10 @@ func hurt(amount: float, source: Vector3) -> void:
 	if game.first_person:
 		game.fps.damage_time = .7
 		var towards = source - global_position
-		game.fps.damage_angle = atan2(towards.dot(game.fps.right()), towards.dot(Vector3.FORWARD.rotated(Vector3.UP, game.fps.yaw)))
+		towards.y = 0
+		# Harm from right underfoot (a burning floor) shows beneath the sight.
+		game.fps.damage_angle = PI if towards.length() < .2 else atan2(towards.dot(game.fps.right()), towards.dot(Vector3.FORWARD.rotated(Vector3.UP, game.fps.yaw)))
+	game.set("last_harm", harm_cause(source))
 	Run.hp = maxf(0, Run.hp - amount)
 	game.gutter()
 	invulnerability = 1.0
@@ -445,6 +487,21 @@ func hurt(amount: float, source: Vector3) -> void:
 	Run.changed.emit()
 	if Run.hp <= 0:
 		game.player_fell()
+
+## What hurt the player, named for the end screen: a name the harm left
+## (a hostile spell, a trap, a cloud), else the foe that struck.
+func harm_cause(source: Vector3) -> String:
+	var hint = game.get("harm_hint")
+	if hint is String and hint != "": return hint
+	var struck = null
+	var best := 2.5
+	for enemy in game.enemies:
+		if not is_instance_valid(enemy): continue
+		var gap := Vector2(enemy.global_position.x - source.x, enemy.global_position.z - source.z).length()
+		if gap < best:
+			best = gap
+			struck = enemy
+	return DungeonEnemy.called(struck.kind) if struck else "the tower itself"
 
 var star_timer := 0.0
 var star_turn := 0

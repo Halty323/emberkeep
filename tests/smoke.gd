@@ -29,6 +29,8 @@ func test_all() -> void:
 	var audio = root.get_node("Audio")
 	var streams: Array = audio.sounds.values() + [audio.music_player.stream]
 	for stream in streams:
+		# Recorded (Ogg) impacts never loop; only synthesised WAVs are checked.
+		if not stream is AudioStreamWAV: continue
 		var frames: int = stream.data.size() / 2
 		if stream.loop_mode == AudioStreamWAV.LOOP_DISABLED: continue
 		check(stream.loop_begin >= 0 and stream.loop_begin < stream.loop_end and stream.loop_end <= frames - 1,
