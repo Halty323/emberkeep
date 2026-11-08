@@ -188,6 +188,38 @@ func go() -> void:
 	check(run.entry.get("room", "") == other, "the room is the new checkpoint")
 	for i in 3: await process_frame
 
+	# Nothing stands in front of a painting: no pilaster, no dressing.
+	var seen := 0
+	for floor_try in 3:
+		for id in run.rooms.keys():
+			if run.rooms[id].get("mounts", []).is_empty() or seen >= 4: continue
+			run.current_room = id
+			run.rooms[id].visited = true
+			game.enter_room(Vector3(0, 0, 2))
+			for i in 2: await process_frame
+			for mount_id in game.room.paintings:
+				var entry: Dictionary = game.room.paintings[mount_id]
+				var frame: Node3D = entry.node
+				var size: Vector2 = entry.size
+				var view: AABB = frame.global_transform * AABB(Vector3(-size.x / 2.0, -size.y / 2.0, .05), Vector3(size.x, size.y, 1.4))
+				var blocked := []
+				for node in game.room.find_children("*", "GeometryInstance3D", true, false):
+					if not node.visible or frame.is_ancestor_of(node): continue
+					if node is MultiMeshInstance3D:
+						var multi: MultiMesh = node.multimesh
+						for i in multi.instance_count:
+							var piece: AABB = node.global_transform * multi.get_instance_transform(i) * multi.mesh.get_aabb()
+							if piece.size.y > 3.0 and piece.intersects(view): blocked.append("%s pillar" % node.name)
+						continue
+					var bounds: AABB = node.global_transform * node.get_aabb()
+					var broad := int(bounds.size.x > 1.2) + int(bounds.size.y > 1.2) + int(bounds.size.z > 1.2)
+					if broad < 2 and bounds.intersects(view): blocked.append(node.name)
+				check(blocked.is_empty(), "nothing stands in front of the painting at %s %s" % [mount_id, str(blocked)])
+				seen += 1
+		if seen >= 4: break
+		run.next_floor()
+	check(seen > 0, "paintings were checked (%d)" % seen)
+
 	game.queue_free()
 	await process_frame
 	print("UX: %d checks, %d failures" % [checks, failures])

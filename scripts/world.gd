@@ -175,6 +175,7 @@ func build(owner_game: Node3D, room: Dictionary, preview := false, staged := fal
 		interiors_report = await ThemedInteriors.decorate(self)
 		await pace()
 		FirstPersonArchitecture.build(self)
+	clear_painting_views()
 	set_open(true)
 	apply_lighting_quality()
 	# A staged room also prepares what entering it would otherwise build in
@@ -872,6 +873,29 @@ func make_embers() -> void:
 	ember_mesh.material_override = Geo.material(Color(look.get("motes", "efbc78")), 1.2)
 	ember_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(ember_mesh)
+
+## Nothing stands between a painting and its viewer: any small piece of
+## dressing (a candle, a hanging, a post, a shelf end) whose bounds reach into
+## the space in front of a canvas is left out. Walls, floors and batched
+## architecture are too large to count; the architecture keeps clear itself.
+const VIEW_CLEAR_DEPTH := 1.6
+func clear_painting_views() -> void:
+	for mount_id in paintings:
+		var entry: Dictionary = paintings[mount_id]
+		var frame: Node3D = entry.node
+		if not is_instance_valid(frame): continue
+		var size: Vector2 = entry.size
+		# The canvas, its frame and plaque, and the air in front of it.
+		var local := AABB(Vector3(-size.x / 2.0 - .25, -size.y / 2.0 - .45, .03), Vector3(size.x + .5, size.y + .7, VIEW_CLEAR_DEPTH))
+		var view: AABB = frame.global_transform * local
+		for mesh in find_children("*", "GeometryInstance3D", true, false):
+			if not mesh.visible or frame.is_ancestor_of(mesh) or mesh is MultiMeshInstance3D: continue
+			var bounds: AABB = mesh.global_transform * mesh.get_aabb()
+			# Walls, floors and ceilings are broad in two directions: never
+			# dressing, never hidden (a short corner wall must stay).
+			var broad := int(bounds.size.x > 1.2) + int(bounds.size.y > 1.2) + int(bounds.size.z > 1.2)
+			if broad >= 2 or bounds.size.x > 4.0 or bounds.size.z > 4.0: continue
+			if bounds.intersects(view): mesh.visible = false
 
 func build_paintings() -> void:
 	for mount in data.get("mounts", []):
