@@ -106,18 +106,19 @@ static func boss_route(floor_data: Dictionary) -> Array:
 ## are never moved or regenerated. New floors use prepare() unconditionally.
 static func upgrade_unvisited(rooms: Dictionary, portals: Dictionary, floor_number: int) -> bool:
 	var data := {"rooms":rooms,"portals":portals}
-	var changed := false
+	# The floor's primary chamber first, exactly as before; then the rest.
+	var changed := primary_upgrade(rooms,portals,data)
 	# Old ramp annexes and sunken cellars in rooms nobody has entered become
 	# real two-storey chambers (or flat, where a gallery cannot fit).
 	for room in rooms.values():
 		var old=room.get("fps_terrain",{})
-		if not old is Dictionary or old.is_empty() or int(old.get("version",0))==3 or not untouched(room): continue
+		if not old is Dictionary or old.is_empty() or int(old.get("version",0))==LoftRoom.FLOOR_VERSION or not untouched(room): continue
 		var geometry:=RoomGeometry.new(FloorGenerator.room_cells(room).map(func(cell): return cell-FloorGenerator.vec(room.anchor)))
 		var plan:=LoftRoom.plan(room,geometry,essential_zones(FloorGenerator.reserved_zones(data,room)))
 		if not plan.is_empty() and legal(plan,geometry,room,data): adopt(room,plan,geometry,data)
 		else: room.erase("fps_terrain")
 		changed=true
-	return primary_upgrade(rooms,portals,data) or changed
+	return changed
 
 static func untouched(room: Dictionary) -> bool:
 	return not room.get("visited",false) and not room.get("cleared",false) and room.get("items",[]).is_empty() and not room.get("chests",[]).any(func(chest): return chest.get("opened",false))
@@ -125,12 +126,20 @@ static func untouched(room: Dictionary) -> bool:
 static func primary_upgrade(rooms: Dictionary, portals: Dictionary, data: Dictionary) -> bool:
 	for room in rooms.values():
 		var blueprint=room.get("fps_terrain",{})
-		if not blueprint is Dictionary or blueprint.get("version",0)!=3: continue
+		if not blueprint is Dictionary or int(blueprint.get("version",0))<3: continue
 		var geometry:=RoomGeometry.new(FloorGenerator.room_cells(room).map(func(cell): return cell-FloorGenerator.vec(room.anchor)))
 		if legal(blueprint,geometry,room,data): return false
 	var candidates: Array=rooms.values().filter(func(room): return room.type=="combat" and untouched(room))
 	var route:=boss_route(data)
+	# Prefer a chamber the boss route can be made to pass through: tried on a
+	# copy of the floor, closing only the loops that would skip it.
+	var unavoidable := {}
+	for room in candidates:
+		var trial: Dictionary = {"rooms": data.rooms.duplicate(true), "portals": data.portals.duplicate(true)}
+		make_mandatory(trial, room.id)
+		unavoidable[room.id] = route_portals(trial, room.id).is_empty()
 	candidates.sort_custom(func(a,b):
+		if unavoidable[a.id]!=unavoidable[b.id]: return unavoidable[a.id]
 		if (a.id in route)!=(b.id in route): return a.id in route
 		return int(a.depth)<int(b.depth) if int(a.depth)!=int(b.depth) else str(a.id)<str(b.id))
 	for room in candidates:

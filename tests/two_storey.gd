@@ -33,6 +33,12 @@ func walk_to(target: Vector3, budget := 420) -> bool:
 	print("STOREY STUCK ",target," at ",game.player.position)
 	return false
 
+func walk_path(from: Vector3, to: Vector3) -> bool:
+	var loft=game.room.terrain.loft
+	for p in game.room.navigation(.5,loft.RISE).find_path(Vector2(from.x,from.z),Vector2(to.x,to.z)):
+		if not await walk_to(Vector3(p.x,loft.RISE,p.y)): return false
+	return await walk_to(to)
+
 func enter_portal(id: String) -> bool:
 	var source: String=run.current_room
 	var side: Dictionary=run.portal_side(id,source)
@@ -105,7 +111,7 @@ func exercise() -> void:
 		for floor_number in [1,2,5]:
 			var data: Dictionary=Generator.generate(seed_value,floor_number)
 			var primary: Array=data.rooms.values().filter(func(room): return room.get("vertical_primary",false))
-			check(primary.size()==1 and primary[0].fps_terrain.get("version",0)==3,"each new floor has an actual two-storey chamber")
+			check(primary.size()==1 and int(primary[0].fps_terrain.get("version",0))>=3,"each new floor has an actual two-storey chamber")
 			check(Vertical.route_portals(data,primary[0].id).is_empty(),"no normal route to the boss bypasses the two-storey chamber")
 			check(Generator.validate(data).is_empty(),"mandatory storey routing preserves complete floor validity")
 		var old: Dictionary=Generator.generate_v2(seed_value,1)
@@ -119,8 +125,8 @@ func exercise() -> void:
 	game.start_run("candle",31609250,false)
 	run.generator_version=2
 	run.generate_floor()
-	check(run.generator_version==2 and run.rooms.values().any(func(r):return r.get("fps_terrain",{}).get("kind","")=="loft"),"continued legacy runs receive new architecture while keeping their saved loot rules")
-	var legacy_primary: Dictionary=run.rooms.values().filter(func(r):return r.get("fps_terrain",{}).get("kind","")=="loft")[0]
+	check(run.generator_version==2 and run.rooms.values().any(func(r):return r.get("fps_terrain",{}).get("kind","") in ["loft","floor"]),"continued legacy runs receive new architecture while keeping their saved loot rules")
+	var legacy_primary: Dictionary=run.rooms.values().filter(func(r):return r.get("vertical_primary",false))[0]
 	check(Vertical.route_portals({"rooms":run.rooms,"portals":run.portals},legacy_primary.id).is_empty(),"the next legacy floor also puts the real storey on every boss route")
 	game.start_run("candle",31609250,false)
 	var primary: Dictionary=run.rooms.values().filter(func(room): return room.get("vertical_primary",false))[0]
@@ -138,8 +144,13 @@ func exercise() -> void:
 	var loft=game.room.terrain.loft
 	check(loft!=null and game.room.ceiling_height()>7,"the real main scene constructs the taller two-storey room")
 	if loft==null: quit(1);return
-	var center: Vector2=loft.deck.get_center()
+	# Spots that are upstairs on the floor and clear of its stairwell.
+	var spot: Vector3=loft.upper_spot(0) if loft.full else Vector3(loft.deck.get_center().x,loft.RISE,loft.deck.get_center().y)
+	var center: Vector2=Vector2(spot.x,spot.z)
 	var upper_walk:=Vector3(center.x,loft.RISE,center.y+1.25)
+	# The earned chest stands on the first spot; walk to another, clear one.
+	if loft.full: upper_walk=loft.upper_spot(3)
+	var across: Vector3=loft.upper_spot(1) if loft.full else Vector3(loft.deck.end.x-.8,0,center.y)
 	view_at(game.player.position,Vector3(center.x,2.8,center.y))
 	await save_view("room-arrival")
 	var ground:=Vector3(center.x,.03,center.y)
@@ -151,18 +162,20 @@ func exercise() -> void:
 	var ray:=PhysicsRayQueryParameters3D.create(ground+Vector3.UP*.8,ground+Vector3.UP*5,1)
 	var hit: Dictionary=game.get_world_3d().direct_space_state.intersect_ray(ray)
 	check(not hit.is_empty() and absf(hit.position.y-(loft.RISE-loft.SLAB))<.1,"a real upper slab is above a walkable lower room")
-	view_at(game.player.position,Vector3(loft.deck.end.x,1.4,center.y))
+	view_at(game.player.position,Vector3(across.x,1.4,across.z))
 	await save_view("beneath-upstairs")
-	var target:=Vector3(loft.deck.end.x-.8,.03,center.y)
+	var target:=Vector3(across.x,.03,across.z)
 	check(await walk_to(target),"the capsule physically crosses the room underneath the upper deck")
 	var foot: Vector3=loft.foot(.5)
 	game.player.place(foot+Vector3.UP*.03);game.player.velocity=Vector3.ZERO
 	check(await walk_to(loft.head()),"the capsule physically climbs the staircase onto the upstairs floor")
-	check(await walk_to(upper_walk),"the player can walk around upstairs beside the reward chest")
+	# On a whole upper floor, walk round the stairwell along the floor's own
+	# upstairs navigation path.
+	check(await walk_path(loft.head(),upper_walk),"the player can walk around upstairs beside the reward chest")
 	view_at(game.player.position,Vector3(loft.stairs.get_center().x,1.2,loft.stairs.end.y+1))
 	await save_view("upper-floor")
 	check(absf(game.room.floor_height(Vector3(center.x,0,center.y)))<.001 and absf(game.room.floor_height(Vector3(center.x,loft.RISE,center.y))-loft.RISE)<.001,"the same XZ coordinate has two independent floors")
-	check(await walk_to(loft.head()),"the upstairs stair entrance remains clear")
+	check(await walk_path(upper_walk,loft.head()),"the upstairs stair entrance remains clear")
 	check(await walk_to(foot),"the capsule physically descends back to the ground floor")
 	var enemy=game.spawn_enemy(foot,"mote")
 	enemy.timer=1000
@@ -187,7 +200,7 @@ func exercise() -> void:
 		for tick in 1800:
 			await physics_frame
 			foe.update_sim(1.0/60.0)
-			if absf(foe.position.y-loft.RISE)<.2 and loft.deck.has_point(Vector2(foe.position.x,foe.position.z)): break
+			if absf(foe.position.y-loft.RISE)<.2 and loft.on_deck(Vector2(foe.position.x,foe.position.z)): break
 		check(absf(foe.position.y-loft.RISE)<.3,kind+" uses the stairs instead of attacking through the floor")
 		if absf(foe.position.y-loft.RISE)>=.3: print("STOREY SUBCLASS: ",kind," at=",foe.position," path=",foe.storey_path)
 		if kind=="bailer":

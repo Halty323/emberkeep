@@ -452,7 +452,7 @@ func floor_data_for(seed_input: int, number: int) -> Dictionary:
 	if OS.get_environment("EMBERKEEP_LEGACY_TEST")!="1" and not "--isometric" in OS.get_cmdline_user_args():
 		if VerticalPlans.upgrade_unvisited(floor_data.rooms,floor_data.portals,number):
 			for record in floor_data.rooms.values():
-				if record.get("fps_terrain",{}).get("kind","")=="loft":
+				if record.get("vertical_primary",false):
 					VerticalPlans.make_mandatory(floor_data,record.id)
 					break
 	return floor_data

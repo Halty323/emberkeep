@@ -1223,9 +1223,7 @@ func spawn_room_encounter(data: Dictionary, spawn: Vector3) -> void:
 			if p.distance_to(spawn) < 3.0:
 				p = spawn + (p - spawn).normalized() * 3.5 if not p.is_equal_approx(spawn) else spawn + Vector3(3.5, 0, 0)
 			if first_person and room.terrain and room.terrain.loft and i in [1,count-1]:
-				var deck: Rect2=room.terrain.loft.deck
-				var at:=deck.get_center()+Vector2(-1.8 if i==1 else 1.8,.6)
-				p=Vector3(at.x,LoftRoom.RISE,at.y)
+				p=room.terrain.loft.upper_spot(1 if i==1 else 2) if room.terrain.loft.full else Vector3(room.terrain.loft.deck.get_center().x+(-1.8 if i==1 else 1.8),LoftRoom.RISE,room.terrain.loft.deck.get_center().y+.6)
 			spawned.append(spawn_enemy(p, plan[i].kind, "%s:e%d" % [data.id, i]))
 		for i in plan.size():
 			if plan[i].partner > i: spawned[i].bind_partner(spawned[plan[i].partner])
@@ -1631,7 +1629,8 @@ func resolve_expedition_clear(data: Dictionary) -> void:
 			for offset in [Vector2.ZERO,Vector2(-1.1,-.9),Vector2(1.1,-.9),Vector2(-1.1,.9),Vector2(1.1,.9)]:
 				var candidate := at + Vector3(offset.x,0,offset.y)
 				var flat := Vector2(candidate.x,candidate.z)
-				if not room.terrain.ledge.grow(-.55).has_point(flat) or room.blocked_at(flat): continue
+				var upstairs: bool=room.terrain.loft.on_deck(flat,.55) if room.terrain.loft and room.terrain.loft.full else room.terrain.ledge.grow(-.55).has_point(flat)
+				if not upstairs or room.blocked_at(flat): continue
 				if Vector2(player.position.x,player.position.z).distance_to(flat)<1.25: continue
 				at=candidate
 				break

@@ -12,9 +12,13 @@ The upper gallery is 10 × 5 metres, 3.2 metres above the ground. The room has a
 
 ![The upstairs floor and staircase](images/two-storey-upstairs.png)
 
-## Every vertical room is two storeys
+## A whole second storey
 
-The older optional vertical rooms (a raised annex up a ramp, or a sunken cellar down one) are gone. Every combat room that rolls a second level now gets the same real gallery as the primary chamber: an upstairs floor over usable ground, reached by a staircase. A room too small for a gallery stays flat. Across sample seeds that is about two two-storey chambers a floor. In a saved run, untouched rooms that still have an old annex or cellar become a gallery, or flat where one cannot fit. Rooms you have already entered are never changed.
+A two-storey room's upper floor now covers the room's entire footprint, every cell, except the stairwell. It is a solid slab 3.2 metres up, held up by a grid of stone columns with timber capitals, with paving on top and a stone ceiling below. The ground floor keeps its furniture, wall dressing and lanterns under the slab. Upstairs has its own lanterns along the walls (two a cell, six at most) and a table in each cell; some foes start up there, and the earned chest appears there.
+
+The staircase can climb north, south, east or west, so it can run along a quiet wall in a room with doorways on several sides. A railing surrounds the stairwell on every side except its top landing. Upstairs navigation keeps paths off the rail and steps into the flight only from the landing. A doorway's ornamental arch is left off, so nothing pokes up through the floor above, and any small dressing tall enough to pierce the slab is left out.
+
+Every combat room that rolls a second level gets this whole-floor layout, about two a floor. A room whose stairs cannot fit clear of its doorways stays flat. On older saves, untouched rooms with a ramp annex, sunken cellar or 10 × 5 gallery become a whole-floor room, or flat where one cannot fit. Rooms already entered keep what they had. On legacy floors, the primary chamber is now chosen among rooms that the boss route can be made to pass through.
 
 ## Movement, combat and persistence
 
