@@ -4,7 +4,10 @@ extends Node3D
 ## footprint cells; walls exist only on exposed edges and every edge keeps its
 ## doorway socket, filled either by a portal's gate or by a wall plug.
 const MAX_LANTERN_SHADOWS = 1
-const MAX_ACTIVE_FILLS = 5
+# Every lantern of even the largest room keeps its own light, so a far
+# corner never goes dark or pops back as you walk; a room with more lanterns
+# than this still swaps the farthest, slowly.
+const MAX_ACTIVE_FILLS = 12
 const FILL_HYSTERESIS = 3.0
 const WALL_BACK_HEIGHT = 2.8
 const WALL_FRONT_HEIGHT = 1.8
@@ -777,8 +780,23 @@ func update_light_selection(focus: Vector3) -> bool:
 		var nearest = lamp_assignment[0]
 		for index in lamp_assignment:
 			if lantern_distance(index, flat) < lantern_distance(nearest, flat): nearest = index
-		place_shadow_light(shadow_lamps[0], lantern_points[nearest])
+		move_shadow_light(lantern_points[nearest])
 	return changed
+
+## The key shadow follows the nearest lantern: it fades out, moves while
+## dark and fades back, so no wall snaps from lit to shadowed in a frame.
+var shadow_fade: Tween
+var shadow_level := 1.0
+func move_shadow_light(p: Vector3) -> void:
+	var lamp: SpotLight3D = shadow_lamps[0]
+	if not is_inside_tree() or not first_person_room:
+		place_shadow_light(lamp, p)
+		return
+	if shadow_fade and shadow_fade.is_valid(): shadow_fade.kill()
+	shadow_fade = create_tween()
+	shadow_fade.tween_property(self, "shadow_level", 0.0, .25)
+	shadow_fade.tween_callback(func(): place_shadow_light(lamp, p))
+	shadow_fade.tween_property(self, "shadow_level", 1.0, .35)
 
 func make_shadow_light(p: Vector3) -> void:
 	# A fixed inward-facing spotlight needs one map instead of six cube faces.
@@ -1041,7 +1059,7 @@ func _process(delta: float) -> void:
 		var flicker = sin(time * 1.7 + i * 2.4) * .018 + sin(time * 4.1 + i) * .009 if first_person_room else sin(time * 3.1 + i * 2.4) * .042 + sin(time * 7.2 + i) * .02
 		lamps[i].light_energy = light.lamp * (1.0 + flicker)
 	if first_person_room:
-		for lamp in shadow_lamps: lamp.light_energy = light.shadow * (1.0 + sin(time * 2.2) * .018)
+		for lamp in shadow_lamps: lamp.light_energy = light.shadow * shadow_level * (1.0 + sin(time * 2.2) * .018)
 	for i in cloths.size():
 		cloths[i].rotation.x = sin(time * 1.3 + i * 1.7) * .09
 	if ember_mesh:

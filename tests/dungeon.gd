@@ -281,14 +281,16 @@ func test_scenes() -> void:
 		check(game.camera.basis.is_equal_approx(basis), "large rooms never rotate the camera")
 		check(is_equal_approx(game.camera.size, game.CAMERA_GAME_SIZE), "large rooms keep the close zoom")
 	# Large rooms move a bounded pool of fill lights with hysteresis.
-	check(game.room.lantern_points.size() == 8 and game.room.lamps.size() == game.room.MAX_ACTIVE_FILLS, "fill lights are a bounded pool")
+	check(game.room.lantern_points.size() == 8 and game.room.lamps.size() == mini(game.room.MAX_ACTIVE_FILLS, game.room.lantern_points.size()), "fill lights are a bounded pool")
 	var lights = game.room.get_children().filter(func(n): return n is Light3D and n.shadow_enabled)
 	check(lights.size() <= 1, "large room keeps at most one local shadow map")
 	game.room.update_light_selection(Vector3(-8, 0, -6))
 	var near_corner = game.room.lamp_assignment.duplicate()
 	check(game.room.update_light_selection(Vector3(-7.5, 0, -5.5)) == false, "small view changes keep the same lights")
 	game.room.update_light_selection(Vector3(26, 0, 20))
-	check(game.room.lamp_assignment != near_corner, "lights follow the view across a large room")
+	var lit: Array = game.room.lamp_assignment.duplicate()
+	lit.sort()
+	check(lit == range(game.room.lantern_points.size()), "every lantern of a large room stays lit wherever you stand")
 	var nearest_far = game.room.lantern_points.map(func(p): return Vector2(p.x, p.z).distance_to(Vector2(26, 20))).min()
 	check(game.room.lamp_assignment.any(func(i): return is_equal_approx(Vector2(game.room.lantern_points[i].x, game.room.lantern_points[i].z).distance_to(Vector2(26, 20)), nearest_far)),
 		"the nearest lantern is lit")
