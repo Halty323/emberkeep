@@ -188,6 +188,28 @@ func go() -> void:
 	check(run.entry.get("room", "") == other, "the room is the new checkpoint")
 	for i in 3: await process_frame
 
+	# Running and stamina.
+	var runner = game.player
+	runner.stamina = runner.STAMINA
+	runner.winded = false
+	runner.sprint_wanted = true
+	runner.breathe(.1, true)
+	check(runner.sprinting and runner.stride() > 1.3, "holding run while moving runs faster")
+	runner.breathe(.1, false)
+	check(not runner.sprinting, "standing still is never running")
+	for i in 44: runner.breathe(.1, true)
+	check(runner.stamina == 0.0 and runner.winded and not runner.sprinting, "running drains stamina until winded")
+	runner.sprint_wanted = false
+	runner.dash_cooldown = 0.0
+	runner.dash()
+	check(runner.dash_time <= 0.0, "too winded to dash")
+	for i in 40: runner.breathe(.1, false)
+	check(runner.stamina == runner.STAMINA and not runner.winded, "stamina comes back after a breath")
+	runner.dash()
+	check(runner.dash_time > 0.0 and is_equal_approx(runner.stamina, runner.STAMINA - runner.DASH_COST), "a dash spends a share of stamina")
+	runner.dash_time = 0.0
+	check(has_key("sprint", KEY_CTRL), "run is on Ctrl")
+
 	# Nothing stands in front of a painting: no pilaster, no dressing.
 	var seen := 0
 	for floor_try in 3:

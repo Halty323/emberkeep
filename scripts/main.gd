@@ -213,7 +213,7 @@ func _ready() -> void:
 func setup_inputs() -> void:
 	# Keys and mouse buttons: the defaults with the player's own bindings.
 	Settings.apply_keys()
-	var joy_actions = {"jump": JOY_BUTTON_A, "dash": JOY_BUTTON_RIGHT_SHOULDER, "interact": JOY_BUTTON_Y, "pause_game": JOY_BUTTON_START,
+	var joy_actions = {"sprint": JOY_BUTTON_LEFT_STICK, "jump": JOY_BUTTON_A, "dash": JOY_BUTTON_RIGHT_SHOULDER, "interact": JOY_BUTTON_Y, "pause_game": JOY_BUTTON_START,
 		"use_active": JOY_BUTTON_LEFT_SHOULDER, "place_bomb": JOY_BUTTON_X}
 	for action in joy_actions:
 		var event = InputEventJoypadButton.new()
@@ -388,6 +388,9 @@ func _physics_process(delta: float) -> void:
 	var move_joy = Vector2(Input.get_joy_axis(0, JOY_AXIS_LEFT_X), Input.get_joy_axis(0, JOY_AXIS_LEFT_Y))
 	if move_joy.length() > .18: move_input = move_joy.limit_length()
 	if ui.left_vector.length() > .1: move_input = ui.left_vector
+	# Run: hold the run key or click the left stick; on touch, push the
+	# movement stick to its edge.
+	player.sprint_wanted = steering and (Input.is_action_pressed("sprint") or (ui.left_touch >= 0 and ui.left_vector.length() > .94 and bool(Settings.values.get("touch_run", true))))
 	var aim = Vector3.ZERO
 	var shooting = false
 	var aim_joy = Vector2(Input.get_joy_axis(0, JOY_AXIS_RIGHT_X), Input.get_joy_axis(0, JOY_AXIS_RIGHT_Y))

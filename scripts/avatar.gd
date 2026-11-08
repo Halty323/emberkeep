@@ -45,6 +45,19 @@ var burst_timer = 0.0
 # waiting to ring out (scripts/items/relic_powers.gd).
 var casts := 0
 var echoes: Array = []
+# Stamina: running drains it and a dash spends a share; it refills after a
+# short breath. Run dry and you are winded until a third has come back.
+const STAMINA := 100.0
+const RUN_DRAIN := 24.0
+const DASH_COST := 22.0
+const RECOVER := 34.0
+const RECOVER_DELAY := .7
+const SPRINT := 1.45
+var stamina := STAMINA
+var stamina_wait := 0.0
+var winded := false
+var sprint_wanted := false
+var sprinting := false
 var burst_shot: Dictionary = {}
 
 func setup(owner_game: Node3D) -> void:
@@ -175,8 +188,24 @@ func refresh_orbitals() -> void:
 		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		orbit_meshes.append(mesh)
 
+## How fast the player is going on foot: running is SPRINT times walking.
+func stride() -> float:
+	return SPRINT if sprinting else 1.0
+
+func breathe(delta: float, moving: bool) -> void:
+	sprinting = sprint_wanted and moving and not winded and stamina > 0.0 and dash_time <= 0
+	if sprinting:
+		stamina = maxf(0.0, stamina - RUN_DRAIN * delta)
+		stamina_wait = RECOVER_DELAY
+		if stamina <= 0.0: winded = true
+	else:
+		stamina_wait -= delta
+		if stamina_wait <= 0.0: stamina = minf(STAMINA, stamina + RECOVER * delta)
+	if winded and stamina >= STAMINA / 3.0: winded = false
+
 func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting: bool) -> void:
 	invulnerability = maxf(0, invulnerability - delta)
+	breathe(delta, move_input.length() > .3)
 	refresh_shelter()
 	dash_cooldown = maxf(0, dash_cooldown - delta)
 	fire_cooldown -= delta
@@ -223,7 +252,7 @@ func update_sim(delta: float, move_input: Vector2, aim_input: Vector3, shooting:
 			collision_mask = 5 | PropVisuals.FURNITURE_LAYER
 			# Moss and spores drag at the feet; ice keeps whatever speed you had.
 			var footing: ResidueField = game.residue
-			var top_speed = RUN_SPEED * float(Run.stats.speed) * (footing.slows(global_position) if footing else 1.0)
+			var top_speed = RUN_SPEED * float(Run.stats.speed) * stride() * (footing.slows(global_position) if footing else 1.0)
 			var slippery = footing != null and footing.kind_at(global_position) == "ice"
 			if leaving_dash:
 				velocity = velocity.limit_length(top_speed)
@@ -387,6 +416,12 @@ var dash_cooldown_full := 1.0
 func dash() -> void:
 	if dash_cooldown > 0 or dash_time > 0:
 		return
+	# Too winded to dash: a short huff instead.
+	if stamina < DASH_COST:
+		Audio.play_sound("dash", .55)
+		return
+	stamina -= DASH_COST
+	stamina_wait = RECOVER_DELAY
 	dash_direction = last_move
 	dash_time = DASH_TIME
 	# Relics shorten the cooldown; Death's Heavy Chains lengthen it.

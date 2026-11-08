@@ -39,6 +39,7 @@ iPhone/iPad: [unsigned iOS builds and sideloading](docs/IOS.md) are available th
 | Move | Drag on the lower left | WASD / arrows | Left stick |
 | Look | Swipe on the right | Mouse | Right stick |
 | Fire | Hold FIRE; drag it to keep aiming. Dragging to look also casts while a fight is on (Settings → Controls, on by default) | Hold left click | Right trigger |
+| Run (uses stamina) | Push the movement stick to its edge | Hold Ctrl | Click the left stick |
 | Jump | JUMP button | Space | A |
 | Dash (graze embers to catch sparks) | Dash button | Shift | Right shoulder |
 | Use held item | Item button (shows its cooldown) | F | Left shoulder |
@@ -48,7 +49,7 @@ iPhone/iPad: [unsigned iOS builds and sideloading](docs/IOS.md) are available th
 | Pause | Top-right pause button / Android Back | Escape / P | Start |
 | Journal (relics and paintings) | Pause, then Journal | Tab | Menu button via focus navigation |
 
-Every keyboard action except pause can be rebound in Settings → Keys (to a key or a mouse button other than the left); a key that is already taken swaps with the action that had it. Touch and controller play get a gentle aim assist (Settings → Controls): the sight slows a little while it is over a foe, and spells bend onto a visible foe a few degrees off the crosshair. A mouse never gets assist.
+Running is 45% faster than walking and drains stamina; a dash spends a share of it too. Stamina refills after a short breath, shown as a small arc left of the crosshair while it is not full. Run it dry and you are winded (the arc turns red): no running and no dashing until a third has come back. Every keyboard action except pause can be rebound in Settings → Keys (to a key or a mouse button other than the left); a key that is already taken swaps with the action that had it. Touch and controller play get a gentle aim assist (Settings → Controls): the sight slows a little while it is over a foe, and spells bend onto a visible foe a few degrees off the crosshair. A mouse never gets assist.
 
 The left movement stick floats to its initial touch position. Right-side swipe-look, FIRE, JUMP and the action buttons each track their own finger, so moving and looking continue while another finger fires or jumps. Every touch control can be moved and resized in Settings → Controls → Arrange touch controls, and the layout is kept on the device. Jump includes coyote time and a short input buffer. Dash grants a brief invulnerability window, and while it recharges a small arc under the crosshair fills, so a thumb on the button never hides it; low ground waves can also be jumped. When a fight begins the doors slam shut from wide open in about a tenth of a second, knock against the frame, rebound and settle, with a heavy thud, the bolt's clank, dust from the threshold and a kick to the view if you stand close. Crates, barrels and jars crumble when broken: the body buckles and sinks while planks, staves and rolling hoops, or curved clay shards, burst out, bounce and settle, with recorded splintering wood or shattering pottery. Doors open when the fight ends: walking through an open doorway preserves your facing and uses a brief fade. Pause, Android Back and focus loss cancel captured input safely. An interaction prompt never takes a touch that lands where the movement stick lives.
 

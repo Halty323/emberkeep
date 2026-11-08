@@ -225,7 +225,7 @@ func move_player(player, delta: float, move_input: Vector2) -> void:
 		player.graze_grace = player.GRAZE_GRACE
 	else:
 		var drag: float = game.residue.slows(player.global_position) if game.residue else 1.0
-		var speed: float = player.RUN_SPEED * Run.stats.speed * drag
+		var speed: float = player.RUN_SPEED * Run.stats.speed * player.stride() * drag
 		if player.leaving_dash:
 			# A short dodge must end at running pace rather than carrying
 			# another few metres of slide off the far edge of a gallery.

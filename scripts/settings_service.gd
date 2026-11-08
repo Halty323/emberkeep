@@ -26,6 +26,8 @@ const DEFAULTS := {"render_scale": 1.0, "fps_limit": 60, "vsync": true, "show_fp
 	# Touch and gamepad: the sight slows over a foe and spells bend onto one
 	# just off the crosshair. Never applies to a mouse.
 	"aim_assist": true,
+	# Touch: pushing the movement stick to its edge runs.
+	"touch_run": true,
 	# Loudness of sound effects and of the music, 0-100 in tens.
 	"sound_volume": 100, "music_volume": 100,
 	# Rebound keys: {action: code}; a key's physical keycode, or a mouse
@@ -36,9 +38,9 @@ const VOLUMES := [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
 # Keyboard actions and their default keys; the first of each may be rebound.
 const KEY_DEFAULTS := {"move_up": [KEY_W, KEY_UP], "move_down": [KEY_S, KEY_DOWN],
 	"move_left": [KEY_A, KEY_LEFT], "move_right": [KEY_D, KEY_RIGHT],
-	"jump": [KEY_SPACE], "dash": [KEY_SHIFT], "interact": [KEY_E], "use_active": [KEY_F],
+	"jump": [KEY_SPACE], "dash": [KEY_SHIFT], "sprint": [KEY_CTRL], "interact": [KEY_E], "use_active": [KEY_F],
 	"place_bomb": [KEY_B], "map": [KEY_M], "journal": [KEY_TAB], "pause_game": [KEY_ESCAPE, KEY_P]}
-const REBINDABLE := ["move_up", "move_down", "move_left", "move_right", "jump", "dash", "interact", "use_active", "place_bomb", "map", "journal"]
+const REBINDABLE := ["move_up", "move_down", "move_left", "move_right", "jump", "dash", "sprint", "interact", "use_active", "place_bomb", "map", "journal"]
 const MOUSE_CODE := 1 << 30
 # Touch controls a layout may move and resize.
 const TOUCH_CONTROLS := ["move", "fire", "jump", "dash", "active", "bomb"]

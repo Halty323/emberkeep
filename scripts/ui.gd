@@ -67,7 +67,7 @@ const SETTINGS_NOTES := {"display": "Resolution scales only the dungeon; text an
 var rebinding := ""
 var settings_row_count := 0
 const KEY_LABELS := {"move_up": "Forward", "move_down": "Back", "move_left": "Left", "move_right": "Right", "jump": "Jump",
-	"dash": "Dash", "interact": "Interact", "use_active": "Use item", "place_bomb": "Bomb", "map": "Map", "journal": "Journal"}
+	"dash": "Dash", "sprint": "Run", "interact": "Interact", "use_active": "Use item", "place_bomb": "Bomb", "map": "Map", "journal": "Journal"}
 var game: Node3D
 var body: Font = preload("res://assets/fonts/body.ttf")
 var heading: Font = preload("res://assets/fonts/display.ttf")
@@ -845,6 +845,8 @@ func build_settings() -> void:
 		tab.add_theme_font_size_override("font_size", 18 if pages.size() > 4 else 20)
 	if settings_page == "keys":
 		build_keys()
+		button("← Back", Rect2(330, 592, 304, 58), func(): close_subscreen())
+		return
 	else:
 		var rows = settings_rows(settings_page)
 		settings_row_count = rows.size()
@@ -866,7 +868,7 @@ func build_keys() -> void:
 			rebinding = "" if rebinding == action else action
 			show_screen("settings"))
 		row.value_size = 17
-	button("Default keys", Rect2(646, 218 + 5 * 61, 304, 54), func():
+	button("Default keys", Rect2(646, 592, 304, 58), func():
 		rebinding = ""
 		Settings.set_value("keys", {})
 		show_screen("settings"))
@@ -942,7 +944,8 @@ func settings_rows(page: String) -> Array:
 				["music_volume", "Music volume", "%d%%" % int(Settings.values.music_volume), bool(Settings.values.music)]]
 	return [["shake", "Camera shake", on_off("shake"), true], ["touch", "Touch controls", on_off("touch"), true],
 		["cast_while_aiming", "Drag to aim casts in fights", on_off("cast_while_aiming"), true],
-		["aim_assist", "Aim assist (touch, gamepad)", on_off("aim_assist"), true]]
+		["aim_assist", "Aim assist (touch, gamepad)", on_off("aim_assist"), true],
+		["touch_run", "Run at the stick's edge (touch)", on_off("touch_run"), true]]
 
 func setting_row(rect: Rect2, row: Array, action := Callable()) -> SettingRow:
 	var control = SettingRow.new()
@@ -1484,6 +1487,7 @@ func draw_hud() -> void:
 			draw_line(aim_center + Vector2(side * 7, 0), aim_center + Vector2(side * 12, 0), GOLD, 1.5)
 		draw_threats(aim_center)
 		draw_dash_arc(aim_center)
+		draw_stamina_arc(aim_center)
 	anchor(widen())
 	draw_hud_right()
 
@@ -1553,6 +1557,18 @@ func threat_mark(center: Vector2, angle: float, color: Color, size_value: float)
 	draw_colored_polygon(PackedVector2Array([tip + direction, back + side * 8.0 * size_value + direction, back - side * 8.0 * size_value + direction]), Color(0.04, 0.03, 0.03, color.a * .6))
 	draw_colored_polygon(PackedVector2Array([tip, back + side * 7.0 * size_value, back - side * 7.0 * size_value]), color)
 
+## Stamina as a small arc left of the sight, shown only while it is not
+## full; red while winded.
+func draw_stamina_arc(aim_center: Vector2) -> void:
+	var player = game.player
+	if not is_instance_valid(player) or player.stamina >= player.STAMINA - .01: return
+	var start := PI * .7
+	var sweep := PI * .6
+	var left: float = player.stamina / player.STAMINA
+	var tint := Color("e07a5f") if player.winded else Color("b7ddc0")
+	draw_arc(aim_center, 26, start, start + sweep, 20, Color(.05, .06, .05, .5), 4.5, true)
+	draw_arc(aim_center, 26, start + sweep * (1.0 - left), start + sweep, 20, Color(tint, .9), 3.0, true)
+
 ## The dash's recharge as a small arc under the crosshair, where a thumb on
 ## the DASH button never hides it; it glows once as the dash comes back.
 func draw_dash_arc(aim_center: Vector2) -> void:
@@ -1606,10 +1622,10 @@ func draw_hud_left() -> void:
 	if not Run.curses.is_empty():
 		text("CURSED · " + " · ".join(Run.curses.map(func(curse): return DeathBargain.curse_name(curse).to_upper())), Vector2(22, HUD_RECT.end.y + 42), 12, DeathBargain.COLOR, bold)
 	if not touch_hud_visible() and not stair_presentation_active():
-		text("%s move · Mouse aim/cast · %s jump · %s dash · %s interact" % [move_keys(), Settings.key_label("jump"), Settings.key_label("dash"), Settings.key_label("interact")] if game.first_person else "%s move · Mouse cast · %s dash · %s item · %s bomb" % [move_keys(), Settings.key_label("dash"), Settings.key_label("use_active"), Settings.key_label("place_bomb")], Vector2(28, 668), 15, MUTED)
+		text("%s move · %s run · Mouse aim/cast · %s jump · %s dash · %s interact" % [move_keys(), Settings.key_label("sprint"), Settings.key_label("jump"), Settings.key_label("dash"), Settings.key_label("interact")] if game.first_person else "%s move · Mouse cast · %s dash · %s item · %s bomb" % [move_keys(), Settings.key_label("dash"), Settings.key_label("use_active"), Settings.key_label("place_bomb")], Vector2(28, 668), 15, MUTED)
 	text("SEED %d" % Run.seed_value, Vector2(28, 697), 13, MUTED)
 	if touch_hud_visible():
-		draw_stick(left_origin if left_touch >= 0 else control_spot("move").center, left_vector, "MOVE", left_touch >= 0, float(control_spot("move").scale))
+		draw_stick(left_origin if left_touch >= 0 else control_spot("move").center, left_vector, "RUN" if game.player and game.player.sprinting else "MOVE", left_touch >= 0, float(control_spot("move").scale))
 
 ## The four movement keys as one word when they are letters ("WASD").
 func move_keys() -> String:
