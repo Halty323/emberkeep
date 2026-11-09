@@ -138,8 +138,7 @@ func build(owner_game: Node3D, room: Dictionary, preview := false, staged := fal
 	var all_points: Array[Vector3]=[]
 	for point in points: all_points.append(Vector3(float(point[0]),0,float(point[1])))
 	if terrain and terrain.loft:
-		var deck: Rect2=terrain.loft.deck
-		for x in [deck.position.x+.8,deck.end.x-.8]: all_points.append(Vector3(x,LoftRoom.RISE,deck.position.y+.8))
+		all_points.append_array(terrain.loft.upper_lanterns())
 	var burning: Array = FloorLight.lit_lanterns(all_points.size(), light, int(room.get("seed", 53)))
 	# A room remembers lanterns relit or put out once its fight was over.
 	if room.has("lit") and not preview: burning = room.lit.map(func(i): return int(i))
@@ -179,6 +178,7 @@ func build(owner_game: Node3D, room: Dictionary, preview := false, staged := fal
 		await pace()
 		FirstPersonArchitecture.build(self)
 	clear_painting_views()
+	clear_slab_crossings()
 	set_open(true)
 	apply_lighting_quality()
 	# A staged room also prepares what entering it would otherwise build in
@@ -891,6 +891,21 @@ func make_embers() -> void:
 	ember_mesh.material_override = Geo.material(Color(look.get("motes", "efbc78")), 1.2)
 	ember_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(ember_mesh)
+
+## Under a whole upper floor, small dressing tall enough to pierce the slab
+## (a hanging, a wall mechanism's top) is left out rather than poke up
+## through the floor above. Walls, columns and the chamber itself stay.
+func clear_slab_crossings() -> void:
+	if not terrain or not terrain.loft or not terrain.loft.full: return
+	var chamber := get_node_or_null("TwoStoreyChamber")
+	var underside := LoftRoom.RISE - LoftRoom.SLAB
+	for mesh in find_children("*", "GeometryInstance3D", true, false):
+		if not mesh.visible or mesh is MultiMeshInstance3D or (chamber and chamber.is_ancestor_of(mesh)): continue
+		var bounds: AABB = mesh.global_transform * mesh.get_aabb()
+		# Wall pieces (a doorway's plug, a partition) are broad and tall: kept.
+		var broad := int(bounds.size.x > 1.2) + int(bounds.size.y > 1.2) + int(bounds.size.z > 1.2)
+		if broad >= 2 or bounds.size.x > 4.0 or bounds.size.z > 4.0: continue
+		if bounds.position.y < underside - .05 and bounds.end.y > underside + .02: mesh.visible = false
 
 ## Nothing stands between a painting and its viewer: any small piece of
 ## dressing (a candle, a hanging, a post, a shelf end) whose bounds reach into

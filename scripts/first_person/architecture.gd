@@ -13,7 +13,10 @@ static func build(room) -> void:
 ## Keep the authored transforms available before GPU upload. This is also
 ## usable by collision/architecture tools on a headless render server.
 static func layout(room) -> Dictionary:
-	var high:=LoftRoom.CEILING if room.data.get("fps_terrain",{}).get("version",0)==3 else 5.45
+	var high:=LoftRoom.CEILING if int(room.data.get("fps_terrain",{}).get("version",0))>=3 else 5.45
+	# Under a whole upper floor a doorway's ornamental arch would stand in
+	# the room above; the slab is its lintel instead.
+	var storeyed: bool=room.data.get("fps_terrain",{}).get("kind","")=="floor"
 	var lift:=high-5.45
 	var stone: Array[Transform3D] = []
 	var dressed: Array[Transform3D] = []
@@ -79,6 +82,7 @@ static func layout(room) -> Dictionary:
 			box(dressed, p + Vector3.UP * 2.84, Vector3(.45, .19, .27), yaw)
 		# The ornamental arch sits above the physical lintel's opening, so
 		# jumping cannot push the camera through a cosmetic low ceiling.
+		if storeyed: continue
 		arch(dressed, base + Vector3.UP * 3.01, 1.22, .69, 8, .22, .24, yaw)
 		box(dressed, base + Vector3.UP * 3.73, Vector3(.3, .34, .3), yaw)
 

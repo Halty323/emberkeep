@@ -25,7 +25,7 @@ func setup(room, build_geometry := true) -> void:
 			ramp = decode_rect(saved.ramp)
 			rise = float(saved.get("rise", RISE))
 			kind = str(saved.get("kind", "gallery"))
-			if int(saved.get("version",0))==3: loft=LoftRoom.new(saved)
+			if int(saved.get("version",0))>=3: loft=LoftRoom.new(saved,room.geometry)
 			if build_geometry: build(room)
 		else:
 			room.data["fps_terrain"] = {}
@@ -131,16 +131,23 @@ static func area_inside(geometry: RoomGeometry, rect: Rect2, margin: float) -> b
 
 static func reserved_zones(data: Dictionary, _geometry: RoomGeometry = null) -> Array:
 	var blueprint = data.get("fps_terrain", {})
-	if blueprint is Dictionary and blueprint.get("version",0)==3:
-		return [{"kind":"vertical","rect":LoftRoom.rect(blueprint.ledge).grow(.65)},{"kind":"vertical","rect":LoftRoom.rect(blueprint.ramp).grow(.65)}]
+	if blueprint is Dictionary and int(blueprint.get("version",0))>=3:
+		var zones: Array=[{"kind":"vertical","rect":LoftRoom.rect(blueprint.ledge).grow(.65)},{"kind":"vertical","rect":LoftRoom.rect(blueprint.ramp).grow(.65)}]
+		# A whole upper floor stands on columns: furniture keeps clear of them.
+		if blueprint.get("kind","")=="floor" and data.has("cells") and data.has("anchor"):
+			var cells: Array=FloorGenerator.room_cells(data).map(func(cell): return cell-FloorGenerator.vec(data.anchor))
+			for p in LoftRoom.columns(RoomGeometry.new(cells),LoftRoom.rect(blueprint.ramp),LoftRoom.facing_of(blueprint)):
+				zones.append({"kind":"vertical","circle":p,"radius":.9})
+		return zones
 	if not blueprint is Dictionary or blueprint.get("version",0) != 2: return []
 	if not valid_rect(blueprint.get("ledge")) or not valid_rect(blueprint.get("ramp")): return []
 	return [{"kind":"vertical","rect":decode_rect(blueprint.ledge).merge(decode_rect(blueprint.ramp)).grow(.65)}]
 
 func challenge() -> bool:
-	return kind in ["upper","cellar","loft"] and ledge.has_area()
+	return kind in ["upper","cellar","loft","floor"] and ledge.has_area()
 
 func reward_point() -> Vector3:
+	if loft and loft.full: return loft.upper_spot(0)
 	var center := ledge.get_center()
 	return Vector3(center.x,rise,center.y)
 
@@ -171,7 +178,7 @@ static func valid_rect(value: Variant) -> bool:
 	return value is Array and value.size() == 4 and value.all(func(number): return (number is int or number is float) and is_finite(float(number))) and float(value[2]) >= 1.2 and float(value[3]) >= 1.2 and float(value[2]) <= 8.0 and float(value[3]) <= 8.0
 
 static func valid_blueprint(value: Variant, geometry: RoomGeometry, sockets: Dictionary = {}) -> bool:
-	if value is Dictionary and value.get("version",0)==3: return LoftRoom.valid(value,geometry,sockets)
+	if value is Dictionary and int(value.get("version",0))>=3: return LoftRoom.valid(value,geometry,sockets)
 	if not value is Dictionary or value.get("version",-1) not in [1,2]: return false
 	if not valid_rect(value.get("ledge")) or not valid_rect(value.get("ramp")): return false
 	var deck := decode_rect(value.ledge)
@@ -209,7 +216,7 @@ func height_at(at: Vector3) -> float:
 
 func standing_height(point: Vector2, radius: float, reference_y := 0.0) -> float:
 	var surface := height_at(Vector3(point.x,reference_y,point.y))
-	if loft and point.x>=ramp.position.x and point.x<=ramp.end.x and point.y>ramp.end.y and point.y<ramp.end.y+radius:
+	if loft and loft.facing==Vector2(0,-1) and point.x>=ramp.position.x and point.x<=ramp.end.x and point.y>ramp.end.y and point.y<ramp.end.y+radius:
 		# A slow capsule meets the incline before its centre enters the ramp.
 		# Extend the analytic support height through that short approach so its
 		# leading hemisphere cannot snag at the foot of the stairs.

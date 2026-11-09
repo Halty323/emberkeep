@@ -24,10 +24,13 @@ static func prepare(floor_data: Dictionary, floor_number: int) -> Dictionary:
 		room["vertical_primary"] = true
 		make_mandatory(floor_data,room.id)
 		break
+	# Every other room that rolls a second level gets a real upstairs too: a
+	# gallery over usable floor, reached by a staircase, never a ramp to a
+	# raised ledge or down into a pit. A room too small for one stays flat.
 	for room in candidates:
-		if plans.has(room.id): continue
+		if plans.has(room.id) or not FirstPersonTerrain.wants_vertical(room): continue
 		var geometry := RoomGeometry.new(FloorGenerator.room_cells(room).map(func(cell): return cell-FloorGenerator.vec(room.anchor)))
-		var plan := FirstPersonTerrain.plan_generation(room,geometry,essential_zones(FloorGenerator.reserved_zones(floor_data,room)))
+		var plan := LoftRoom.plan(room,geometry,essential_zones(FloorGenerator.reserved_zones(floor_data,room)))
 		if not plan.is_empty() and legal(plan,geometry,room,floor_data): plans[room.id] = plan
 	for id in plans:
 		var room: Dictionary = floor_data.rooms[id]
@@ -103,36 +106,66 @@ static func boss_route(floor_data: Dictionary) -> Array:
 ## are never moved or regenerated. New floors use prepare() unconditionally.
 static func upgrade_unvisited(rooms: Dictionary, portals: Dictionary, floor_number: int) -> bool:
 	var data := {"rooms":rooms,"portals":portals}
+	# The floor's primary chamber first, exactly as before; then the rest.
+	var changed := primary_upgrade(rooms,portals,data)
+	# Old ramp annexes and sunken cellars in rooms nobody has entered become
+	# real two-storey chambers (or flat, where a gallery cannot fit).
+	for room in rooms.values():
+		var old=room.get("fps_terrain",{})
+		if not old is Dictionary or old.is_empty() or int(old.get("version",0))==LoftRoom.FLOOR_VERSION or not untouched(room): continue
+		var geometry:=RoomGeometry.new(FloorGenerator.room_cells(room).map(func(cell): return cell-FloorGenerator.vec(room.anchor)))
+		var plan:=LoftRoom.plan(room,geometry,essential_zones(FloorGenerator.reserved_zones(data,room)))
+		if not plan.is_empty() and legal(plan,geometry,room,data): adopt(room,plan,geometry,data)
+		else: room.erase("fps_terrain")
+		changed=true
+	return changed
+
+static func untouched(room: Dictionary) -> bool:
+	return not room.get("visited",false) and not room.get("cleared",false) and room.get("items",[]).is_empty() and not room.get("chests",[]).any(func(chest): return chest.get("opened",false))
+
+static func primary_upgrade(rooms: Dictionary, portals: Dictionary, data: Dictionary) -> bool:
 	for room in rooms.values():
 		var blueprint=room.get("fps_terrain",{})
-		if not blueprint is Dictionary or blueprint.get("version",0)!=3: continue
+		if not blueprint is Dictionary or int(blueprint.get("version",0))<3: continue
 		var geometry:=RoomGeometry.new(FloorGenerator.room_cells(room).map(func(cell): return cell-FloorGenerator.vec(room.anchor)))
 		if legal(blueprint,geometry,room,data): return false
-	var candidates: Array=rooms.values().filter(func(room):
-		return room.type=="combat" and not room.get("visited",false) and not room.get("cleared",false) and room.get("items",[]).is_empty() and not room.get("chests",[]).any(func(chest): return chest.get("opened",false)))
+	var candidates: Array=rooms.values().filter(func(room): return room.type=="combat" and untouched(room))
 	var route:=boss_route(data)
+	# Prefer a chamber the boss route can be made to pass through: tried on a
+	# copy of the floor, closing only the loops that would skip it.
+	var unavoidable := {}
+	for room in candidates:
+		var trial: Dictionary = {"rooms": data.rooms.duplicate(true), "portals": data.portals.duplicate(true)}
+		make_mandatory(trial, room.id)
+		unavoidable[room.id] = route_portals(trial, room.id).is_empty()
 	candidates.sort_custom(func(a,b):
+		if unavoidable[a.id]!=unavoidable[b.id]: return unavoidable[a.id]
 		if (a.id in route)!=(b.id in route): return a.id in route
 		return int(a.depth)<int(b.depth) if int(a.depth)!=int(b.depth) else str(a.id)<str(b.id))
 	for room in candidates:
 		var geometry:=RoomGeometry.new(FloorGenerator.room_cells(room).map(func(cell): return cell-FloorGenerator.vec(room.anchor)))
 		var plan:=LoftRoom.plan(room,geometry,essential_zones(FloorGenerator.reserved_zones(data,room)))
 		if plan.is_empty() or not legal(plan,geometry,room,data): continue
-		room["fps_terrain"]=plan
 		room["vertical_primary"]=true
-		var area:=FirstPersonTerrain.decode_rect(plan.ledge).merge(FirstPersonTerrain.decode_rect(plan.ramp)).grow(.7)
-		var zones:=essential_zones(FloorGenerator.reserved_zones(data,room))
-		relocate_lanterns(room,geometry,zones)
-		room.props=room.get("props",[]).filter(func(prop): return not area.intersects(Furnisher.record_rect(prop)))
-		room.partitions=room.get("partitions",[]).filter(func(wall): return not area.intersects(RoomPartitions.rect(wall)))
-		for chest in room.get("chests",[]):
-			var at:=FloorGenerator.vec2(chest.position)
-			if not area.grow(.8).has_point(at): continue
-			var point:=geometry.safe_point(at,.8,func(p):
-				return area.grow(.8).has_point(p) or FloorGenerator.in_zones(p,zones,.5) or room.props.any(func(prop): return Furnisher.record_rect(prop).grow(.8).has_point(p)))
-			chest.position=FloorGenerator.point_array(point)
+		adopt(room,plan,geometry,data)
 		return true
 	return false
+
+## Give an untouched room a gallery: lanterns, furniture, partitions and
+## chests move out of the staircase and supports' way.
+static func adopt(room: Dictionary, plan: Dictionary, geometry: RoomGeometry, data: Dictionary) -> void:
+	room["fps_terrain"]=plan
+	var area:=FirstPersonTerrain.decode_rect(plan.ledge).merge(FirstPersonTerrain.decode_rect(plan.ramp)).grow(.7)
+	var zones:=essential_zones(FloorGenerator.reserved_zones(data,room))
+	relocate_lanterns(room,geometry,zones)
+	room.props=room.get("props",[]).filter(func(prop): return not area.intersects(Furnisher.record_rect(prop)))
+	room.partitions=room.get("partitions",[]).filter(func(wall): return not area.intersects(RoomPartitions.rect(wall)))
+	for chest in room.get("chests",[]):
+		var at:=FloorGenerator.vec2(chest.position)
+		if not area.grow(.8).has_point(at): continue
+		var point:=geometry.safe_point(at,.8,func(p):
+			return area.grow(.8).has_point(p) or FloorGenerator.in_zones(p,zones,.5) or room.props.any(func(prop): return Furnisher.record_rect(prop).grow(.8).has_point(p)))
+		chest.position=FloorGenerator.point_array(point)
 
 ## Remove only cycle edges that bypass this chamber. The complete floor
 ## remains connected, including optional branches and concealed secrets.

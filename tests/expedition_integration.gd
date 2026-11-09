@@ -41,7 +41,8 @@ func exercise() -> void:
 	for seed_value in range(91242,91272):
 		if seed_value!=91242: game.start_run("candle",seed_value,false)
 		for id in run.rooms:
-			if run.rooms[id].get("fps_terrain",{}).get("version",0)==2:
+			# Optional chambers are real two-storey rooms now, as the primary is.
+			if run.rooms[id].get("fps_terrain",{}).get("version",0)>=3 and not run.rooms[id].get("vertical_primary",false):
 				vertical_id=id
 				break
 		if vertical_id!="": break
