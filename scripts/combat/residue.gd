@@ -208,6 +208,8 @@ func set_mirror(active: bool) -> void:
 ## Visual only: rain on the cistern's pools, wading rings, the ripple clock.
 ## How fast a patch spreads in and drains away (mask units a second).
 const SPREAD_RATE := 3.2
+# How long after a field is made its patches appear at once, unanimated.
+const SETTLE := .4
 const DRAIN_RATE := 1.8
 # Small particles each kind gives off now and then, and its splash colour.
 const WISPS := {"fire": ["#ffb050", .05], "ink": ["#4a3a66", .3], "moss": ["#c8e08a", .45], "glass": ["#e8f6ff", .35], "wax": ["#f4e8c8", 1.6], "water": ["#9cc8d8", 1.2]}
@@ -792,8 +794,10 @@ func rebuild(kind: String) -> void:
 	entry.easing = true
 	entry.view.visible = count > 0 or entry.view.visible
 	entry.count = count
-	# Headless, nothing animates: show the mask as it is.
-	if DisplayServer.get_name() == "headless" or not is_inside_tree(): ease_masks(10.0)
+	# Headless, nothing animates: show the mask as it is. And whatever lies
+	# here as a room is entered (its lasting pools, what was spilt before)
+	# is simply there, full: only new spills spread in and drain away.
+	if DisplayServer.get_name() == "headless" or not is_inside_tree() or clock < SETTLE: ease_masks(10.0)
 
 ## Co-op host: what changed on the floor since last asked, for the guests.
 func take_changes() -> Dictionary:

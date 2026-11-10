@@ -68,5 +68,5 @@ void fragment() {
     SPECULAR = .6;
     ALBEDO = mix(ALBEDO, vec3(0.0), wet);
     EMISSION *= shape;
-    ALPHA = max(shape*.95, wet*.3);
+    ALPHA = max(shape*.95, wet*.16);
 }
