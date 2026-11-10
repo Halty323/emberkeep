@@ -161,6 +161,7 @@ func build(owner_game: Node3D, room: Dictionary, preview := false, staged := fal
 		var pillars = FloorGenerator.pillar_points(geometry.cells, int(room.seed), Vector2(pedestal.x, pedestal.z))
 		for i in pillars.size():
 			records.append({"id": "%s:p%d" % [room.get("id", ""), i], "kind": "pillar", "position": [pillars[i].x, pillars[i].y], "rotation": 0, "size": [1.3, 1.3]})
+	if first_person_room: records = UpperFurnishings.resolve(self, records)
 	await build_props(records)
 	if first_person_room: DungeonStyle.dress_props(self)
 	await pace()
@@ -523,13 +524,13 @@ func build_props(records: Array) -> void:
 					var original = part.material_override
 					if original is StandardMaterial3D:
 						part.material_override = DungeonStyle.structural_material(look,original.albedo_color,part.position.y > 1.0)
-			make_candle(Vector3(at.x, 1.32, at.y), .6)
+			make_candle(Vector3(at.x, float(record.get("height", 0)) + 1.32, at.y), .6)
 		var cloth = built.node.get_node_or_null("Cloth")
 		if cloth: cloths.append(cloth)
 		if definition.get("solid", false):
 			var size = Vector2(float(record.size[0]), float(record.size[1]))
 			obstacles.append({"id": record.id, "position": Vector3(at.x, 0, at.y), "radius": maxf(size.x, size.y) * .5 + .4,
-				"rect": Rect2(at - size / 2.0, size)})
+				"rect": Rect2(at - size / 2.0, size), "height": float(record.get("height", 0))})
 		if not built.occluder.is_empty():
 			built.occluder["id"] = record.id
 			built.occluder["current"] = 1.0
@@ -869,7 +870,12 @@ func make_candles() -> void:
 		var p = Vector3(decor_rng.randf_range(-6.5, 6.5), 0, edge.dir.y * 6.2)
 		if absf(p.x) < 1.7:
 			p.x += 3.0
-		make_candle(p + Vector3(center.x, 0, center.y), decor_rng.randf_range(.45, .85))
+		p += Vector3(center.x, 0, center.y)
+		for level in ([0.0, LoftRoom.RISE] if terrain and terrain.loft else [0.0]):
+			var at := Vector2(p.x, p.z)
+			if level > 0 and not terrain.loft.on_deck(at, .4): continue
+			if navigation_blockers(level).values().any(func(area): return area.grow(.35).has_point(at)): continue
+			make_candle(p + Vector3.UP * level, decor_rng.randf_range(.45, .85))
 
 func make_embers() -> void:
 	ember_mesh = MultiMeshInstance3D.new()
@@ -1085,3 +1091,11 @@ func _process(delta: float) -> void:
 			p.y = fposmod(p.y + time * .16, 4.0)
 			p.x += sin(time * .35 + i) * .25
 			ember_mesh.multimesh.set_instance_transform(i, Transform3D(Basis.IDENTITY, p))
+
+## Break the geometry/terrain reference cycle when a streamed room retires.
+func _exit_tree() -> void:
+	if geometry: geometry.terrain = null
+
+func _enter_tree() -> void:
+	# Corridor streaming reparents a prepared room before adopting it.
+	if geometry and terrain: geometry.terrain = terrain

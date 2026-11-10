@@ -101,15 +101,18 @@ static func plan(room, theme: String, detail: int) -> Dictionary:
 		if result.walls.any(func(other): return other.at.distance_to(at) < 3.0): continue
 		result.walls.append({"at": at, "dir": edge.dir, "variant": gen.randi_range(0, 2)})
 	var top_limit = mini(4, room.geometry.cells.size() + (1 if detail > 0 else 0))
+	var tops_per_level := {}
 	for id in room.props:
-		if result.tops.size() >= top_limit: break
 		var prop: Dictionary = room.props[id]
 		var definition: Dictionary = prop.definition
 		if definition.recipe not in TOP_RECIPES or not definition.get("solid", false) or definition.has("breakable"): continue
 		var record: Dictionary = prop.record
+		var level := float(record.get("height", 0))
+		if int(tops_per_level.get(level, 0)) >= top_limit: continue
+		tops_per_level[level] = int(tops_per_level.get(level, 0)) + 1
 		var size = Vector2(float(definition.size[0]), float(definition.size[1]))
 		var scale = clampf(minf(size.x, size.y) / 1.1, .4, 1.0)
-		var at = Vector3(float(record.position[0]), float(definition.height) + .025, float(record.position[1]))
+		var at = Vector3(float(record.position[0]), float(record.get("height", 0)) + float(definition.height) + .025, float(record.position[1]))
 		result.tops.append({"id": id, "at": at, "turn": -float(record.get("rotation", 0)) * PI / 2, "scale": scale, "variant": gen.randi_range(0, 2)})
 	var scatter_limit = mini(12, room.geometry.cells.size() * (2 if detail == 0 else 4))
 	for cell in room.geometry.cells:

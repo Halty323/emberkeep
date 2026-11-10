@@ -2026,6 +2026,7 @@ func breach(room_id: String, at: Vector3, radius: float, live: bool) -> void:
 	var flat = Vector2(at.x, at.z)
 	for record in data.get("props", []):
 		if record.get("destroyed", false) or not Content.record("furniture", record.kind).has("breakable"): continue
+		if first_person and absf(float(record.get("height", 0)) - at.y) > 1.6: continue
 		var rect = Furnisher.record_rect(record)
 		var nearest = Vector2(clampf(flat.x, rect.position.x, rect.end.x), clampf(flat.y, rect.position.y, rect.end.y))
 		if nearest.distance_to(flat) <= radius:
@@ -2063,7 +2064,7 @@ func destroy_prop(room_id: String, record: Dictionary, live: bool) -> void:
 	var loot = RandomNumberGenerator.new()
 	loot.seed = Content.stable_hash("loot:%d:%d:%s" % [Run.seed_value, Run.floor_number, record.id])
 	var drops = Drops.roll(definition.breakable.drops, loot, Run.stats.luck)
-	var at = Vector3(float(record.position[0]), 0, float(record.position[1]))
+	var at = Vector3(float(record.position[0]), float(record.get("height", 0)), float(record.position[1]))
 	for i in drops.size():
 		var point = Drops.scatter(drops.size(), i, at)
 		if drops[i].has("active"):
@@ -2072,9 +2073,9 @@ func destroy_prop(room_id: String, record: Dictionary, live: bool) -> void:
 		elif live:
 			spawn_pickup(point, drops[i].def)
 		else:
-			Run.add_drop(room_id, drops[i].def, Vector2(point.x, point.z))
+			Run.add_drop(room_id, drops[i].def, Vector2(point.x, point.z), -1.0, point.y)
 	if live:
-		var sound_at: Vector3 = at + Vector3.UP * (room.floor_height(at) + .5 if first_person else .5)
+		var sound_at: Vector3 = at + Vector3.UP * .5
 		room.break_prop(record.id)
 		Effects.play("prop_dust", sound_at)
 		# A crate or barrel splinters; a jar shatters.

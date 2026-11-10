@@ -264,6 +264,12 @@ func walkable(p: Vector2, clearance: float, level: float) -> bool:
 			var q: Vector2=p+offset*clearance
 			if stairs.has_point(q) and stair_height(q)<2.15: return false
 		return true
+	# Routes on the upper storey must stay at upper-floor height. The
+	# cross-storey route handles the flight explicitly via its head/foot.
+	if full:
+		for offset in [Vector2.ZERO, Vector2.LEFT, Vector2.RIGHT, Vector2.UP, Vector2.DOWN, Vector2(.707,.707), Vector2(-.707,.707), Vector2(.707,-.707), Vector2(-.707,-.707)]:
+			if not on_deck(p + offset * clearance): return false
+		return true
 	# Beside a railed stairwell the floor ends at the rail: only from beyond
 	# the open top end may a path step into the flight.
 	var beyond_top: bool = (p-(stairs.get_center()+facing*half_flight())).dot(facing) >= -.05
@@ -442,22 +448,7 @@ func build_floor(room) -> void:
 		# The open side faces the way the flight climbs.
 		if middle.normalized().dot(facing)>.9: continue
 		rail(root,a,b,wood)
-	# Tables upstairs, one a cell, each on the floor it stands on.
-	var placed := 0
-	for spot in upper_spots(2.2):
-		if placed>=geometry.cells.size(): break
-		placed+=1
-		var at:=spot+Vector2(0,-1.6)
-		if not on_deck(at,1.4): continue
-		wood_box(Vector3(at.x,RISE+.76,at.y),Vector3(2.3,.16,.9))
-		Geo.collider(root,Vector3(at.x,RISE+.42,at.y),Vector3(2.3,.84,.9))
-		room.add_obstacle("floor-table:%d"%placed,at,1.2,RISE)
-		room.obstacles.back()["rect"]=Rect2(at-Vector2(1.15,.45),Vector2(2.3,.9))
-		for x in [-.92,.92]:
-			for z in [-.3,.3]:
-				wood_box(Vector3(at.x+x,RISE+.35,at.y+z),Vector3(.13,.7,.13))
-		for x in [-.7,0,.7]:
-			Geo.cylinder(root,Vector3(at.x+x,RISE+.95,at.y),.09,.22,Color("a38d6c"))
+	# Upstairs furniture is resolved through the same saved prop pipeline as downstairs.
 	var area := 0.0
 	for piece in pieces: area += piece.get_area()
 	root.set_meta("walkable_lower_area",area)

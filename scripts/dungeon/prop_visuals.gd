@@ -21,7 +21,7 @@ const RUGS := [[Color("6e3b33"), Color("c49a5a")], [Color("3d4f5c"), Color("b8a2
 static func build(room: Node3D, record: Dictionary, definition: Dictionary, detail: int, batch: DetailBatch, cell: Vector2i, rng: RandomNumberGenerator) -> Dictionary:
 	var node = Node3D.new()
 	room.add_child(node)
-	node.position = Vector3(float(record.position[0]), 0, float(record.position[1]))
+	node.position = Vector3(float(record.position[0]), float(record.get("height", 0)), float(record.position[1]))
 	node.rotation.y = -float(record.get("rotation", 0)) * PI / 2.0
 	var w = float(definition.size[0])
 	var d = float(definition.size[1])

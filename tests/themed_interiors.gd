@@ -71,7 +71,7 @@ func exercise() -> void:
 			for anchor in a.tops:
 				check(room.props.has(anchor.id), "clutter stands on an existing prop")
 				var definition: Dictionary = room.props[anchor.id].definition
-				check(absf(anchor.at.y - float(definition.height) - .025) < .001, "clutter uses the existing surface height")
+				check(absf(anchor.at.y - float(room.props[anchor.id].record.get("height", 0)) - float(definition.height) - .025) < .001, "clutter uses the existing surface height")
 				check(not definition.has("breakable") and not room.props[anchor.id].record.get("destroyed",false), "permanent clutter never floats after a container breaks")
 			# Re-decorating a disposable container proves the builder adds only
 			# mesh surfaces; collision, light and navigation budgets stay fixed.
@@ -107,7 +107,7 @@ func exercise() -> void:
 		check(not complete.try_scene(func(): complete.wall_scene(theme,Transform3D.IDENTITY,1)) and complete.vertex_count == vertices, "full budget preserves already complete scene: " + theme)
 	for detail in 3:
 		var a: Dictionary = interiors.plan(game.room, run.theme_id(), detail)
-		check(a.walls.size() <= 4 and a.tops.size() <= 4 and a.scatter.size() <= 12, "all quality levels cap cosmetic placements")
+		check(a.walls.size() <= 4 and a.tops.size() <= (8 if game.room.terrain and game.room.terrain.loft else 4) and a.scatter.size() <= 12, "all quality levels cap cosmetic placements")
 	check(seen.size() == 8, "all eight floor themes receive authored interior scenes")
 	check(interiors.primitive_arrays.size() <= 4 and interiors.finishes.size() <= 4, "primitive and finish caches stay bounded")
 	game.queue_free()
