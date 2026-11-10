@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install desktop entry validator
         run: |
@@ -31,7 +31,7 @@ jobs:
 
       - name: Restore Godot and AppImage tools
         id: tools-cache
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/emberkeep-appimage-tools
           key: emberkeep-godot-4.7.2-appimagetool-1.9.1-runtime-20251108-v1
@@ -83,7 +83,7 @@ jobs:
         run: bash tools/build_appimage.sh "$RUNNER_TEMP/emberkeep-appimage"
 
       - name: Upload the AppImage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Emberkeep-Linux-AppImage
           path: |
@@ -94,7 +94,7 @@ jobs:
 
       - name: Upload diagnostics on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: AppImage-build-diagnostics
           path: ${{ runner.temp }}/emberkeep-appimage/*.log

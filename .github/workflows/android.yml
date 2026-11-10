@@ -25,10 +25,10 @@ jobs:
     timeout-minutes: 35
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: '17'
@@ -42,7 +42,7 @@ jobs:
 
       - name: Restore Godot 4.7.2 and Android template
         id: godot-cache
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/godot-4.7.2-android
           key: godot-4.7.2-linux-android-template-v1
@@ -81,7 +81,7 @@ jobs:
           echo "$HOME/godot-4.7.2-android" >> "$GITHUB_PATH"
 
       - name: Restore development signing key
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/emberkeep-android/.local-signing
           key: emberkeep-android-debug-signing-v1
@@ -122,7 +122,7 @@ jobs:
             --output-dir "$RUNNER_TEMP/emberkeep-android/verification"
 
       - name: Upload APK and verification report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Emberkeep-Android
           path: |
@@ -162,7 +162,7 @@ jobs:
             --output-dir "$RUNNER_TEMP/emberkeep-android/verification-preview"
 
       - name: Upload separately installable Preview
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Emberkeep-Preview
           path: |
@@ -174,7 +174,7 @@ jobs:
 
       - name: Upload build diagnostics on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Android-build-diagnostics
           path: ${{ runner.temp }}/emberkeep-android/verification*/*.log
