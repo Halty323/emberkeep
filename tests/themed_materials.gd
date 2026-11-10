@@ -73,8 +73,12 @@ func exercise() -> void:
 			check(expected+"wall/" in sheet(mesh.material_override),"constructed "+theme.id+" room uses its own wall material")
 		check(wall_count>=4,"the actual "+theme.id+" room walls were checked")
 		var gallery=game.room.get_node("TwoStoreyChamber")
-		check(expected+"floor/" in sheet(gallery.get_node("GalleryFloor").material_override),"the upstairs floor matches the "+theme.id+" ground")
-		var structure: String=sheet(gallery.get_node("GallerySlab").material_override)
+		# A whole upper floor names its pieces UpperFloor/FloorSlab; the older
+		# gallery, GalleryFloor/GallerySlab.
+		var upstairs=gallery.get_node_or_null("UpperFloor") if gallery.has_node("UpperFloor") else gallery.get_node("GalleryFloor")
+		var slab=gallery.get_node_or_null("FloorSlab") if gallery.has_node("FloorSlab") else gallery.get_node("GallerySlab")
+		check(expected+"floor/" in sheet(upstairs.material_override),"the upstairs floor matches the "+theme.id+" ground")
+		var structure: String=sheet(slab.material_override)
 		check("/wood/" in structure if theme.look.materials.structure=="wood" else expected+"wall/" in structure,"gallery supports follow the floor's structural materials")
 		for mesh in game.room.get_children():
 			if mesh.get_meta("surface_role","")!="ceiling": continue
@@ -89,8 +93,8 @@ func exercise() -> void:
 				check(expected in sheet(view.material_override),"the live corridor shares "+theme.id+" surfaces")
 		check(corridor_surfaces==2,"the two real corridor surface batches were checked")
 		check(PBR.active_theme==theme.id and PBR.theme_loaded.size()<=2,"cross-floor texture caches are bounded after real room rebuilds")
-		check(game.room.lamps.size()<=5 and game.room.shadow_lamps.size()<=1,"new artwork does not increase room light or shadow budgets")
-		check(is_zero_approx(gallery.get_node("GalleryFloor").material_override.get_shader_parameter("relief_depth")),"PowerVR keeps its conservative surface path")
+		check(game.room.lamps.size()<=game.room.MAX_ACTIVE_FILLS and game.room.shadow_lamps.size()<=1,"new artwork does not increase room light or shadow budgets")
+		check(is_zero_approx(upstairs.material_override.get_shader_parameter("relief_depth")),"PowerVR keeps its conservative surface path")
 		check(primary.fps_terrain==original_blueprint,"theme changes preserve the two-storey geometry and its saved blueprint")
 		if not output.is_empty(): await capture(theme.id)
 	game.queue_free();await process_frame

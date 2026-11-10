@@ -195,7 +195,8 @@ func test_light() -> void:
 	check(room.has_dark() and far and not in_dark.shrouded and in_dark.visual.get_child(0).visible and in_dark.eyes.visible,
 		"a distant foe keeps its full body visible outside lantern and player light")
 	var dark_body: MeshInstance3D = in_dark.visual.get_child(0)
-	check(dark_body.material_override.shading_mode == BaseMaterial3D.SHADING_MODE_PER_PIXEL and (dark_body.layers & Geo.LIT_LAYERS) != 0,
+	# Gelatin is a lit material (never unshaded) on the lit layers.
+	check(dark_body.material_override is ShaderMaterial and not "unshaded" in dark_body.material_override.shader.code.get_slice(";", 1) and (dark_body.layers & Geo.LIT_LAYERS) != 0,
 		"ordinary bodies receive the dungeon's real lighting")
 	game.player.place(in_dark.global_position + Vector3(1.0, 0, 0))
 	step(1)
@@ -229,7 +230,7 @@ func test_light() -> void:
 	game.player.place(ghost.global_position + Vector3(1, 0, 0))
 	ghost.update_light_state()
 	check(not ghost.shrouded and ghost.targetable and ghost_body.visible
-		and ghost_body.material_override.transparency == BaseMaterial3D.TRANSPARENCY_DISABLED,
+		and ghost_body.material_override is ShaderMaterial and ghost_body.material_override == ghost.jelly,
 		"a mourner in player light becomes solid and targetable without mesh popping")
 	room.set_lantern(dead, true)
 	clear_combat(false)
