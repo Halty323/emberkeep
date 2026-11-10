@@ -20,7 +20,7 @@ DESCRIPTIONS = {
     "cellar": ("warm rubble walls", "packed earth with embedded stone chips"),
     "cistern": ("long water-worn courses", "rounded river cobbles"),
     "halls": ("split overgrown stone", "large broken flagstones"),
-    "crypt": ("diamond-cut memorial blocks", "incised burial slabs"),
+    "crypt": ("weathered memorial blocks with sparse inscriptions", "incised burial slabs"),
     "archive": ("pale tall ashlar", "silvered timber boards"),
     "kiln": ("small soot-darkened firebricks", "fractured charcoal basalt"),
     "belfry": ("riveted hammered iron panels", "timber with brass inlay"),
@@ -76,7 +76,7 @@ def ornament(result, theme, surface):
     h, w = height.shape
     marks = Image.new("L", (w,h))
     draw = ImageDraw.Draw(marks)
-    if theme == "crypt":
+    if theme == "crypt" and surface == "floor":
         # These cuts have matching physical depth, not painted-on highlights.
         rows, cols = (3,3) if surface == "wall" else (2,2)
         for row in range(rows):
@@ -142,16 +142,79 @@ def surface(rng,w,h,theme,kind):
     return ornament(result,theme,kind)
 
 
-def bake():
+def weather_wall(rng, theme, result):
+    """Seeded layered erosion, mineral flecks and rare, physically cut marks.
+
+    Color, cavity, roughness and normal relief all describe the same surface.
+    Broad facets and soft brush marks retain a stylized hand-carved look.
+    """
+    import numpy as np
+    from scipy.ndimage import gaussian_filter
+    color, height, ao, rough, depth, metal = result
+    h, w = height.shape
+    cloud = base.noise(rng,w,h,17,9)
+    strata = base.noise(rng,w,h,74,27)
+    grain = base.noise(rng,w,h,320,170)
+    pores = np.maximum(0.0, (.34-grain)*3.2)
+    face = np.clip((height-.16)/.24,0,1)
+    # Different wear belongs to each material, rather than one grunge stamp.
+    strength = {"cellar":.10,"cistern":.065,"halls":.085,"crypt":.075,
+                "archive":.045,"kiln":.095,"belfry":.04,"hearth":.055}[theme]
+    ridges = (strata-.5)*strength + (cloud-.5)*strength*.7
+    chips = gaussian_filter(pores, .65, mode="wrap")
+    height += face*(ridges-chips*strength*.9 + (grain-.5)*.018)
+    color *= (1 + face*((cloud-.5)*.26 + (strata-.5)*.12 - chips*.30))[...,None]
+    mineral = np.array({"cellar":[.10,.05,-.04],"cistern":[-.06,.07,.05],
+                       "halls":[-.03,.08,-.03],"crypt":[.04,.02,.06],
+                       "archive":[.02,.05,.08],"kiln":[.11,-.02,-.08],
+                       "belfry":[.10,.015,-.09],"hearth":[.07,.035,-.02]}[theme])
+    color *= 1 + (cloud[...,None]-.5)*mineral
+    ao = np.clip(ao-face*chips*.22,0,1)
+    rough = np.clip(rough+face*((strata-.5)*.19+chips*.16),.28,.98)
+    # One small memorial/tool mark per 4x2m sheet, with several shapes.
+    # All other bricks carry material wear, never a mandatory center stamp.
+    marks = Image.new("L",(w,h))
+    draw = ImageDraw.Draw(marks)
+    cx,cy = int(w*.51),int(h*.49)
+    for _ in range(24):
+        x,y = int(rng.integers(w*.14,w*.86)),int(rng.integers(h*.16,h*.84))
+        if face[y,x] > .9: cx,cy = x,y; break
+    r = 32
+    motif = list(THEMES).index(theme) % 4
+    if motif == 0:
+        for x in [-18,0,18]: draw.line([(cx+x,cy-21),(cx+x-5,cy+20)],fill=210,width=3)
+        draw.line([(cx-27,cy+12),(cx+28,cy-13)],fill=190,width=3)
+    elif motif == 1:
+        draw.arc((cx-r,cy-r,cx+r,cy+r),35,285,fill=200,width=3)
+        draw.line([(cx-12,cy+14),(cx+20,cy-17)],fill=180,width=3)
+    elif motif == 2:
+        draw.line([(cx-24,cy+16),(cx-3,cy-23),(cx+21,cy+16)],fill=190,width=3)
+        draw.line([(cx-13,cy+3),(cx+11,cy+3)],fill=200,width=3)
+    else:
+        for row in [-14,0,14]:
+            draw.line([(cx-28,cy+row),(cx+int(rng.integers(8,30)),cy+row-2)],fill=190,width=3)
+        draw.line([(cx-17,cy-23),(cx-17,cy+23)],fill=170,width=3)
+    cut = gaussian_filter(np.asarray(marks,np.float32)/255,.85,mode="wrap")*face
+    height -= cut*.07
+    color *= (1-cut*.18)[...,None]
+    ao *= 1-cut*.18
+    rough = np.clip(rough+cut*.08,0,1)
+    return color,height,ao,rough,depth,metal
+
+
+def bake(walls_only=False):
     import numpy as np
     ROOT.mkdir(parents=True,exist_ok=True)
-    manifest = {"schema":1,"seed":SEED,"source":"Original deterministic Emberkeep themed artwork",
+    manifest = json.loads((ROOT/"manifest.json").read_text()) if walls_only else {"schema":1,"seed":SEED,"source":"Original deterministic Emberkeep themed artwork",
                 "channels":"ORMH: occlusion, roughness, metallic, height","themes":{}}
     for i,theme in enumerate(THEMES):
-        manifest["themes"][theme] = {}
+        manifest["themes"].setdefault(theme, {})
         for j,kind in enumerate(("wall","floor")):
+            if walls_only and kind != "wall": continue
             rng = np.random.default_rng(SEED+i*211+j*89)
             color,height,ao,rough,depth,metal = surface(rng,2048,1024,theme,kind)
+            if kind == "wall":
+                color,height,ao,rough,depth,metal = weather_wall(rng,theme,(color,height,ao,rough,depth,metal))
             target = ROOT/theme/kind
             target.mkdir(parents=True,exist_ok=True)
             rgb = Image.fromarray(np.uint8(np.clip(color,0,255)))
@@ -173,6 +236,9 @@ def bake():
                 with Image.open(path) as image:
                     outputs[filename] = {"sha256":base.digest(path),"bytes":path.stat().st_size,"size":list(image.size)}
             manifest["themes"][theme][kind] = {"description":DESCRIPTIONS[theme][j],"relief_metres":depth,"outputs":outputs}
+            if kind == "wall":
+                manifest["themes"][theme][kind]["weathering_version"] = 2
+                manifest["themes"][theme][kind]["inscriptions_per_sheet"] = 1
             print("Baked",theme,kind,flush=True)
     (ROOT/"manifest.json").write_text(json.dumps(manifest,indent=2)+"\n")
 
@@ -184,7 +250,11 @@ def check():
     total = 0
     for theme in THEMES:
         for kind in unique:
-            records = manifest["themes"][theme][kind]["outputs"]
+            record = manifest["themes"][theme][kind]
+            if kind == "wall":
+                assert record.get("weathering_version") == 2
+                assert record.get("inscriptions_per_sheet", 99) <= 1
+            records = record["outputs"]
             assert set(records) == set(base.FILES)
             for filename,record in records.items():
                 path = ROOT/theme/kind/filename
@@ -210,6 +280,7 @@ def check():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check",action="store_true")
+    parser.add_argument("--walls-only",action="store_true",help="Rebake walls while preserving all floor image bytes")
     args = parser.parse_args()
-    if not args.check: bake()
+    if not args.check: bake(args.walls_only)
     check()

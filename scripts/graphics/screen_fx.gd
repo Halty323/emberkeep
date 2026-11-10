@@ -77,9 +77,10 @@ static func sprite_bloom() -> bool:
 	return bloom != "off"
 
 static var bloom_material: ShaderMaterial
+static var colored_bloom_materials: Dictionary = {}
 static var bloom_mesh: QuadMesh
 ## A glow round a flame, as a child of the flame (it shows and hides with it).
-static func add_flame_bloom(flame: Node3D, size: float) -> void:
+static func add_flame_bloom(flame: Node3D, size: float, tint := Color.TRANSPARENT) -> void:
 	if bloom_material == null:
 		bloom_material = ShaderMaterial.new()
 		bloom_material.shader = preload("res://shaders/flame_bloom.gdshader")
@@ -89,6 +90,13 @@ static func add_flame_bloom(flame: Node3D, size: float) -> void:
 	card.name = "FlameBloom"
 	card.mesh = bloom_mesh
 	card.material_override = bloom_material
+	if tint.a > 0.0:
+		var key: String = tint.to_html()
+		if not colored_bloom_materials.has(key):
+			var colored: ShaderMaterial = bloom_material.duplicate()
+			colored.set_shader_parameter("tint",tint)
+			colored_bloom_materials[key] = colored
+		card.material_override = colored_bloom_materials[key]
 	card.scale = Vector3.ONE * size
 	card.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	card.layers = Geo.FLAME_LAYER
@@ -101,6 +109,8 @@ static func flame_blooms(tree: SceneTree) -> void:
 	var shown := sprite_bloom()
 	var passes: bool = Look.quality() > 0 and RenderPolicy.current().glow
 	if bloom_material: bloom_material.set_shader_parameter("strength", (.75 if str(Settings.values.get("bloom", "soft")) == "strong" else .45) * (.6 if passes else 1.0))
+	for material in colored_bloom_materials.values():
+		material.set_shader_parameter("strength", (.75 if str(Settings.values.get("bloom", "soft")) == "strong" else .45) * (.6 if passes else 1.0))
 	for card in tree.get_nodes_in_group("flame_bloom"): card.visible = shown
 
 func apply_occlusion() -> void:

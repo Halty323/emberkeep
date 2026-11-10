@@ -31,7 +31,7 @@ func exercise() -> void:
 		check(source == original, "FPS profile does not mutate a shared legacy floor")
 		check(profile.key < source.key, "actual fixtures lead instead of a flat global key")
 		check(profile.lamp > source.lamp and profile.lamp > previous_lamp, "local lantern light grows as the tower climbs")
-		check(profile.ambient >= .08 and profile.ambient <= .16, "cool visibility floor retains deep, readable shadows")
+		check(profile.ambient >= .045 and profile.ambient <= .08, "low ambient leaves readable silhouettes between local pools")
 		check(profile.foe_body == source.foe_body and profile.foe_glow == source.foe_glow, "enemy readability contract is preserved")
 		check(profile.lit == source.lit, "lighting presentation does not alter burning lantern membership")
 		check(profile.doorway > 0.0 and profile.doorway < source.doorway, "doorway inlay remains visible without a neon frame")

@@ -687,40 +687,12 @@ func test_map_memory() -> void:
 	game.track_exploration()
 	run.load_run()
 	check(run.is_seen(run.rooms["1,0"], Vector2i(1, 1)), "walking a cleared room saves the map at once")
-	# The scribble: a zig-zag inside the cell, the same every time.
-	var rect = Rect2(10, 20, 30, 30)
-	var path: PackedVector2Array = ui.scribble_path(rect, Vector2i(3, 4), 2)
-	var inside = Array(path).all(func(p): return rect.grow(.01).has_point(p))
-	var xs = Array(path).map(func(p): return p.x)
-	var spacing = ui.scribble_spacing(rect)
-	check(inside and xs.min() < rect.position.x + spacing and xs.max() > rect.end.x - spacing, "the scribble fills its cell edge to edge without leaving it")
-	check(path == ui.scribble_path(rect, Vector2i(3, 4), 2) and path != ui.scribble_path(rect, Vector2i(4, 4), 2), "every cell has its own scribble, the same each time")
-	var turns = 0
-	for i in range(2, path.size()):
-		if signf(path[i].y - path[i - 1].y) != signf(path[i - 1].y - path[i - 2].y): turns += 1
-	check(turns >= 8, "it zig-zags (%d turns)" % turns)
-	# It leans like a hand's scribble: strokes tipped off upright, and the
-	# turns clear of the cell's edge (taken over a row of cells) rising to the
-	# right.
-	var lean = []
-	for i in range(1, path.size()):
-		var stroke = path[i] - path[i - 1]
-		if stroke.length() > rect.size.y * .5: lean.append(rad_to_deg(atan2(stroke.x * signf(stroke.y), absf(stroke.y))))
-	var mean_lean = lean.reduce(func(a, b): return a + b, 0.0) / maxf(lean.size(), 1)
-	var rising = true
-	for top in [true, false]:
-		var ends = []
-		for column in 8:
-			var row: PackedVector2Array = ui.scribble_path(rect, Vector2i(column, 4), 2)
-			for i in range(1, row.size() - 1):
-				var turn = row[i].y < row[i - 1].y and row[i].y < row[i + 1].y if top else row[i].y > row[i - 1].y and row[i].y > row[i + 1].y
-				if turn and rect.grow(-.5).has_point(row[i]): ends.append(row[i])
-		var mid = ends.reduce(func(a, b): return a + b, Vector2.ZERO) / maxf(ends.size(), 1)
-		var slope = ends.reduce(func(a, p): return a + (p.x - mid.x) * (p.y - mid.y), 0.0)
-		rising = rising and ends.size() >= 8 and slope < 0.0
-	check(mean_lean > 16.0 and mean_lean < 28.0 and rising, "the zig-zag leans like a hand's scribble (%.0f°), its turns rising to the right" % mean_lean)
-	check([Rect2(0, 0, 14, 14), Rect2(0, 0, 30, 30)].all(func(r): var gap = ui.scribble_spacing(r); return gap > 2.8 and gap < 3.8),
-		"the minimap and the full map scribble with the same density")
+	# The same room-wide trail is used by both map views.
+	var ink = load("res://scripts/presentation/room_map_ink.gd")
+	var polygon: PackedVector2Array = ink.outline([Vector2i.ZERO, Vector2i.RIGHT, Vector2i.DOWN], 30.0)
+	var path: PackedVector2Array = ink.path(polygon)
+	check(path == ink.path(polygon), "one deterministic trail fills the whole room")
+	check(path.size() > 6, "the complete room has a visible pencil trail")
 	var total = 0.0
 	for i in range(1, path.size()): total += path[i - 1].distance_to(path[i])
 	var half: PackedVector2Array = ui.partial_path(path, .5)

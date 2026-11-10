@@ -100,7 +100,10 @@ func contains_point(at: Vector2, margin := .0) -> bool:
 
 func fixtures() -> void:
 	var length := CorridorPlan.distance(path,0,path.size()-1)
-	for fraction in [.25,.75]:
+	var colors := RoomIllumination.palette(Run.theme_id())
+	for index in 2:
+		var fraction: float = [.25,.75][index]
+		var color := Color(colors[index])
 		var sample := CorridorPlan.sample(path,length*fraction)
 		var tangent := Vector2(-sample.direction.y,sample.direction.x)
 		var at: Vector2=sample.at+tangent*.98
@@ -108,13 +111,13 @@ func fixtures() -> void:
 		Geo.cylinder(self,Vector3(at.x,1.85,at.y),.065,.32,Color("bca582"))
 		var flame := MeshInstance3D.new()
 		flame.mesh=DungeonStyle.candle_flame_mesh()
-		flame.material_override=DungeonStyle.candle_flame()
+		flame.material_override=RoomIllumination.fire_material(color)
 		flame.position=Vector3(at.x,2.10,at.y)
 		flame.scale=Vector3.ONE*1.5
 		flame.layers=Geo.FLAME_LAYER
 		flame.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(flame)
-		var light := Geo.light(self,Vector3(at.x,2.08,at.y),Color("ffcf93"),.85,8.5)
-		light.omni_attenuation=1.4
+		var light := Geo.light(self,Vector3(at.x,2.08,at.y),color,.52,5.2)
+		light.omni_attenuation=1.9
 		light.light_cull_mask=Geo.CORRIDOR_LAYER|Geo.VIEW_LAYER
 		lamps.append(light)

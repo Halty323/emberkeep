@@ -22,7 +22,7 @@ if "${search_command[@]}" 'SCRIPT ERROR|Parse Error|Compile Error' "$test_root/i
     exit 1
 fi
 export EMBERKEEP_LEGACY_TEST=1
-for suite in catalog settings render_policy dungeon items furniture effects cloud_surfaces collection smoke lighting combat tower secret_codes presentation ui_presentation first_person first_person_navigation first_person_stress dungeon_style title_presentation themed_interiors lighting_centered room_layouts vertical_rooms expedition_rewards expedition_integration doors_lava ssao_fullscreen stair_cinematic stylized_lighting corridors two_storey themed_materials upper_furnishings frame_pacing spellbook coop synergy spell_props ux; do
+for suite in catalog settings render_policy dungeon items furniture effects cloud_surfaces collection smoke lighting combat tower secret_codes presentation ui_presentation room_map_ink first_person first_person_navigation first_person_stress dungeon_style title_presentation themed_interiors lighting_centered room_illumination room_layouts vertical_rooms expedition_rewards expedition_integration doors_lava ssao_fullscreen stair_cinematic stylized_lighting corridors two_storey themed_materials upper_furnishings frame_pacing spellbook coop synergy spell_props ux; do
     "$godot_bin" --headless --path "$project_dir" --script "res://tests/$suite.gd" > "$test_root/test.log" 2>&1 || { cat "$test_root/test.log"; exit 1; }
     cat "$test_root/test.log"
     if "${search_command[@]}" 'SCRIPT ERROR|^ERROR:|FAIL:' "$test_root/test.log"; then

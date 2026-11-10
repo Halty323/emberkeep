@@ -11,7 +11,7 @@ extends RefCounted
 ## player's own light make them glow; between those they sink into the dark
 ## (shaders/floor_mist.gdshader). Effects detail sets how close they crowd.
 const FLOORS := 2
-const SPACING := {"low": 2.4, "balanced": 1.75, "high": 1.4}
+const SPACING := {"low": 3.8, "balanced": 3.1, "high": 2.7}
 const SIZE := Vector2(1.5, 2.7)
 static var shared_material: ShaderMaterial
 static var puffs: ImageTexture
@@ -24,7 +24,7 @@ static func wanted() -> bool:
 static func spacing() -> float:
 	var tree := Engine.get_main_loop() as SceneTree
 	var settings = tree.root.get_node_or_null("Settings") if tree else null
-	return SPACING.get(str(settings.values.get("effects_detail", "balanced")) if settings else "balanced", 1.75)
+	return SPACING.get(str(settings.values.get("effects_detail", "balanced")) if settings else "balanced", 3.1)
 
 ## Fills floor areas (room cells or passage tiles) with puffs; `floor`
 ## gives the height of the floor at a point.
@@ -82,7 +82,7 @@ static func material(light: Dictionary) -> ShaderMaterial:
 		# Cool and pale, leaning a little to the floor's own ambient colour;
 		# the cellar's fog is thicker than the floor above it.
 		shared_material.set_shader_parameter("tint", Color("b9c4ce").lerp(light.get("ambient_color", Color("9aaec2")), .3))
-		shared_material.set_shader_parameter("strength", .46 if Run.floor_number <= 1 else .36)
+		shared_material.set_shader_parameter("strength", .17 if Run.floor_number <= 1 else .12)
 	return shared_material
 
 static var flow: ImageTexture

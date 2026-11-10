@@ -10,46 +10,48 @@
         "relief_metres": 0.12,
         "outputs": {
           "color.jpg": {
-            "sha256": "8af180e6e414b2fb9cb2db251d42bad36510f8364e00130e314b1bcc9347865e",
-            "bytes": 442994,
+            "sha256": "ebeda527ccba753ae6e4d0715c7ebea04e8624ef074c808274ae7612f4239c91",
+            "bytes": 677019,
             "size": [
               2048,
               1024
             ]
           },
           "normal.jpg": {
-            "sha256": "122676c90ea30a0e1513d9960fd2091392f0be63ae0ec2ef9a0b6946226d5fc7",
-            "bytes": 667325,
+            "sha256": "f4f355c1f8c72b8a2700afd27266381611adb708726649d9e419348d430633df",
+            "bytes": 1932044,
             "size": [
               2048,
               1024
             ]
           },
           "color_mobile.jpg": {
-            "sha256": "aeefbe968daf4673ce2d936ecee1ade449e797d0aa51ff4ff9fd08896e01f46a",
-            "bytes": 148972,
+            "sha256": "810e78943dfa80b9849b112cb8353c6b1b281023c013e67763eaf2f7edc18d89",
+            "bytes": 251447,
             "size": [
               1024,
               512
             ]
           },
           "normal_mobile.jpg": {
-            "sha256": "35ec3e409c589e0a1c771a7e200f3ec9aae2f127bc818d9dab2149315075d44a",
-            "bytes": 271770,
+            "sha256": "aab8d448a9310d50356c589f8b3dcd70aaf68b4fee33e6ef3b8d39fa6808ea17",
+            "bytes": 788520,
             "size": [
               1024,
               512
             ]
           },
           "ormh.png": {
-            "sha256": "ad984e8fddc63b0da381bb2f209f801545146bbdab44df4a5757c19d1724f2fc",
-            "bytes": 515278,
+            "sha256": "a8a745802d15913fead4cead4939543617ec02d2b9596a18ff396cfb904bba3b",
+            "bytes": 884332,
             "size": [
               1024,
               512
             ]
           }
-        }
+        },
+        "weathering_version": 2,
+        "inscriptions_per_sheet": 1
       },
       "floor": {
         "description": "packed earth with embedded stone chips",
@@ -104,46 +106,48 @@
         "relief_metres": 0.095,
         "outputs": {
           "color.jpg": {
-            "sha256": "f8312da9935a2b64b8876e6d2cb2daee7a4d8fa97b0508463b2c1a90877a063e",
-            "bytes": 273047,
+            "sha256": "f7841be21ca04e575491210292182e730360d5a5930b3f169cebbcc09abced99",
+            "bytes": 513513,
             "size": [
               2048,
               1024
             ]
           },
           "normal.jpg": {
-            "sha256": "548e15dc9066e5535332f9c941e00e9fa636ac093c0dffb2670a7eeb5d402a78",
-            "bytes": 412719,
+            "sha256": "a7ac4ff6ac9d0a6813443e4e8c0adef1c4a16f794c6fbca18a8db07365621fe4",
+            "bytes": 1585170,
             "size": [
               2048,
               1024
             ]
           },
           "color_mobile.jpg": {
-            "sha256": "1a05f4211be73e6029cdcd80bb0755ca10f945b196a6dc9331687307579bcf8b",
-            "bytes": 90900,
+            "sha256": "09fde17d8822e37736d28af4ccc3da2a9d8a2ac6bcb2755510ed0cbf55f950f4",
+            "bytes": 202839,
             "size": [
               1024,
               512
             ]
           },
           "normal_mobile.jpg": {
-            "sha256": "db021ca0dbffe8065904785b87f8167875c0df41817e9c91bb5308ca60c27b03",
-            "bytes": 175176,
+            "sha256": "284d0d764a9cdf66e47acd67fdeeb09476b91ad4f9b498c79832b2cb4b50a4a6",
+            "bytes": 677532,
             "size": [
               1024,
               512
             ]
           },
           "ormh.png": {
-            "sha256": "24539ec91194606e8afa97a752023fbc4d30b39aaf7d9a8637cfb584d585e1d0",
-            "bytes": 328236,
+            "sha256": "70cdae5b06b1c933b9c0fb1c3e0b6a93a5d22aa8e9584e294b8613d28dd17903",
+            "bytes": 780874,
             "size": [
               1024,
               512
             ]
           }
-        }
+        },
+        "weathering_version": 2,
+        "inscriptions_per_sheet": 1
       },
       "floor": {
         "description": "rounded river cobbles",
@@ -198,46 +202,48 @@
         "relief_metres": 0.12,
         "outputs": {
           "color.jpg": {
-            "sha256": "0cf2aea9cd844a7e650334330e7c0e7745aff5dedd5d79dcca44a7024dcd6bfb",
-            "bytes": 423054,
+            "sha256": "c29d36d14aabcc3f5112586e21af63f99b2064ce925a7819d4029e9bc43c3e58",
+            "bytes": 643711,
             "size": [
               2048,
               1024
             ]
           },
           "normal.jpg": {
-            "sha256": "9506b6096faedf65d84725eb875f282080d95d8c0e8020bf22b7ff7bdd9d6e95",
-            "bytes": 675751,
+            "sha256": "85f2666949d8d6c526cb390fc371140a491f2c40f066a2fb1b6d8dfc7ab6e6dc",
+            "bytes": 1851114,
             "size": [
               2048,
               1024
             ]
           },
           "color_mobile.jpg": {
-            "sha256": "d79b2c04a1ab613fead03dea793bf9c1be6abf162cc2c1a3cd9187c8ca706ce1",
-            "bytes": 140687,
+            "sha256": "8d4b31f610899f87088484b62bc706a6a650264be802a2f753b7be8ebd929577",
+            "bytes": 239434,
             "size": [
               1024,
               512
             ]
           },
           "normal_mobile.jpg": {
-            "sha256": "8da49a27ebd85d50611307b389ff0a72a083986f6ac8bb5b4a1a81911e08f3e7",
-            "bytes": 272963,
+            "sha256": "6d04fae26a4c50c37f5d1a1bf3156162c1a4dfcf41321f5ee3f511c53a63afc4",
+            "bytes": 764635,
             "size": [
               1024,
               512
             ]
           },
           "ormh.png": {
-            "sha256": "f5908c8d623c2ef8940a14d1daacd7b64c4f132a5c5c3dc8317538783525688c",
-            "bytes": 525988,
+            "sha256": "f644f1b89246e388d1fcb4e42eb9067c8d7071c4f412ea58582567c748761be4",
+            "bytes": 885197,
             "size": [
               1024,
               512
             ]
           }
-        }
+        },
+        "weathering_version": 2,
+        "inscriptions_per_sheet": 1
       },
       "floor": {
         "description": "large broken flagstones",
@@ -288,50 +294,52 @@
     },
     "crypt": {
       "wall": {
-        "description": "diamond-cut memorial blocks",
+        "description": "weathered memorial blocks with sparse inscriptions",
         "relief_metres": 0.095,
         "outputs": {
           "color.jpg": {
-            "sha256": "6547c49dff6ad5842d489ae36203b8322db6595bd796711a682d98f96c3a3c68",
-            "bytes": 283955,
+            "sha256": "0f0aaf2e0cc41ebb5251a29653822de4fa942798019017fd8a2d9dbab961dee7",
+            "bytes": 495182,
             "size": [
               2048,
               1024
             ]
           },
           "normal.jpg": {
-            "sha256": "a62224f0b83d9f17fa0234eff270d5869d86bb5c81612b63f72f5bf0f4b4ebb2",
-            "bytes": 492194,
+            "sha256": "c86ca0abfd117e6ae4eea36a830499b830bae98f4d4a718c73aa4016985730bc",
+            "bytes": 1641239,
             "size": [
               2048,
               1024
             ]
           },
           "color_mobile.jpg": {
-            "sha256": "b630aebc4cc1f6991796425ef7a255bdf3a7416b29f494df69768194cd289efe",
-            "bytes": 97328,
+            "sha256": "3801d18c743726419faacbea899ddc444cfab14ec9deba8940159034773d44dc",
+            "bytes": 197371,
             "size": [
               1024,
               512
             ]
           },
           "normal_mobile.jpg": {
-            "sha256": "a7694d1ba20d46fc0254e68edfa0ae825dafc187e0b6f084cbd8708329fb9e46",
-            "bytes": 208740,
+            "sha256": "ab743ca788055bda077263070b9b44c7f4c2e2e00427a2a8a8297f0fbab035a1",
+            "bytes": 696922,
             "size": [
               1024,
               512
             ]
           },
           "ormh.png": {
-            "sha256": "85633b08bef5a776b06509f2203916c29824d2dfa78619990c51f48658791d82",
-            "bytes": 341705,
+            "sha256": "3ac9e20c3d7facfa2371da2cdf6a1ef0513fe480af6458dee40af05210793456",
+            "bytes": 779700,
             "size": [
               1024,
               512
             ]
           }
-        }
+        },
+        "weathering_version": 2,
+        "inscriptions_per_sheet": 1
       },
       "floor": {
         "description": "incised burial slabs",
@@ -386,46 +394,48 @@
         "relief_metres": 0.095,
         "outputs": {
           "color.jpg": {
-            "sha256": "eb33fdc71635a9830b1be15f8211213493a6997fdd6baf4c6353451c9c86b9fc",
-            "bytes": 278066,
+            "sha256": "f0031d24ceaa50d986ff3f5c2e28f98c8dd3269fecf85aca795fdc9a71091a89",
+            "bytes": 548821,
             "size": [
               2048,
               1024
             ]
           },
           "normal.jpg": {
-            "sha256": "5a0ab91f0c0ce15a530d8209a214574dc1c5366d36da2f2bcb826cea28a73160",
-            "bytes": 406913,
+            "sha256": "68d817842135aa06282f7c0e6a6030908332e6b9c75920c76d5dc3294e9e1d0d",
+            "bytes": 1433223,
             "size": [
               2048,
               1024
             ]
           },
           "color_mobile.jpg": {
-            "sha256": "71e45e353f776586341810c58a660b3abb3b4edb3590de1f868e9e72a02863a7",
-            "bytes": 93775,
+            "sha256": "d536a8d245332a661d86b71f5a9980912562bae2f97dddc1b0f982a4514f7748",
+            "bytes": 219880,
             "size": [
               1024,
               512
             ]
           },
           "normal_mobile.jpg": {
-            "sha256": "12c90c5a33ce65dbdee18b78e58e379a27e9f8aebd6d678d067a46b1ca9e9503",
-            "bytes": 170946,
+            "sha256": "3a6dd09fd73dab455ae82cc0b939bf90fae2aa382a89c655c0bb9ded76c3f803",
+            "bytes": 612767,
             "size": [
               1024,
               512
             ]
           },
           "ormh.png": {
-            "sha256": "4d369ea6efedbe38070b00a628ac08f17512e2d960c787f4b9bcdea17e39f2b2",
-            "bytes": 314882,
+            "sha256": "b93b90dee6b9b4a5361466922d8843a11b312db0fdb09a640b2aec6e2fdfc1b4",
+            "bytes": 764856,
             "size": [
               1024,
               512
             ]
           }
-        }
+        },
+        "weathering_version": 2,
+        "inscriptions_per_sheet": 1
       },
       "floor": {
         "description": "silvered timber boards",
@@ -480,46 +490,48 @@
         "relief_metres": 0.095,
         "outputs": {
           "color.jpg": {
-            "sha256": "30ae76684770d13ef1fe327f2a0b9c1001d25f3b5fe5018ad04402923e9a18fc",
-            "bytes": 471384,
+            "sha256": "221775fe0caa5466278df397011a09d4f703d911e83579dda3936008d0360ae9",
+            "bytes": 685431,
             "size": [
               2048,
               1024
             ]
           },
           "normal.jpg": {
-            "sha256": "b698203365ff49daec62b9c99b2c6dbfd73d11596681cac81aefe1af76256053",
-            "bytes": 746618,
+            "sha256": "8f3d859e908df1537ab3f01475638ea9139ac7bda770a0bcc194758cad42b833",
+            "bytes": 1554919,
             "size": [
               2048,
               1024
             ]
           },
           "color_mobile.jpg": {
-            "sha256": "45e117b0b5bd335f668912b39bd40f9bcdb95737176691be75131c1efd6398d5",
-            "bytes": 184244,
+            "sha256": "0dc2fced0fdf0b78ff5433d176f0eaea5ef24394c07e2bb303b4f88465c9dce6",
+            "bytes": 271895,
             "size": [
               1024,
               512
             ]
           },
           "normal_mobile.jpg": {
-            "sha256": "569ab7d66abf7436480322fc7f498ee21a9db1c9d247835fb8859fbb17b4bc61",
-            "bytes": 330356,
+            "sha256": "a64c9f634c1a36c0aa8a1aad40d0dd69234f8f30856178a7139849952c81354f",
+            "bytes": 672490,
             "size": [
               1024,
               512
             ]
           },
           "ormh.png": {
-            "sha256": "c450a1bbf2cd73ddd3ec1f8c084dbceaf9d727299242c23bced03e048cdd1737",
-            "bytes": 460962,
+            "sha256": "9c90d01746f4c699957171e5e3a14cd027cda5a41c73e026f0c2400f253808ca",
+            "bytes": 747483,
             "size": [
               1024,
               512
             ]
           }
-        }
+        },
+        "weathering_version": 2,
+        "inscriptions_per_sheet": 1
       },
       "floor": {
         "description": "fractured charcoal basalt",
@@ -574,46 +586,48 @@
         "relief_metres": 0.065,
         "outputs": {
           "color.jpg": {
-            "sha256": "23ee39461ea413825a86eff26e76ac1ed285a129aa722dab2aec41875f7813a3",
-            "bytes": 201949,
+            "sha256": "22b43e405cd1b1165a17676e230d408bded256627354c7979fc7bbf18ffed3fd",
+            "bytes": 555143,
             "size": [
               2048,
               1024
             ]
           },
           "normal.jpg": {
-            "sha256": "d88d54efd40d8448dd984a9432b2382f6d5ff3eb7784dd12a554b8b79bfbf421",
-            "bytes": 405184,
+            "sha256": "e49f06014604d33e2fe356ed3419366e4d44f2c7971d172403a59323da10a368",
+            "bytes": 1292965,
             "size": [
               2048,
               1024
             ]
           },
           "color_mobile.jpg": {
-            "sha256": "1bfe4270d221e345f4595e5f066fcecf68f3266509bebe8eebb30052097ff677",
-            "bytes": 71477,
+            "sha256": "d959d043d5423c6ced89cab44a88e732840627f337f5bf6256f276eaaa916a60",
+            "bytes": 214748,
             "size": [
               1024,
               512
             ]
           },
           "normal_mobile.jpg": {
-            "sha256": "8073e82e9e05a276ab87f6ab7f827645def25e8cb4794da2cb7f00b0990bf970",
-            "bytes": 138546,
+            "sha256": "5209795f3a305b301953f626c2333f38bfd38928059e0568e3f5c7d50c972ee5",
+            "bytes": 536605,
             "size": [
               1024,
               512
             ]
           },
           "ormh.png": {
-            "sha256": "17236ee5bb6e686928ea75172accb31d8d1e4ff89cdf221676aaaf69f039b0f0",
-            "bytes": 404152,
+            "sha256": "70f72dddae576b46e93deacb0dc7d484ffa28bb5a50957212135a9f9b9d60e15",
+            "bytes": 803580,
             "size": [
               1024,
               512
             ]
           }
-        }
+        },
+        "weathering_version": 2,
+        "inscriptions_per_sheet": 1
       },
       "floor": {
         "description": "timber with brass inlay",
@@ -668,46 +682,48 @@
         "relief_metres": 0.11,
         "outputs": {
           "color.jpg": {
-            "sha256": "667087a1962506b25d95eac614e6a8ad376e546cab3d62358ed9e6d66b5d2b7c",
-            "bytes": 115299,
+            "sha256": "ec86d85fd34c6fb8c26e9ef9636c373ae40c06911059136c0ac9ce20ee6b3529",
+            "bytes": 595545,
             "size": [
               2048,
               1024
             ]
           },
           "normal.jpg": {
-            "sha256": "423a9613f7a3a4f657d55f67ed8fc10a850566e3163ed6cdc302ff05a1fb3cdd",
-            "bytes": 249648,
+            "sha256": "bebd942177ce8030f0eb41c86393ca98846c0908a7ca2a84fa2133a3e37d1b09",
+            "bytes": 1709462,
             "size": [
               2048,
               1024
             ]
           },
           "color_mobile.jpg": {
-            "sha256": "9a05097dbb1c57498d522310bccc4b4b48861c0097428d4faa2d6f8c354c3956",
-            "bytes": 41857,
+            "sha256": "858e6916391f1961429b7e2a65737f81454145726e54cfd30364cdb332b25f7a",
+            "bytes": 237280,
             "size": [
               1024,
               512
             ]
           },
           "normal_mobile.jpg": {
-            "sha256": "819465661260f680df7104a4cd56702ef8eabda42dc274ec68706e393b134088",
-            "bytes": 106875,
+            "sha256": "21e867977b2fceee05e71fe36e35df71ef9ffdb59e8bd74c9d4d84b79565b828",
+            "bytes": 722314,
             "size": [
               1024,
               512
             ]
           },
           "ormh.png": {
-            "sha256": "7e26eacbb942a90a188e8ec49bfd36e392c2d42e9433a3212204416ec6479bf9",
-            "bytes": 234933,
+            "sha256": "d5a92576856a7e91d5f70a4e388148365929306c0a0e71bbd37fcfda4479a934",
+            "bytes": 777729,
             "size": [
               1024,
               512
             ]
           }
-        }
+        },
+        "weathering_version": 2,
+        "inscriptions_per_sheet": 1
       },
       "floor": {
         "description": "terracotta paving",

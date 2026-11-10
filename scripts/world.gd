@@ -62,6 +62,7 @@ var effects: EffectsPool
 var cloths: Array = []
 var paintings: Dictionary = {}
 var candle_points: Array[Vector3] = []
+var illumination: RoomIllumination
 var interiors_report: Dictionary = {}
 # All eye-level lanterns share three static finish surfaces and one flame
 # material. Many fixtures do not allocate a material or mesh per metal bar.
@@ -133,6 +134,9 @@ func build(owner_game: Node3D, room: Dictionary, preview := false, staged := fal
 	if first_person_room:
 		terrain.build(self)
 		RoomPartitions.build(self)
+		illumination = RoomIllumination.new()
+		add_child(illumination)
+		illumination.setup(self)
 	await pace()
 	var points: Array = room.get("lights", default_lights())
 	var all_points: Array[Vector3]=[]
@@ -752,9 +756,9 @@ func fill_offset() -> Vector3:
 	return Vector3(0, 1.65 if first_person_room else 2.2, 0)
 
 func make_fill_light(at: Vector3) -> OmniLight3D:
-	var lamp = Geo.light(self, at + fill_offset(), light.lamp_color, light.lamp, 8.4 if first_person_room else 7.0)
+	var lamp = Geo.light(self, at + fill_offset(), light.lamp_color, light.lamp, 5.2 if first_person_room else 7.0)
 	if first_person_room:
-		lamp.omni_attenuation = 1.55
+		lamp.omni_attenuation = 2.15
 		lamp.light_size = .18
 		lamp.light_specular = .7
 	return lamp
@@ -828,6 +832,16 @@ func make_shadow_light(p: Vector3) -> void:
 	shadow_lamps.append(shadow_light)
 
 func place_shadow_light(shadow_light: SpotLight3D, p: Vector3) -> void:
+	# Reuse the existing single shadow map for the hero ceiling fixture.
+	# Its vertical shadows give furniture real depth beneath a light shaft.
+	if first_person_room and is_instance_valid(illumination) and not illumination.fixtures.is_empty():
+		var fixture: Dictionary = illumination.fixtures[0]
+		shadow_light.position = fixture.source
+		shadow_light.light_color = fixture.color
+		shadow_light.spot_range = fixture.source.y-float(fixture.floor)+1.0
+		shadow_light.spot_angle = 52.0
+		shadow_light.look_at(shadow_light.position+Vector3.DOWN, Vector3.FORWARD)
+		return
 	# Aim inward toward the lantern's own cell, as the 1x1 room always did.
 	var center = RoomGeometry.cell_center(geometry.cell_at(Vector2(p.x, p.z)))
 	shadow_light.position = p + Vector3(0, 1.72 if first_person_room else 2.2, 0)

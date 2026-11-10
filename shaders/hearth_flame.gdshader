@@ -3,6 +3,8 @@ render_mode unshaded, blend_mix, depth_draw_never, cull_disabled, shadows_disabl
 // Rising ribbons, feathered edges and a pale hot heart. World-space phase
 // keeps neighbouring fires from moving in lockstep. No screen/depth reads.
 uniform bool billboard = false;
+uniform vec4 flame_tint : source_color = vec4(1.0);
+uniform float colorize = 0.0;
 varying float phase;
 void vertex() {
     phase = dot(MODEL_MATRIX[3].xyz, vec3(5.37, 8.13, 3.71));
@@ -41,6 +43,7 @@ void fragment() {
     float ribbon=smoothstep(.4,.85,filaments)*(1.0-core)*.18;
     vec3 fire=mix(vec3(1.0,.24,.035),vec3(1.0,.69,.16),smoothstep(-.01,.24,density)+ribbon);
     fire=mix(fire,vec3(1.0,.94,.70),core);
+    fire=mix(fire,flame_tint.rgb*mix(.42,1.12,core),colorize);
     ALBEDO=fire;
     EMISSION=fire*.85;
     ALPHA=alpha*.94;

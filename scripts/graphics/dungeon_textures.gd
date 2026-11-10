@@ -53,7 +53,7 @@ static func wall(family: String) -> Dictionary:
 			elif family == "crypt":
 				# A shallow diamond tracery, cut into selected memorial stones.
 				var diamond = absf(absf(fx-w/2) + absf(fy-h/2) - h*.31)
-				if (column + row) % 3 == 0 and diamond < 1.0: color *= .76
+				if posmod(column * 73 + row * 151 + 19, 17) == 0 and diamond < 1.0: color *= .76
 			elif family == "belfry":
 				if (absf(fx-7)<1.0 or absf(fx-w+7)<1.0) and absf(fy-h/2)<1.3: color = Color(.65,.52,.31)
 			elif family == "hearth":

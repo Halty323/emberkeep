@@ -82,6 +82,7 @@ var boss_surface: DungeonUISurface
 var minimap_clip: Control
 var minimap_ink: Node2D
 var minimap_pointer: Node2D
+var room_ink_cache: Dictionary = {}
 var mode = "menu"
 var previous_mode = "menu"
 var scale_value = 1.0
@@ -849,7 +850,9 @@ func build_settings() -> void:
 		if settings_page == "controls":
 			settings_row_count += 1
 			button("Arrange touch controls", Rect2(330, 218 + rows.size() * 61, 620, 54), func(): open_layout())
-	button("← Back", Rect2(396, 592, 488, 58), func(): close_subscreen())
+	# Seven large rows still fit; keep Back beneath the last row.
+	var back_y := maxf(592, 218 + (settings_row_count - 1) * 61 + 54 + 10)
+	button("← Back", Rect2(396, back_y, 488, 58), func(): close_subscreen())
 
 ## Every rebindable action in two columns; click one, then press its key.
 func build_keys() -> void:
@@ -915,8 +918,7 @@ func settings_rows(page: String) -> Array:
 				last = ["full_resolution", "Full resolution", "On · may be slower" if Settings.values.full_resolution else "Off", true]
 			return [["render_scale", "Render resolution", "%s  ·  %d×%d" % [scale, pixels.x, pixels.y], true],
 				["fps_limit", "FPS limit", "Unlimited" if Settings.values.fps_limit == 0 else str(Settings.values.fps_limit), true],
-				vsync, ["show_fps", "Show FPS", on_off("show_fps"), true], last,
-				["bloom", "Bloom", str(Settings.values.bloom).capitalize(), true]]
+				vsync, ["show_fps", "Show FPS", on_off("show_fps"), true], last]
 		"camera":
 			return [["fov", "Field of view", "%d°" % Settings.values.fov, true],
 				["mouse_sensitivity", "Mouse sensitivity", "%d%%" % roundi(float(Settings.values.mouse_sensitivity) / float(Settings.DEFAULTS.mouse_sensitivity) * 100.0), true],
@@ -925,6 +927,7 @@ func settings_rows(page: String) -> Array:
 				["head_bob", "Head bob", on_off("head_bob"), true]]
 		"graphics":
 			return [["effects_detail", "Effects detail", Settings.values.effects_detail.capitalize(), true],
+				["bloom", "Bloom", str(Settings.values.bloom).capitalize(), true],
 				["screen_effects", "Screen warps and flashes", str(Settings.values.screen_effects).capitalize() if RenderPolicy.current().post_processing else "Off · device safe mode", bool(RenderPolicy.current().post_processing)],
 				["small_details", "Small details", Settings.values.small_details.capitalize(), true],
 				["shadows", "Lantern shadows", on_off("shadows"), true],
@@ -1927,15 +1930,13 @@ func draw_floor_map(area: Rect2, focus: Vector2, cell_size: float, target: Canva
 		var data: Dictionary = Run.rooms[id]
 		var cells = FloorGenerator.room_cells(data)
 		var color = map_color(id)
+		var explored: bool = cells.any(func(cell): return Run.is_seen(data, cell))
+		if explored: draw_room_scribbled(cells, origin, area, color, cell_size, target)
 		for cell in cells:
 			var low = Vector2(inset if not cells.has(cell + Vector2i.LEFT) else 0.0, inset if not cells.has(cell + Vector2i.UP) else 0.0)
 			var high = Vector2(inset if not cells.has(cell + Vector2i.RIGHT) else 0.0, inset if not cells.has(cell + Vector2i.DOWN) else 0.0)
 			var rect = Rect2(origin + (Vector2(cell) - Vector2(.5, .5)) * cell_size + low, Vector2.ONE * cell_size - low - high)
-			if Run.is_seen(data, cell):
-				var shadow = Rect2(rect.position + Vector2(0, 2), rect.size).intersection(area)
-				if shadow.has_area(): target.draw_rect(shadow, Color("262e28"))
-				draw_scribbled(rect, area, cell, color, cell_size, target)
-			else:
+			if not explored:
 				# Known but not yet walked: a faint pencil outline, merged across
 				# the room's own unexplored seams.
 				for direction in RoomGeometry.DIRECTIONS:
@@ -1964,6 +1965,29 @@ func draw_floor_map(area: Rect2, focus: Vector2, cell_size: float, target: Canva
 					if area.has_point(start) and area.has_point(end):
 						target.draw_line(start, end, GOLD, 1.5, true)
 
+func draw_room_scribbled(cells: Array, origin: Vector2, area: Rect2, color: Color, cell_size: float, target: CanvasItem) -> void:
+	var key := str(cells) + ":" + str(cell_size)
+	if not room_ink_cache.has(key):
+		if room_ink_cache.size() >= 64: room_ink_cache.clear()
+		var polygon := RoomMapInk.outline(cells, cell_size)
+		var inner := Geometry2D.offset_polygon(polygon, -cell_size * .065)
+		room_ink_cache[key] = {"outline": polygon, "path": RoomMapInk.path(inner[0] if not inner.is_empty() else polygon)}
+	var ink: Dictionary = room_ink_cache[key]
+	var progress := 1.0
+	for cell in cells: progress = minf(progress, scribble_progress(cell))
+	var aperture := PackedVector2Array([area.position, Vector2(area.end.x, area.position.y), area.end, Vector2(area.position.x, area.end.y)])
+	var silhouette := PackedVector2Array()
+	var shadow := PackedVector2Array()
+	for point in ink.outline:
+		silhouette.append(point + origin)
+		shadow.append(point + origin + Vector2(0, 2))
+	for polygon in Geometry2D.intersect_polygons(shadow, aperture): target.draw_colored_polygon(polygon, Color("262e28"))
+	for polygon in Geometry2D.intersect_polygons(silhouette, aperture): target.draw_colored_polygon(polygon, Color(color.darkened(.5), .45 * progress))
+	var points := partial_path(ink.path, progress)
+	for i in points.size(): points[i] += origin
+	for line in Geometry2D.intersect_polyline_with_polygon(points, aperture):
+		if line.size() >= 2: target.draw_polyline(line, Color(color, .8), 1.05, true)
+
 func scribble(cell: Vector2i) -> void:
 	scribbles[cell] = elapsed_ui
 
@@ -1973,68 +1997,12 @@ func scribble_progress(cell: Vector2i) -> float:
 	var t = clampf((elapsed_ui - scribbles[cell]) / SCRIBBLE_TIME, 0.0, 1.0)
 	return 1.0 - pow(1.0 - t, 2.0)
 
-## An explored cell: a soft wash under a crayon's zig-zag, drawn only as far
-## as its scribble has got. The trail is all there is; no crayon is shown.
-func draw_scribbled(rect: Rect2, area: Rect2, cell: Vector2i, color: Color, cell_size: float, target: CanvasItem = null) -> void:
-	if target == null: target = self
-	var shown = rect.intersection(area)
-	if not shown.has_area(): return
-	var progress = scribble_progress(cell)
-	target.draw_rect(shown, Color(color.darkened(.5), .45 * progress))
-	var inner = rect.grow(-cell_size * .08)
-	var points = scribble_path(inner, cell, Run.floor_number)
-	for i in points.size(): points[i] = points[i].clamp(area.position, area.end)
-	var drawn = partial_path(points, progress)
-	# About a third of their spacing, so each line of the zig-zag stands apart.
-	if drawn.size() >= 2: target.draw_polyline(drawn, Color(color, .85), scribble_spacing(inner) * .37, true)
-
 static func ghost_edge(rect: Rect2, direction: Vector2i) -> Array:
 	match direction:
 		Vector2i.UP: return [rect.position, Vector2(rect.end.x, rect.position.y)]
 		Vector2i.DOWN: return [Vector2(rect.position.x, rect.end.y), rect.end]
 		Vector2i.LEFT: return [rect.position, Vector2(rect.position.x, rect.end.y)]
 	return [Vector2(rect.end.x, rect.position.y), rect.end]
-
-## Strokes sit a fixed few pixels apart, so the minimap and the full map
-## scribble with the same density.
-static func scribble_spacing(rect: Rect2) -> float:
-	return rect.size.x / clampi(roundi(rect.size.x / 3.2), 3, 14)
-
-## A crayon's zig-zag fill: one run of strokes across the cell, a little loose
-## at the turns, the whole scribble leaning about 22° the way a hand's does,
-## its turns rising to the right. A turn that would fall outside the cell
-## slides in along its stroke to the edge. Always the same per cell.
-static func scribble_path(rect: Rect2, cell: Vector2i, floor_number: int) -> PackedVector2Array:
-	var rng = RandomNumberGenerator.new()
-	rng.seed = hash([cell.x, cell.y, floor_number])
-	var tilt = deg_to_rad(22.0 + rng.randf_range(-3.0, 3.0))
-	# Along the line of turns, and down a stroke.
-	var along = Vector2(cos(tilt), -sin(tilt))
-	var down = Vector2(sin(tilt), cos(tilt))
-	var half = rect.size * .5
-	# Far enough along to reach every corner of the cell.
-	var reach = half.x * along.x + half.y * down.x
-	var strokes = maxi(roundi(reach * 2.0 / scribble_spacing(rect)), 2)
-	var step = reach * 2.0 / strokes
-	var points = PackedVector2Array()
-	for i in strokes + 1:
-		var u = -reach + i * step + rng.randf_range(-.15, .15) * step
-		var side = -1.0 if i % 2 == 0 else 1.0
-		var v = side * (half.y - rng.randf_range(0.0, .06) * rect.size.y)
-		# Swing round in a short hook rather than a sharp point.
-		var dip = -side * rect.size.y * .07
-		for hook in [Vector2(u - step * .3, v + dip), Vector2(u, v), Vector2(u + step * .3, v + dip)]:
-			points.append(scribble_point(rect, along, down, clampf(hook.x, -reach, reach), hook.y))
-	return points
-
-## A point of the leaning scribble, `u` along its turns and `v` down its
-## strokes from the cell's centre, kept inside the cell along the stroke.
-static func scribble_point(rect: Rect2, along: Vector2, down: Vector2, u: float, v: float) -> Vector2:
-	var half = rect.size * .5
-	var low = maxf((-half.x - u * along.x) / down.x, (-half.y - u * along.y) / down.y)
-	var high = minf((half.x - u * along.x) / down.x, (half.y - u * along.y) / down.y)
-	var point = rect.get_center() + along * u + down * clampf(v, low, maxf(low, high))
-	return point.clamp(rect.position, rect.end)
 
 ## The first `progress` of a path's length, ending part-way along a segment.
 static func partial_path(points: PackedVector2Array, progress: float) -> PackedVector2Array:

@@ -35,7 +35,7 @@ func exercise() -> void:
 	check(game.player.get_child(0).shape is CapsuleShape3D, "player uses upright capsule collision")
 	# Fog lingers over the first two floors' rooms: puffs on the floor below them.
 	var mist: Array = game.room.find_children("*", "MultiMeshInstance3D", true, false).filter(func(node): return node.get_meta("surface_role", "") == "mist")
-	check(run.floor_number == 1 and mist.size() == 1 and mist[0].multimesh.instance_count >= 30 * game.room.geometry.cells.size() and mist[0].cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF, "fog puffs fill the first floor's rooms")
+	check(run.floor_number == 1 and mist.size() == 1 and mist[0].multimesh.instance_count >= 8 * game.room.geometry.cells.size() and mist[0].multimesh.instance_count <= 28 * game.room.geometry.cells.size() and mist[0].cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF, "restrained floor mist leaves room for volumetric light shafts")
 	if not mist.is_empty():
 		var puff: Transform3D = mist[0].multimesh.get_instance_transform(0)
 		check(is_equal_approx(puff.origin.y, game.room.floor_height(puff.origin)), "each puff sits on the floor below it")

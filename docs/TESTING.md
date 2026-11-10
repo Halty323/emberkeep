@@ -16,6 +16,25 @@ capture under the PowerVR graphics policy. It renders the actual brazier at
 each effects level and from above, checks visible motion and an unchanged
 light count, and opens the actual painting viewer with bundled artwork.
 
+## Local room atmosphere
+
+The [room atmosphere implementation](ROOM_ATMOSPHERE.md) adds eight floor
+palettes, hanging fixtures and depth-clipped local volumetric light while
+keeping Compatibility and the existing shadow-map budget. Focused headless
+results: `room_illumination` 156, `lighting_centered` 55, `first_person` 643,
+`two_storey` 113, `stylized_lighting` 58, `render_policy` 69, `settings` 342,
+`ux` 78, `corridors` 5,276 and legacy `lighting` 409 checks: 7,199 total,
+all passing. Each suite used a fresh
+disposable profile, so earlier saved quality settings did not alter fixtures.
+
+`tools/render_room_illumination.sh [output-directory]` renders native GLES
+comparisons under the simulated PowerVR policy. On Mesa llvmpipe, mean
+luminance differences were 0.00239 for a visible volume and 0.03651 from
+inside it, with **0.000000** difference behind an opaque wall. All three
+checks passed without shader errors. Actual Crypt, Cistern and Hearth rooms
+were also captured at eye level. These verify appearance and occlusion;
+Android GPU performance remains unmeasured.
+
 ## Co-op
 
 [Co-op](COOP.md) adds two to four players on a local network. The `coop` suite passes **111 checks** with a party of three, the guest processes' own included, and the runner now has **37 suites**. It runs a real host and a real second game process over loopback ENet. Together they cover the handshake, LAN discovery, the shared floor, gathering in a passage, the fight's start, foes drawn and struck from the guest, the guest's spells, personal kill credit, blows reaching the right player, falling and rekindling, the shared stair, the end when everyone is down and the return to the lobby. All 37 suites pass with Godot 4.7.2. `tests/render_coop.gd` captures the lobby, teammates in a room, rekindling and a fallen view under a display. A guest also faces one of Death's trials while the host and the other guest spectate: shut doors, foes chasing only the challenger, spectators unharmed, unable to act and pale to the challenger, the host raising the guest's champion, and the trial won and the spectators back in the world once it falls.

@@ -116,6 +116,8 @@ func test_settings() -> void:
 	var native = Vector2(DisplayServer.window_get_size())
 	if native.x <= 0: native = Vector2(root.size)
 	check(pixels == Vector2i(roundi(native.x * .5), roundi(native.y * .5)), "reported pixel dimensions match the scale")
+	check(not game.ui.settings_rows("display").any(func(row): return row[0] == "bloom"), "Display leaves bloom to Graphics")
+	check(game.ui.settings_rows("graphics").filter(func(row): return row[0] == "bloom").size() == 1, "Graphics contains the bloom setting once")
 	# All settings pages have rows that own their background and target.
 	game.ui.open_settings("pause")
 	for page in game.ui.SETTINGS_PAGES:
@@ -123,6 +125,10 @@ func test_settings() -> void:
 		await process_frame
 		var rows = game.ui.content.get_children().filter(func(node): return node is SettingRow and not node.is_queued_for_deletion())
 		check(rows.size() == game.ui.settings_rows(page[0]).size(), page[0] + ": every setting has a row")
+		var back = game.ui.content.get_children().filter(func(node): return node is Button and node.text == "← Back" and not node.is_queued_for_deletion())
+		if not back.is_empty():
+			check(rows.all(func(row): return row.position.y + row.size.y <= back[0].position.y), page[0] + ": rows do not overlap Back")
+			check(back[0].position.y + back[0].size.y <= 720, page[0] + ": Back remains on screen")
 		for row in rows:
 			check(row.surface.get_parent() == row, page[0] + ": row owns its stone slab")
 			check(row.surface.show_behind_parent, page[0] + ": slab draws behind the row label")

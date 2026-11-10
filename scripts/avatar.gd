@@ -86,6 +86,9 @@ func setup(owner_game: Node3D) -> void:
 	glow_halo = Geo.halo(self, Vector3(0, .025, 0), 4.2, Color(1, .64, .25, .16))
 	glow_halo.visible = not game.first_person
 	glow_light = Geo.light(self, Vector3(0, 1.5, 0), Color("ffcb88"), .65, 3.8)
+	if game.first_person:
+		glow_light.light_energy = .32
+		glow_light.omni_range = 3.1
 	for i in 3:
 		var spark = Geo.sphere(self, Vector3.ZERO, .09, Color("fff3c4"), 2.0)
 		spark.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -402,8 +405,8 @@ func release_sparks(damage: float, stats: Dictionary) -> void:
 ## circling the head.
 func show_flame(delta: float) -> void:
 	var level = game.kindle_level()
-	glow_light.omni_range = move_toward(glow_light.omni_range, 3.8 + level * 1.1, delta * 4.0)
-	glow_light.light_energy = move_toward(glow_light.light_energy, .65 + level * .22, delta)
+	glow_light.omni_range = move_toward(glow_light.omni_range, (3.1 if game.first_person else 3.8) + level * 1.1, delta * 4.0)
+	glow_light.light_energy = move_toward(glow_light.light_energy, (.32 if game.first_person else .65) + level * .22, delta)
 	glow_halo.scale = glow_halo.scale.move_toward(Vector3.ONE * (1.0 + level * .3), delta * 2.0)
 	for i in spark_meshes.size():
 		spark_meshes[i].visible = i < game.sparks

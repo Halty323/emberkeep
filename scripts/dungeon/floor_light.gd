@@ -69,15 +69,15 @@ static func for_floor(height: float, theme: Dictionary, twist := "") -> Dictiona
 static func first_person(source: Dictionary) -> Dictionary:
 	var result = source.duplicate(true)
 	var height = clampf((float(source.key) - .08) / .32, 0.0, 1.0)
-	result.ambient = lerpf(.13, .16, height)
+	result.ambient = lerpf(.055, .075, height)
 	if float(source.lit) < .5: result.ambient *= .88
-	result.ambient_color = source.ambient_color.lerp(Color("a4b9d1"), .55)
-	result.key = lerpf(.035, .09, height)
+	result.ambient_color = source.ambient_color.lerp(Color("a4b9d1"), .18)
+	result.key = lerpf(.012, .025, height)
 	result.key_color = source.key_color.lerp(Color("b0d0e5"), .65)
-	result.lamp = float(source.lamp) * 1.4 + .65
-	result.lamp_color = source.lamp_color.lerp(Color("ffca8e"), .75)
-	result.shadow = lerpf(1.15, 1.5, height)
-	result.fog_density = lerpf(.0075, .0045, height)
+	result.lamp = float(source.lamp) * .8 + .42
+	result.lamp_color = source.lamp_color.lerp(Color("ffca8e"), .15)
+	result.shadow = lerpf(.85, 1.15, height)
+	result.fog_density = lerpf(.003, .0018, height)
 	result.fog_color = source.fog_color.lerp(Color("21364b"), .6)
 	result.vignette = float(source.vignette) * .65
 	# At eye level a full additive doorway reads as a white neon rectangle.
