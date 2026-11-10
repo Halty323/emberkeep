@@ -188,6 +188,42 @@ func go() -> void:
 	check(run.entry.get("room", "") == other, "the room is the new checkpoint")
 	for i in 3: await process_frame
 
+	# Every foe is gelatin; bloom follows its setting.
+	var jelly_shader := "foe_jelly.gdshader"
+	for kind in ["mote", "brute", "spitter", "sporecap", "cog"]:
+		var blob = game.spawn_enemy(feet + Vector3(2, 0, -2), kind)
+		var gelled := 0
+		var smooth := true
+		for mesh in blob.visual.find_children("*", "MeshInstance3D", true, false):
+			if mesh.get_parent() == blob.eyes: continue
+			if mesh.material_override is ShaderMaterial and mesh.material_override.shader.resource_path.ends_with(jelly_shader):
+				gelled += 1
+				if mesh.mesh is BoxMesh or (mesh.mesh is SphereMesh and mesh.mesh.radial_segments < 20): smooth = false
+		check(gelled > 0 and smooth, "a %s is set in smooth gelatin (%d parts)" % [kind, gelled])
+		blob.receive_hit(1.0, Vector3.ZERO, false, false, "hit")
+		check(blob.wobble > .9, "a struck %s shudders" % kind)
+		blob.show_flash(1.0)
+		check(blob.wobble == 0.0 and blob.flash == 0.0, "and settles")
+		blob.alive = false
+		blob.queue_free()
+	game.enemies.clear()
+	var glow_env: Environment = game.room_environment.environment
+	settings.set_value("effects_detail", "balanced")
+	settings.set_value("bloom", "strong")
+	var strong_glow: float = glow_env.glow_intensity
+	check(glow_env.glow_enabled and screen_fx.sprite_bloom(), "bloom runs its pass and lights the flames")
+	settings.set_value("bloom", "soft")
+	check(glow_env.glow_enabled and glow_env.glow_intensity < strong_glow, "soft bloom is gentler than strong")
+	settings.set_value("bloom", "off")
+	check(not glow_env.glow_enabled and not screen_fx.sprite_bloom(), "bloom can be switched off")
+	check(get_nodes_in_group("flame_bloom").all(func(card): return not card.visible), "and every flame's glow goes with it")
+	settings.set_value("effects_detail", "low")
+	settings.set_value("bloom", "soft")
+	check(not glow_env.glow_enabled and screen_fx.sprite_bloom(), "without the pass, flames still carry a glow of their own")
+	check(not get_nodes_in_group("flame_bloom").is_empty() and get_nodes_in_group("flame_bloom").all(func(card): return card.visible), "the room's flames wear it")
+	check(not settings.set_value("bloom", "blinding"), "only known bloom levels are kept")
+	settings.set_value("effects_detail", "balanced")
+
 	# Running and stamina.
 	var runner = game.player
 	runner.stamina = runner.STAMINA

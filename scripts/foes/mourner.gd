@@ -54,4 +54,5 @@ func set_shrouded(value: bool) -> void:
 	shrouded = value
 	for entry in ghost_skins:
 		entry.mesh.material_override = entry.ghost if value else entry.solid
+		if not value: gel(entry.mesh)
 		entry.mesh.set_instance_shader_parameter("rim_strength", .04 if value else .16)

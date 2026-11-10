@@ -615,6 +615,7 @@ func make_first_person_lantern(p: Vector3, burning: bool) -> void:
 	flame.layers = Geo.FLAME_LAYER
 	flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(flame)
+	ScreenFx.add_flame_bloom(flame, 1.5)
 	# Retain the lantern view contract for gameplay without rendering fake
 	# floor light or a glowing plane through the camera.
 	var pool = Node3D.new()
@@ -846,6 +847,7 @@ func make_candle(p: Vector3, height: float) -> void:
 		flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		flame.layers = Geo.FLAME_LAYER
 		add_child(flame)
+		ScreenFx.add_flame_bloom(flame, .8)
 	else:
 		var flame = Geo.sphere(self, p + Vector3(0, height + .1, 0), .11, Color("ffe0a1"), 2.0)
 		flame.scale = Vector3(.7, 1.5, .7)

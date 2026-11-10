@@ -22,6 +22,7 @@ func hot() -> bool:
 
 func behave(delta: float, distance: float, direction: Vector3) -> Vector3:
 	body.material_override = Geo.material(Color("d0603a"), 1.4) if hot() else cold_material
+	gel(body)
 	if windup > 0: return Vector3.ZERO
 	if timer <= 0 and distance < 7.0:
 		timer = 4.0

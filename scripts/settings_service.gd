@@ -23,6 +23,9 @@ const DEFAULTS := {"render_scale": 1.0, "fps_limit": 60, "vsync": true, "show_fp
 	"cast_while_aiming": true, "touch_layout": {},
 	# How strongly spells, blasts and hurts warp the frame: full, reduced, off.
 	"screen_effects": "full",
+	# Bright things bleed light: off, soft or strong. The full-screen pass
+	# where the device allows it, small glows round flames where it does not.
+	"bloom": "soft",
 	# Touch and gamepad: the sight slows over a foe and spells bend onto one
 	# just off the crosshair. Never applies to a mouse.
 	"aim_assist": true,
@@ -34,6 +37,7 @@ const DEFAULTS := {"render_scale": 1.0, "fps_limit": 60, "vsync": true, "show_fp
 	# button as MOUSE_CODE + its index. Empty for the defaults.
 	"keys": {}}
 const SCREEN_EFFECTS := ["full", "reduced", "off"]
+const BLOOM_LEVELS := ["off", "soft", "strong"]
 const VOLUMES := [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
 # Keyboard actions and their default keys; the first of each may be rebound.
 const KEY_DEFAULTS := {"move_up": [KEY_W, KEY_UP], "move_down": [KEY_S, KEY_DOWN],
@@ -103,6 +107,8 @@ func validate(key: String, value) -> Variant:
 			return value if value is String and value in DETAIL_LEVELS else null
 		"screen_effects":
 			return value if value is String and value in SCREEN_EFFECTS else null
+		"bloom":
+			return value if value is String and value in BLOOM_LEVELS else null
 		"sound_volume", "music_volume":
 			if not (value is int or value is float) or float(value) != floorf(float(value)): return null
 			return int(value) if int(value) in VOLUMES else null
@@ -154,6 +160,7 @@ func options(key: String) -> Array:
 		"effects_detail", "small_details": return DETAIL_LEVELS
 		"ssao": return SSAO_LEVELS
 		"screen_effects": return SCREEN_EFFECTS
+		"bloom": return BLOOM_LEVELS
 		"sound_volume", "music_volume": return VOLUMES
 	return [false, true]
 

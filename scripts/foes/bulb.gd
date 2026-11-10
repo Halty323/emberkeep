@@ -53,6 +53,7 @@ func wilt() -> void:
 	targetable = false
 	contact_damage = false
 	bloom.material_override = Geo.material(Color("6b6a4e"))
+	gel(bloom)
 	Effects.burst(game.scene_root, global_position + Vector3.UP * .7, Color("b8c98a"), 8)
 	if is_instance_valid(heart): heart.bulb_wilted()
 
@@ -61,6 +62,7 @@ func regrow() -> void:
 	targetable = true
 	contact_damage = true
 	bloom.material_override = bloom_material
+	gel(bloom)
 	visual.scale = Vector3.ONE
 	Effects.burst(game.scene_root, global_position + Vector3.UP * .7, color, 8)
 

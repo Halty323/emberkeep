@@ -915,7 +915,8 @@ func settings_rows(page: String) -> Array:
 				last = ["full_resolution", "Full resolution", "On · may be slower" if Settings.values.full_resolution else "Off", true]
 			return [["render_scale", "Render resolution", "%s  ·  %d×%d" % [scale, pixels.x, pixels.y], true],
 				["fps_limit", "FPS limit", "Unlimited" if Settings.values.fps_limit == 0 else str(Settings.values.fps_limit), true],
-				vsync, ["show_fps", "Show FPS", on_off("show_fps"), true], last]
+				vsync, ["show_fps", "Show FPS", on_off("show_fps"), true], last,
+				["bloom", "Bloom", str(Settings.values.bloom).capitalize(), true]]
 		"camera":
 			return [["fov", "Field of view", "%d°" % Settings.values.fov, true],
 				["mouse_sensitivity", "Mouse sensitivity", "%d%%" % roundi(float(Settings.values.mouse_sensitivity) / float(Settings.DEFAULTS.mouse_sensitivity) * 100.0), true],
