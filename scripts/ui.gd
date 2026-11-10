@@ -1827,7 +1827,13 @@ func draw_minimap() -> void:
 		right_text("M", MINIMAP_RECT.end - Vector2(20, 11), 12, MUTED)
 
 func map_room_focus() -> Vector2:
-	var cells = FloorGenerator.room_cells(Run.rooms[Run.current_room])
+	var transit := map_corridor_progress()
+	if not transit.is_empty():
+		return map_room_center(transit.source).lerp(map_room_center(transit.destination),transit.progress)
+	return map_room_center(Run.current_room)
+
+func map_room_center(id: String) -> Vector2:
+	var cells = FloorGenerator.room_cells(Run.rooms[id])
 	var focus := Vector2.ZERO
 	for cell in cells: focus += Vector2(cell)
 	return focus / cells.size()
@@ -1835,10 +1841,28 @@ func map_room_focus() -> Vector2:
 ## Room-local metres become global floor cells, including multi-cell rooms.
 ## Height deliberately has no effect: upstairs and downstairs share a map.
 func map_player_position() -> Vector2:
+	var transit := map_corridor_progress()
+	if not transit.is_empty():
+		var source: Dictionary = Run.portal_side(transit.portal,transit.source)
+		var destination: Dictionary = Run.portal_side(transit.portal,transit.destination)
+		var a := Vector2(FloorGenerator.vec(source.cell))+Vector2(FloorGenerator.vec(source.dir))*.5
+		var b := Vector2(FloorGenerator.vec(destination.cell))+Vector2(FloorGenerator.vec(destination.dir))*.5
+		# The floor chart compresses the physical connector into the doorway gap.
+		return a.lerp(b,transit.progress)
 	var anchor := Vector2(Run.room_anchor(Run.rooms[Run.current_room]))
 	if not is_instance_valid(game.player): return map_room_focus()
 	var at: Vector3 = game.player.position
 	return anchor + Vector2(at.x, at.z) / RoomGeometry.CELL
+
+## Project against the same corridor path before and after origin rebasing.
+## Room ownership changes at the elbow; chart position must not change with it.
+func map_corridor_progress() -> Dictionary:
+	if not game.first_person or not game.corridors or not game.corridors.walking(): return {}
+	var transit = game.corridors
+	var at: Vector3 = game.player.position-transit.active.position
+	var length := CorridorPlan.distance(transit.active.path,0,transit.active.path.size()-1)
+	return {"source":transit.source_room,"destination":transit.destination_room,
+		"portal":transit.portal_id,"progress":clampf(CorridorPlan.project(transit.active.path,Vector2(at.x,at.z))/maxf(length,.001),0,1)}
 
 func build_rotating_minimap() -> void:
 	minimap_clip = Control.new()
@@ -2006,7 +2030,7 @@ static func ghost_edge(rect: Rect2, direction: Vector2i) -> Array:
 
 ## The first `progress` of a path's length, ending part-way along a segment.
 static func partial_path(points: PackedVector2Array, progress: float) -> PackedVector2Array:
-	if progress >= 1.0 or points.size() < 2: return points
+	if progress >= 1.0 or points.size() < 2: return points.duplicate()
 	var total = 0.0
 	for i in range(1, points.size()): total += points[i - 1].distance_to(points[i])
 	var left = total * maxf(progress, 0.0)

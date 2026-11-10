@@ -204,3 +204,14 @@ The revised `room_illumination` suite passes 210 checks, including twenty
 simultaneous flame sources and more than twelve burning lanterns, movement
 without reassignment, and independent upper-storey lights. Existing
 `lighting_centered` (55) and legacy `lighting` (409) checks also pass.
+
+## Map redraw and corridor continuity
+
+Completed pencil paths are copied before screen-space translation, preserving
+the shared cache across repeated redraws. Corridor chart positions and focus
+come from progress along the active physical path rather than whichever room
+currently owns the player. This stays invariant during coordinate rebasing,
+and blends the chart focus between room centers. `map_transition` covers
+cache immutability over sixty redraws, real corridor handoff continuity and
+monotonic progress through bends. Native Compatibility captures confirm that
+room-shaped hatching survives sixty consecutive redraws.
