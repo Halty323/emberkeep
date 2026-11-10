@@ -256,6 +256,31 @@ func test_rotating_minimap() -> void:
 	check(ui.minimap_clip.clip_contents and ui.minimap_clip.mouse_filter==Control.MOUSE_FILTER_IGNORE,"map ink is clipped without intercepting map-button input")
 	check(not descendants(ui.minimap_clip).any(func(node):return node is Viewport),"the minimap adds no rendering viewport")
 	var rng_before: int=run.rng.state
+	var saved_position: Vector3 = game.player.position
+	var saved_room: String = run.current_room
+	for room_record in run.rooms.values():
+		if room_record.cells.size() < 2: continue
+		run.current_room = room_record.id
+		game.player.position = Vector3.ZERO
+		check(ui.map_player_position() == Vector2(run.room_anchor(room_record)), "map position uses the room anchor rather than its footprint center")
+		for yaw in [0.0, PI*.5, -PI*.5, PI*.25]:
+			game.fps.yaw = yaw
+			game.update_camera(0, true)
+			game.player.position = Vector3.ZERO
+			ui.sync_minimap()
+			var start: Vector2 = ui.minimap_pointer.position
+			game.player.position = Vector3(18, 0, 0)
+			ui.sync_minimap()
+			check((ui.minimap_pointer.position-start).distance_to(Vector2(22,0).rotated(yaw)) < .001, "moving east moves the arrow by one rotated map cell")
+			game.player.position = Vector3(0, 0, 14)
+			ui.sync_minimap()
+			check((ui.minimap_pointer.position-start).distance_to(Vector2(0,22).rotated(yaw)) < .001, "north/south movement uses the room's actual depth")
+			var lower: Vector2 = ui.minimap_pointer.position
+			game.player.position.y = 3.2
+			ui.sync_minimap()
+			check(ui.minimap_pointer.position.distance_to(lower) < .001, "jumping and changing storeys do not shift the map horizontally")
+	run.current_room = saved_room
+	game.player.position = saved_position
 	for yaw in [0.0,PI*.25,PI*.5,PI*.75,PI,-PI*.5,-PI+.001,PI-.001]:
 		game.fps.yaw=yaw
 		game.update_camera(0,true)

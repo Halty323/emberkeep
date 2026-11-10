@@ -1817,15 +1817,25 @@ func draw_stick(at: Vector2, value: Vector2, label: String, active_touch: bool, 
 	centered(label, at.x, at.y + 91 * size, 14, Color(INK, .8), bold)
 
 func draw_minimap() -> void:
-	# The first-person ink is a clipped child canvas so only the map turns;
-	# the lit frame, shortcut and other HUD groups retain their own transform.
-	if game.first_person: return
-	var cells = FloorGenerator.room_cells(Run.rooms[Run.current_room])
-	var focus = Vector2.ZERO
-	for cell in cells: focus += Vector2(cell)
-	draw_floor_map(MINIMAP_AREA, focus / cells.size(), 22.0)
+	# Keep the shortcut fixed while the map and player marker move.
+	if not game.first_person:
+		draw_floor_map(MINIMAP_AREA, map_room_focus(), 22.0)
 	if not touch_hud_visible():
 		right_text("M", MINIMAP_RECT.end - Vector2(20, 11), 12, MUTED)
+
+func map_room_focus() -> Vector2:
+	var cells = FloorGenerator.room_cells(Run.rooms[Run.current_room])
+	var focus := Vector2.ZERO
+	for cell in cells: focus += Vector2(cell)
+	return focus / cells.size()
+
+## Room-local metres become global floor cells, including multi-cell rooms.
+## Height deliberately has no effect: upstairs and downstairs share a map.
+func map_player_position() -> Vector2:
+	var anchor := Vector2(Run.room_anchor(Run.rooms[Run.current_room]))
+	if not is_instance_valid(game.player): return map_room_focus()
+	var at: Vector3 = game.player.position
+	return anchor + Vector2(at.x, at.z) / RoomGeometry.CELL
 
 func build_rotating_minimap() -> void:
 	minimap_clip = Control.new()
@@ -1854,27 +1864,28 @@ func sync_minimap() -> void:
 	# Use the rendered view's horizontal bearing, including camera transitions.
 	# Looking straight up/down retains the last meaningful compass direction.
 	if bearing.length_squared() > .0001: minimap_ink.rotation = bearing.angle_to(Vector2.UP)
+	var offset := (map_player_position() - map_room_focus()) * 22.0
+	minimap_pointer.position = minimap_ink.position + offset.rotated(minimap_ink.rotation)
 	minimap_ink.queue_redraw()
 	minimap_pointer.queue_redraw()
 
 func draw_rotating_minimap(target: CanvasItem) -> void:
 	if not Run.rooms.has(Run.current_room): return
-	var cells = FloorGenerator.room_cells(Run.rooms[Run.current_room])
-	var focus := Vector2.ZERO
-	for cell in cells: focus += Vector2(cell)
 	# Cover the rectangular aperture at every angle, including complete edge
 	# segments whose endpoints fall outside it. The parent canvas clips ink.
 	var radius := MINIMAP_AREA.size.length() * .5 + 44.0
-	draw_floor_map(Rect2(-Vector2.ONE * radius, Vector2.ONE * radius * 2), focus / cells.size(), 22.0, target)
+	draw_floor_map(Rect2(-Vector2.ONE * radius, Vector2.ONE * radius * 2), map_room_focus(), 22.0, target)
 
 func draw_minimap_pointer(target: CanvasItem) -> void:
-	target.draw_colored_polygon(PackedVector2Array([Vector2(0,-7),Vector2(-5,5),Vector2(0,3),Vector2(5,5)]), Color("202724"))
-	target.draw_colored_polygon(PackedVector2Array([Vector2(0,-5),Vector2(-3,3),Vector2(0,1),Vector2(3,3)]), GOLD)
-	if not touch_hud_visible():
-		var label := MINIMAP_RECT.end - Vector2(20,11) - MINIMAP_AREA.get_center()
-		label.x -= body.get_string_size("M",HORIZONTAL_ALIGNMENT_LEFT,-1,12).x
-		target.draw_string(body,label+Vector2(0,2),"M",HORIZONTAL_ALIGNMENT_LEFT,-1,12,Color(.025,.035,.025,.85))
-		target.draw_string(body,label,"M",HORIZONTAL_ALIGNMENT_LEFT,-1,12,MUTED)
+	draw_map_arrow(target, Vector2.ZERO, 0.0)
+
+func draw_map_arrow(target: CanvasItem, at: Vector2, angle: float) -> void:
+	var outline := PackedVector2Array()
+	var fill := PackedVector2Array()
+	for point in [Vector2(0,-7),Vector2(-5,5),Vector2(0,3),Vector2(5,5)]: outline.append(at + point.rotated(angle))
+	for point in [Vector2(0,-5),Vector2(-3,3),Vector2(0,1),Vector2(3,3)]: fill.append(at + point.rotated(angle))
+	target.draw_colored_polygon(outline, Color("202724"))
+	target.draw_colored_polygon(fill, GOLD)
 
 ## Rooms the player may know about: those walked through, and every room
 ## glimpsed through one of their open doorways, so the map shows each way on
@@ -2088,6 +2099,12 @@ func draw_full_map() -> void:
 	centered("The way home", 640, 140, 32, INK, heading)
 	var frame := full_map_frame()
 	draw_floor_map(FULL_MAP_AREA, frame[0], frame[1])
+	if game.first_person and is_instance_valid(game.player):
+		var at: Vector2 = FULL_MAP_AREA.get_center() + (map_player_position() - frame[0]) * frame[1]
+		var forward: Vector3 = -game.camera.global_basis.z
+		var bearing := Vector2(forward.x, forward.z)
+		var angle: float = bearing.angle() + PI * .5 if bearing.length_squared() > .0001 else -game.fps.yaw
+		if FULL_MAP_AREA.grow(-7).has_point(at): draw_map_arrow(self, at, angle)
 	if map_message != "": centered(map_message, 640, 166, 15, Color("efbd9f"), bold)
 	else: centered(("Tap" if touch_hud_visible() else "Click") + " a room you have cleared to go back to it", 640, 166, 15, MUTED)
 	var main_rooms = Run.rooms.values().filter(func(room): return not room.get("secret", false))
