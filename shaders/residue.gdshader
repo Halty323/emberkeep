@@ -151,5 +151,5 @@ void fragment() {
     EMISSION = light * shape;
     ROUGHNESS = rough;
     SPECULAR = 0.6;
-    ALPHA = max(opacity * shape, contact * 0.32);
+    ALPHA = max(opacity * shape, contact * 0.16);
 }

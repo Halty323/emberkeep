@@ -110,8 +110,15 @@ func setup(owner_game: Node3D, room_geometry: RoomGeometry, elevation := 0.0) ->
 		view.position = Vector3(0,look[4],0) if elevated_surface else Vector3((grid_origin.x + grid_size.x / 2.0) * TILE, look[4], (grid_origin.y + grid_size.y / 2.0) * TILE)
 		view.visible = false
 		add_child(view)
-		views[kind] = {"view": view, "image": image, "shown": shown, "level": PackedFloat32Array(), "easing": false, "texture": texture, "count": 0, "material": mat}
+		# `target` is the mask the tiles ask for (kept as tiles change), `level`
+		# what is shown now and `bytes` that as texels; `active` are the texels
+		# still easing and `live` those showing anything, so every frame and
+		# every body touch only what is changing, never the whole grid.
+		views[kind] = {"view": view, "image": image, "shown": shown, "level": PackedFloat32Array(), "target": PackedByteArray(), "bytes": PackedByteArray(),
+			"active": {}, "live": {}, "easing": false, "texture": texture, "count": 0, "material": mat, "body_wait": 0.0, "body_stale": false}
 		views[kind].level.resize(grid_size.x * grid_size.y)
+		views[kind].target.resize(grid_size.x * grid_size.y)
+		views[kind].bytes.resize(grid_size.x * grid_size.y)
 	drizzle.seed = Content.stable_hash("drizzle:%d" % grid_origin.x)
 	setup_cloud_surface()
 
@@ -208,48 +215,79 @@ func set_mirror(active: bool) -> void:
 ## Visual only: rain on the cistern's pools, wading rings, the ripple clock.
 ## How fast a patch spreads in and drains away (mask units a second).
 const SPREAD_RATE := 3.2
+# How long after a field is made its patches appear at once, unanimated.
+const SETTLE := .4
+# Benchmarks animate spreading without a display.
+static var animate_headless := false
 const DRAIN_RATE := 1.8
 # Small particles each kind gives off now and then, and its splash colour.
 const WISPS := {"fire": ["#ffb050", .05], "ink": ["#4a3a66", .3], "moss": ["#c8e08a", .45], "glass": ["#e8f6ff", .35], "wax": ["#f4e8c8", 1.6], "water": ["#9cc8d8", 1.2]}
 var wisp_wait := 0.0
 
-## Eases each kind's shown mask toward its tiles, a few texels at a time.
+## Eases each kind's shown mask toward its tiles: only the texels that are
+## still moving are visited.
+var body_rest := 0.0
 func ease_masks(delta: float) -> void:
-	for kind in views:
+	# After a body is built nothing else is for twelve times as long as it
+	# took (two frames at least): all the liquids together spend well under
+	# a tenth of the time on their bodies, on any device.
+	body_rest = maxf(0.0, body_rest - delta)
+	var built := body_rest > 0.0
+	# Whoever has waited longest for a new body goes first.
+	var order: Array = views.keys()
+	if first_person: order.sort_custom(func(a, b): return float(views[a].body_wait) < float(views[b].body_wait))
+	for kind in order:
 		var entry: Dictionary = views[kind]
-		if not entry.easing: continue
-		var level: PackedFloat32Array = entry.level
-		var target: PackedByteArray = entry.image.get_data()
-		var out := PackedByteArray()
-		out.resize(level.size())
-		var moving := false
-		var any := false
-		for i in level.size():
-			var goal := float(target[i]) / 255.0
-			var now := level[i]
-			if now != goal:
-				now = minf(goal, now + delta * SPREAD_RATE) if goal > now else maxf(goal, now - delta * DRAIN_RATE)
+		if entry.easing:
+			var level: PackedFloat32Array = entry.level
+			var target: PackedByteArray = entry.target
+			var bytes: PackedByteArray = entry.bytes
+			var active: Dictionary = entry.active
+			var live: Dictionary = entry.live
+			var up := delta * SPREAD_RATE
+			var down := delta * DRAIN_RATE
+			var settled: Array = []
+			for i in active:
+				var goal := 1.0 if target[i] > 0 else 0.0
+				var now := level[i]
+				now = minf(goal, now + up) if goal > now else maxf(goal, now - down)
 				level[i] = now
-				moving = true
-			if now > 0.0: any = true
-			out[i] = int(now * 255.0)
-		entry.level = level
-		entry.shown.set_data(grid_size.x, grid_size.y, false, Image.FORMAT_R8, out)
-		entry.texture.update(entry.shown)
-		entry.easing = moving
-		entry.view.visible = any or entry.count > 0
-		# The liquid's body follows, a few times a second while it moves.
-		entry.body_wait = float(entry.get("body_wait", 0.0)) - delta
-		if first_person and (not moving or entry.body_wait <= 0.0):
-			entry.body_wait = BODY_STEP
-			build_body(kind)
+				bytes[i] = int(now * 255.0)
+				if now > 0.0: live[i] = true
+				else: live.erase(i)
+				if now == goal: settled.append(i)
+			for i in settled: active.erase(i)
+			entry.level = level
+			entry.bytes = bytes
+			entry.shown.set_data(grid_size.x, grid_size.y, false, Image.FORMAT_R8, bytes)
+			entry.texture.update(entry.shown)
+			entry.easing = not active.is_empty()
+			entry.view.visible = not live.is_empty() or entry.count > 0
+			entry.body_stale = true
+		# The liquid's body follows while it moves, as often as its own cost
+		# allows, and once more when it comes to rest.
+		if not first_person or not entry.body_stale: continue
+		entry.body_wait = float(entry.body_wait) - delta
+		# (Settling a room as it is entered builds them all at once.)
+		if entry.body_wait > 0.0 or (built and delta < 5.0): continue
+		# One body a frame: several liquids spreading at once take turns.
+		built = true
+		var started := Time.get_ticks_usec()
+		build_body(kind)
+		entry.body_stale = entry.easing
+		# A big pool that takes long to rebuild is rebuilt less often: never
+		# more than about a tenth of the time goes on any one kind's body.
+		var cost := (Time.get_ticks_usec() - started) / 1000000.0
+		entry.body_wait = maxf(BODY_STEP, cost * 9.0)
+		body_rest = maxf(.034, cost * 12.0)
 
 # ---------------------------------------------------------------- bodies
 # First person, every patch is real geometry: a low heightfield over its
 # tiles that domes up from the floor at the shore to a rounded top, so a
 # pool of wax or ink has thickness at a glance and a silhouette at grazing
 # angles. Built on the CPU from the eased mask (no vertex texture reads),
-# only while a patch spreads or drains.
+# only while a patch spreads or drains, from flat arrays over just the
+# tiles that show anything, with every lattice point shared by its cells.
 const BODY_STEP := .05
 const THICKNESS := {"wax": .14, "ink": .1, "moss": .09, "water": .07, "ice": .06, "glass": .035, "fire": .04}
 var ground_cache := {}
@@ -269,70 +307,134 @@ func texel(level: PackedFloat32Array, x: int, z: int) -> float:
 	if x < 0 or z < 0 or x >= grid_size.x or z >= grid_size.y: return 0.0
 	return level[z * grid_size.x + x]
 
-## The floor under a lattice point, remembered (the room never changes).
-func ground_at(lattice: Vector2i, sub: int) -> float:
-	var key_value := Vector3i(lattice.x, lattice.y, sub)
-	if not ground_cache.has(key_value):
-		var at := Vector3((grid_origin.x + float(lattice.x) / sub) * TILE, surface_level, (grid_origin.y + float(lattice.y) / sub) * TILE)
-		ground_cache[key_value] = ground_height(at)
-	return ground_cache[key_value]
+## The floor under every lattice point at a subdivision, remembered (the
+## room never changes); NAN until asked for. A flat room has none.
+func ground_lattice(sub: int) -> PackedFloat32Array:
+	if not ground_cache.has(sub):
+		var grid := PackedFloat32Array()
+		grid.resize((grid_size.x * sub + 1) * (grid_size.y * sub + 1))
+		grid.fill(NAN)
+		ground_cache[sub] = grid
+	return ground_cache[sub]
 
 func build_body(kind: String) -> void:
 	var entry: Dictionary = views[kind]
+	var live: Dictionary = entry.live
+	if live.is_empty(): return
 	var level: PackedFloat32Array = entry.level
-	var cells := {}
-	for i in level.size():
-		if level[i] <= 0.0: continue
-		var x := i % grid_size.x
-		var z := i / grid_size.x
-		for dz in [-1, 0, 1]:
-			for dx in [-1, 0, 1]:
-				var cell := Vector2i(x + dx, z + dz)
-				if cell.x >= 0 and cell.y >= 0 and cell.x < grid_size.x and cell.y < grid_size.y: cells[cell] = true
-	if cells.is_empty(): return
-	# Big lasting pools take fewer steps a tile.
-	var sub := 3 if cells.size() < 140 else 2
+	var gw := grid_size.x
+	var gh := grid_size.y
+	# The cells to cover: every showing texel and its neighbours.
+	var cells := PackedByteArray()
+	cells.resize(gw * gh)
+	var count := 0
+	for i in live:
+		var x: int = i % gw
+		var z: int = i / gw
+		for cz in range(maxi(0, z - 1), mini(gh, z + 2)):
+			for cx in range(maxi(0, x - 1), mini(gw, x + 2)):
+				var c := cz * gw + cx
+				if cells[c] == 0:
+					cells[c] = 1
+					count += 1
+	# Big pools take fewer steps a tile, and a pool still spreading or
+	# draining is drawn a step coarser until it comes to rest.
+	var sub := 3 if count < 140 else (2 if count < 900 else 1)
+	if entry.easing: sub = maxi(1, sub - 1)
 	var thick: float = THICKNESS.get(kind, .04)
-	var heights := {}
-	var height := func(lattice: Vector2i) -> float:
-		if heights.has(lattice): return heights[lattice]
-		var c := level_at(level, float(lattice.x) / sub, float(lattice.y) / sub)
-		var rise := clampf((c - .4) / .55, 0.0, 1.0)
-		var dome := 1.0 - (1.0 - rise) * (1.0 - rise)
-		var value: float = ground_at(lattice, sub) + thick * dome
-		heights[lattice] = value
-		return value
+	var lw := gw * sub + 1
+	var lh := gh * sub + 1
+	var sloped: bool = first_person and geometry.terrain != null
+	var ground: PackedFloat32Array = ground_lattice(sub) if sloped else PackedFloat32Array()
+	# One height and one vertex for each lattice point in use.
+	var slot := PackedInt32Array()
+	slot.resize(lw * lh)
+	slot.fill(-1)
+	var heights := PackedFloat32Array()
+	var points := PackedInt32Array()
 	var vertices := PackedVector3Array()
-	var normals := PackedVector3Array()
 	var uvs := PackedVector2Array()
 	var indices := PackedInt32Array()
-	var span := TILE / sub
-	for cell in cells:
-		var base: Vector2i = cell * sub
-		var low := INF
-		var high := -INF
-		for corner in [Vector2i.ZERO, Vector2i(sub, 0), Vector2i(0, sub), Vector2i(sub, sub)]:
-			var g: float = ground_at(base + corner, sub)
-			low = minf(low, g)
-			high = maxf(high, g)
-		# A cliff between storeys is no floor to pool on.
-		if high - low > .65: continue
-		var start := vertices.size()
+	var step := TILE / sub
+	var inv := 1.0 / sub
+	var corner := PackedInt32Array()
+	corner.resize((sub + 1) * (sub + 1))
+	for c in gw * gh:
+		if cells[c] == 0: continue
+		var cx := c % gw
+		var cz := c / gw
+		if sloped:
+			# A cliff between storeys is no floor to pool on.
+			var low := INF
+			var high := -INF
+			for k in 4:
+				var lx := (cx + (k & 1)) * sub
+				var lz := (cz + (k >> 1)) * sub
+				var g := ground[lz * lw + lx]
+				if is_nan(g):
+					g = ground_height(Vector3((grid_origin.x + lx * inv) * TILE, surface_level, (grid_origin.y + lz * inv) * TILE))
+					ground[lz * lw + lx] = g
+				low = minf(low, g)
+				high = maxf(high, g)
+			if high - low > .65: continue
 		for j in sub + 1:
 			for i in sub + 1:
-				var lattice: Vector2i = base + Vector2i(i, j)
-				var x := (grid_origin.x + float(lattice.x) / sub) * TILE
-				var z := (grid_origin.y + float(lattice.y) / sub) * TILE
-				vertices.append(Vector3(x, height.call(lattice), z))
-				var dx: float = height.call(lattice + Vector2i(1, 0)) - height.call(lattice - Vector2i(1, 0))
-				var dz: float = height.call(lattice + Vector2i(0, 1)) - height.call(lattice - Vector2i(0, 1))
-				normals.append(Vector3(-dx / (2.0 * span), 1.0, -dz / (2.0 * span)).normalized())
-				uvs.append(Vector2(x, z))
+				var lx := cx * sub + i
+				var lz := cz * sub + j
+				var at := lz * lw + lx
+				var index := slot[at]
+				if index < 0:
+					# The eased mask read as the GPU's linear filter reads it.
+					var fx := lx * inv - .5
+					var fz := lz * inv - .5
+					var x0 := floori(fx)
+					var z0 := floori(fz)
+					var tx := fx - x0
+					var tz := fz - z0
+					var a := level[z0 * gw + x0] if x0 >= 0 and z0 >= 0 and x0 < gw and z0 < gh else 0.0
+					var b := level[z0 * gw + x0 + 1] if x0 + 1 >= 0 and z0 >= 0 and x0 + 1 < gw and z0 < gh else 0.0
+					var d := level[(z0 + 1) * gw + x0] if x0 >= 0 and z0 + 1 >= 0 and x0 < gw and z0 + 1 < gh else 0.0
+					var e := level[(z0 + 1) * gw + x0 + 1] if x0 + 1 >= 0 and z0 + 1 >= 0 and x0 + 1 < gw and z0 + 1 < gh else 0.0
+					var rise := clampf((lerpf(lerpf(a, b, tx), lerpf(d, e, tx), tz) - .4) / .55, 0.0, 1.0)
+					var base := 0.0
+					if sloped:
+						base = ground[at]
+						if is_nan(base):
+							base = ground_height(Vector3((grid_origin.x + lx * inv) * TILE, surface_level, (grid_origin.y + lz * inv) * TILE))
+							ground[at] = base
+					var wx := (grid_origin.x + lx * inv) * TILE
+					var wz := (grid_origin.y + lz * inv) * TILE
+					index = vertices.size()
+					slot[at] = index
+					heights.append(base + thick * (1.0 - (1.0 - rise) * (1.0 - rise)))
+					points.append(at)
+					vertices.append(Vector3(wx, heights[index], wz))
+					uvs.append(Vector2(wx, wz))
+				corner[j * (sub + 1) + i] = index
 		for j in sub:
 			for i in sub:
-				var a := start + j * (sub + 1) + i
-				indices.append_array([a, a + 1, a + sub + 2, a, a + sub + 2, a + sub + 1])
+				var a := corner[j * (sub + 1) + i]
+				var b := corner[j * (sub + 1) + i + 1]
+				var d := corner[(j + 1) * (sub + 1) + i]
+				var e := corner[(j + 1) * (sub + 1) + i + 1]
+				indices.append_array([a, b, e, a, e, d])
+	if sloped: ground_cache[sub] = ground
 	if vertices.is_empty(): return
+	# Normals from the heights around each point (its own where a neighbour
+	# is outside the body: the body is flat on the floor there).
+	var normals := PackedVector3Array()
+	normals.resize(vertices.size())
+	for index in vertices.size():
+		var at := points[index]
+		var lx := at % lw
+		var here := heights[index]
+		var east := slot[at + 1] if lx + 1 < lw else -1
+		var west := slot[at - 1] if lx > 0 else -1
+		var south := slot[at + lw] if at + lw < lw * lh else -1
+		var north := slot[at - lw] if at - lw >= 0 else -1
+		var dx := (heights[east] if east >= 0 else here) - (heights[west] if west >= 0 else here)
+		var dz := (heights[south] if south >= 0 else here) - (heights[north] if north >= 0 else here)
+		normals[index] = Vector3(-dx / (2.0 * step), 1.0, -dz / (2.0 * step)).normalized()
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = vertices
@@ -545,13 +647,25 @@ func scorch(at: Vector3, radius: float) -> void:
 
 ## `tame` fire was lit by the party (a spell, a bomb, a blast of theirs): it
 ## burns foes but never the players who lit it.
+const LIVES := {"fire": FIRE_LIFE, "ice": ICE_LIFE}
+# Tiles the clock matters to: fire (it spreads) and anything that will end.
+var timed := {}
+
 func set_tile(tile: Vector2i, kind: String, lasting := false, tame := false) -> void:
 	var previous: String = tiles.get(tile, {}).get("kind", "")
+	# More of what already lies here changes nothing (fire and ice renew).
+	if kind == previous and not LIVES.has(kind): return
 	if kind == "":
 		tiles.erase(tile)
+		timed.erase(tile)
 	else:
-		var life = -1.0 if lasting else {"fire": FIRE_LIFE, "ice": ICE_LIFE}.get(kind, -1.0)
-		tiles[tile] = {"kind": kind, "age": 0.0, "life": life, "spread": SPREAD_DELAY, "under": previous if kind in ["fire", "ice"] else "", "tame": tame and kind == "fire"}
+		var life: float = -1.0 if lasting else float(LIVES.get(kind, -1.0))
+		tiles[tile] = {"kind": kind, "age": 0.0, "life": life, "spread": SPREAD_DELAY, "under": previous if LIVES.has(kind) else "", "tame": tame and kind == "fire"}
+		if kind == "fire" or life > 0: timed[tile] = true
+		else: timed.erase(tile)
+	if kind != previous:
+		mark(tile, previous, false)
+		mark(tile, kind, true)
 	dirty[previous] = true
 	dirty[kind] = true
 	# A new patch lands with a splash of its own colour (only on this device).
@@ -559,6 +673,22 @@ func set_tile(tile: Vector2i, kind: String, lasting := false, tame := false) -> 
 		var look: Array = LOOKS[kind]
 		EffectsPool.current.emit("residue_splash", cell_center(tile) + Vector3.UP * .08, Color(look[0], 1.0).lightened(.15), 4)
 	if logging: net_tiles[tile] = [kind, lasting]
+
+## One texel of a kind's mask turned on or off, as its tile changes.
+func mark(tile: Vector2i, kind: String, on: bool) -> void:
+	if not views.has(kind): return
+	var at := tile - grid_origin
+	if at.x < 0 or at.y < 0 or at.x >= grid_size.x or at.y >= grid_size.y: return
+	var entry: Dictionary = views[kind]
+	var i := at.y * grid_size.x + at.x
+	var target: PackedByteArray = entry.target
+	var value := 255 if on else 0
+	if target[i] == value: return
+	target[i] = value
+	entry.target = target
+	entry.count += 1 if on else -1
+	entry.active[i] = true
+	entry.easing = true
 
 ## Burn, chill and poison meeting what lies here (only the party's spells
 ## react, so what they light is tame).
@@ -728,7 +858,8 @@ func update_sim(delta: float) -> void:
 	tick -= delta
 	var touch = tick <= 0
 	if touch: tick = .25
-	for tile in tiles.keys():
+	# Only fire and what will end are on the clock; a flood costs nothing here.
+	for tile in timed.keys():
 		if not tiles.has(tile): continue
 		var entry: Dictionary = tiles[tile]
 		entry.age += delta
@@ -780,20 +911,13 @@ func update_sim(delta: float) -> void:
 ## Redraws one kind's mask; a kind with nothing on the floor is not drawn.
 func rebuild(kind: String) -> void:
 	var entry: Dictionary = views[kind]
-	var image: Image = entry.image
-	image.fill(Color.BLACK)
-	var count = 0
-	for tile in tiles:
-		if tiles[tile].kind != kind: continue
-		var at: Vector2i = tile - grid_origin
-		if at.x < 0 or at.y < 0 or at.x >= grid_size.x or at.y >= grid_size.y: continue
-		image.set_pixelv(at, Color.WHITE)
-		count += 1
-	entry.easing = true
-	entry.view.visible = count > 0 or entry.view.visible
-	entry.count = count
-	# Headless, nothing animates: show the mask as it is.
-	if DisplayServer.get_name() == "headless" or not is_inside_tree(): ease_masks(10.0)
+	# The mask itself is kept texel by texel as tiles change (mark()).
+	entry.image.set_data(grid_size.x, grid_size.y, false, Image.FORMAT_R8, entry.target)
+	entry.view.visible = entry.count > 0 or entry.view.visible
+	# Headless, nothing animates: show the mask as it is. And whatever lies
+	# here as a room is entered (its lasting pools, what was spilt before)
+	# is simply there, full: only new spills spread in and drain away.
+	if (DisplayServer.get_name() == "headless" and not animate_headless) or not is_inside_tree() or clock < SETTLE: ease_masks(10.0)
 
 ## Co-op host: what changed on the floor since last asked, for the guests.
 func take_changes() -> Dictionary:

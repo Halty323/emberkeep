@@ -169,7 +169,9 @@ func test_floor_light() -> void:
 		check(outlines.size() == run.rooms["0,0"].portals.size() and shown and sealed, "floor %d's open doorways glow in outline, sealed ones go dark" % floor)
 		var foe = game.spawn_enemy(Vector3(3, 0, 0), "mote")
 		var body: MeshInstance3D = foe.visual.get_child(0)
-		check((body.material_override.emission_enabled and is_equal_approx(body.material_override.emission_energy_multiplier, profile.foe_body)) == (profile.foe_body > 0),
+		# Foes are gelatin: the floor's readability light is the gel's own glow.
+		var body_glow = body.get_instance_shader_parameter("glow")
+		check(body.material_override is ShaderMaterial and is_equal_approx(float(body_glow) if body_glow != null else 0.0, profile.foe_body),
 			"floor %d foes retain the bounded material readability floor" % floor)
 		game.enemies.erase(foe)
 		foe.free()

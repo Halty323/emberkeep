@@ -193,21 +193,116 @@ func setup(owner_game: Node3D, type: String, id: int) -> void:
 
 ## The rim and flash overlay, from Balanced effects detail up.
 func dress_skin() -> void:
-	if Look.quality() == 0: return
-	if overlay == null:
-		overlay = ShaderMaterial.new()
-		overlay.shader = preload("res://shaders/foe_rim.gdshader")
 	for node in visual.find_children("*", "MeshInstance3D", true, false):
 		if node.get_parent() == eyes: continue
+		if gel(node):
+			skin.append(node)
+			continue
+		# What cannot be gelatin (a crystal, a ghost, a flame) keeps the rim.
+		if Look.quality() == 0: continue
+		if overlay == null:
+			overlay = ShaderMaterial.new()
+			overlay.shader = preload("res://shaders/foe_rim.gdshader")
 		node.material_overlay = overlay
 		node.set_instance_shader_parameter("rim_tint", color.lightened(.35))
 		skin.append(node)
 
+## Turns one of a foe's meshes to gelatin (foe_jelly.gdshader), keeping its
+## colour (made juicier) and its own glow. Only plain solid materials turn:
+## glass, ghosts, crystals and anything that burns bright stay as they are.
+## Safe to call again after a foe swaps a part's material.
+static var jelly: ShaderMaterial
+const JELLY_BRIGHT := 1.2
+func gel(node: MeshInstance3D) -> bool:
+	var source: Material = node.material_override
+	if source == jelly and jelly != null: return true
+	var plain := source as StandardMaterial3D
+	if plain == null or plain.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED: return false
+	var shine: float = plain.emission_energy_multiplier if plain.emission_enabled else 0.0
+	if shine > JELLY_BRIGHT: return false
+	if jelly == null:
+		jelly = ShaderMaterial.new()
+		jelly.shader = preload("res://shaders/foe_jelly.gdshader")
+	var tint: Color = plain.albedo_color
+	tint.s = clampf(tint.s * 1.5 + .22, 0.0, 1.0)
+	tint.v = clampf(tint.v * 1.12 + .06, 0.0, 1.0)
+	node.material_override = jelly
+	node.mesh = set_shape(node.mesh)
+	node.set_instance_shader_parameter("jelly_tint", tint)
+	node.set_instance_shader_parameter("glow", shine)
+	node.set_instance_shader_parameter("lift", to_local(node.global_position).y if is_inside_tree() and node.is_inside_tree() else node.position.y)
+	return true
+
+## Gelatin is set in a mould: round shapes are smooth, and a block's edges
+## and corners are rounded off. One shared mesh for each shape and size.
+static var moulds: Dictionary = {}
+static func set_shape(mesh: Mesh) -> Mesh:
+	if mesh == null or mesh.has_meta("moulded"): return mesh
+	var key := ""
+	if mesh is SphereMesh: key = "s%.3f/%.3f" % [mesh.radius, mesh.height]
+	elif mesh is CylinderMesh: key = "c%.3f/%.3f/%.3f" % [mesh.top_radius, mesh.bottom_radius, mesh.height]
+	elif mesh is BoxMesh: key = "b%s" % str(mesh.size)
+	else: return mesh
+	if moulds.has(key): return moulds[key]
+	var made: Mesh
+	if mesh is SphereMesh:
+		var ball := SphereMesh.new()
+		ball.radius = mesh.radius
+		ball.height = mesh.height
+		ball.radial_segments = 28
+		ball.rings = 14
+		made = ball
+	elif mesh is CylinderMesh:
+		var drum := CylinderMesh.new()
+		drum.top_radius = mesh.top_radius
+		drum.bottom_radius = mesh.bottom_radius
+		drum.height = mesh.height
+		drum.radial_segments = 28
+		drum.rings = 3
+		made = drum
+	else:
+		made = rounded_block(mesh.size)
+	made.set_meta("moulded", true)
+	moulds[key] = made
+	return made
+
+## A block with its edges and corners rounded: each point of a subdivided
+## box is pulled in to an inner box and pushed back out by the same radius.
+static func rounded_block(size: Vector3) -> ArrayMesh:
+	var source := BoxMesh.new()
+	source.size = size
+	source.subdivide_width = 5
+	source.subdivide_height = 5
+	source.subdivide_depth = 5
+	var arrays: Array = source.get_mesh_arrays()
+	var points: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var radius := minf(minf(size.x, minf(size.y, size.z)) * .32, .13)
+	var inner := size / 2.0 - Vector3.ONE * radius
+	for i in points.size():
+		var p := points[i]
+		var core := Vector3(clampf(p.x, -inner.x, inner.x), clampf(p.y, -inner.y, inner.y), clampf(p.z, -inner.z, inner.z))
+		var out := p - core
+		if out.length() > .0001:
+			normals[i] = out.normalized()
+			points[i] = core + normals[i] * radius
+	arrays[Mesh.ARRAY_VERTEX] = points
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TANGENT] = null
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+# A struck foe shudders for a moment after its flash has gone.
+var wobble := 0.0
 func show_flash(delta: float) -> void:
-	if flash <= 0: return
+	if flash <= 0 and wobble <= 0: return
 	flash = maxf(0, flash - delta * 9.0)
+	wobble = maxf(0, wobble - delta * 1.8)
 	for node in skin:
-		if is_instance_valid(node): node.set_instance_shader_parameter("flash", flash)
+		if not is_instance_valid(node): continue
+		node.set_instance_shader_parameter("flash", flash)
+		node.set_instance_shader_parameter("jiggle", wobble)
 
 ## [health, speed, radius, colour] before floor scaling.
 func stats() -> Array:
@@ -605,6 +700,7 @@ func receive_hit(damage: float, impulse: Vector3, critical: bool, dot: bool, cau
 	if not dot:
 		visual.scale = Vector3(1.17, .85, 1.17)
 		flash = 1.0
+		wobble = 1.0
 		Effects.play("hit_spark", global_position + Vector3.UP * radius, Color("ffe0a8") if critical else color)
 		Audio.play_sound("hit", 1.3 if critical else 1)
 		game.damage_number(global_position + Vector3.UP * 1.1, damage, critical)

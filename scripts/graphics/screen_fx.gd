@@ -34,7 +34,7 @@ func setup(owner_game: Node3D, rect: ColorRect, shader_material: ShaderMaterial)
 	material = shader_material
 	current = self
 	Settings.changed.connect(func(key):
-		if key in ["effects_detail", "ssao"]: apply_quality())
+		if key in ["effects_detail", "ssao", "bloom"]: apply_quality())
 	apply_quality()
 
 func _exit_tree() -> void:
@@ -49,15 +49,59 @@ func apply_quality() -> void:
 	if game.first_person:
 		DungeonStyle.apply_quality()
 		DungeonAtmosphere.configure(env)
-	env.glow_enabled = level > 0 and policy.glow
+	# Bloom (Settings "bloom"): flames, spells, gelatin foes and anything else
+	# bright bleed light into the frame. Where the device cannot run the pass
+	# (or effects are Low), flames wear small glows of their own instead.
+	var bloom := str(Settings.values.get("bloom", "soft"))
+	env.glow_enabled = level > 0 and policy.glow and bloom != "off"
 	if material.shader == plain_shader: waves.clear()
-	env.glow_intensity = .7 if level == 1 else .85
-	env.glow_bloom = .06
-	env.glow_hdr_threshold = 1.0
-	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
-	for i in 7: env.set_glow_level(i, 1.0 if i in ([1, 3, 5] if level == 2 else [2, 4]) else 0.0)
+	var strong := bloom == "strong"
+	# Only what is truly bright blooms (a high threshold, almost none of the
+	# plain scene), so Strong is a brighter, wider glow, never a haze.
+	env.glow_intensity = (1.7 if strong else .95) * (.9 if level == 1 else 1.0)
+	env.glow_strength = 1.15 if strong else 1.0
+	env.glow_bloom = .05
+	env.glow_hdr_threshold = .9 if strong else .94
+	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SCREEN
+	var wide: Array = ([1, 2, 3, 4, 5] if strong else [1, 3, 5]) if level == 2 else ([2, 3, 4] if strong else [2, 4])
+	for i in 7: env.set_glow_level(i, 1.0 if i in wide else 0.0)
+	flame_blooms(game.get_tree())
 	apply_occlusion()
 	apply_grade()
+
+## Whether flames wear their own small glows: whenever bloom is wanted. With
+## the full-screen pass they are fainter (the pass adds its own); without it
+## they are all the bloom there is.
+static func sprite_bloom() -> bool:
+	var bloom := str(Settings.values.get("bloom", "soft"))
+	return bloom != "off"
+
+static var bloom_material: ShaderMaterial
+static var bloom_mesh: QuadMesh
+## A glow round a flame, as a child of the flame (it shows and hides with it).
+static func add_flame_bloom(flame: Node3D, size: float) -> void:
+	if bloom_material == null:
+		bloom_material = ShaderMaterial.new()
+		bloom_material.shader = preload("res://shaders/flame_bloom.gdshader")
+		bloom_mesh = QuadMesh.new()
+		bloom_mesh.size = Vector2.ONE
+	var card := MeshInstance3D.new()
+	card.name = "FlameBloom"
+	card.mesh = bloom_mesh
+	card.material_override = bloom_material
+	card.scale = Vector3.ONE * size
+	card.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	card.layers = Geo.FLAME_LAYER
+	card.visible = sprite_bloom()
+	card.add_to_group("flame_bloom")
+	flame.add_child(card)
+
+static func flame_blooms(tree: SceneTree) -> void:
+	if tree == null: return
+	var shown := sprite_bloom()
+	var passes: bool = Look.quality() > 0 and RenderPolicy.current().glow
+	if bloom_material: bloom_material.set_shader_parameter("strength", (.75 if str(Settings.values.get("bloom", "soft")) == "strong" else .45) * (.6 if passes else 1.0))
+	for card in tree.get_nodes_in_group("flame_bloom"): card.visible = shown
 
 func apply_occlusion() -> void:
 	var enabled: bool = game.first_person and Settings.ssao_supported() and Settings.values.ssao != "off"

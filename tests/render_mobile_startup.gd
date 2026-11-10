@@ -57,14 +57,14 @@ func exercise() -> void:
 		settings.set_value("effects_detail", detail)
 		await render_frames(2)
 		if not native:
-			check(not game.room_environment.environment.glow_enabled, "quality change to " + detail + " preserves the glow safeguard")
+			check(game.room_environment.environment.glow_enabled == (detail != "low"), "quality change to " + detail + " keeps bloom with effects detail")
 			check(game.vignette.shader.resource_path.ends_with("/vignette.gdshader"), "quality change to " + detail + " preserves the post safeguard")
 	check(game.in_menu, "startup sample actually rendered the title room")
 	if not native:
 		check(root.msaa_3d == Viewport.MSAA_DISABLED, "title root has no unsupported MSAA target")
 		var pixels: Vector2i = settings.render_pixels()
 		check(pixels.x * pixels.y <= 1280 * 720 + pixels.x + pixels.y, "wide-window 3D target stays within the pixel budget")
-		check(not game.room_environment.environment.glow_enabled, "title fallback keeps glow disabled")
+		check(game.room_environment.environment.glow_enabled, "the safe title still blooms")
 		check(game.vignette.shader.resource_path.ends_with("/vignette.gdshader"), "title fallback avoids screen-texture post processing")
 	root.get_texture().get_image().save_png(output.path_join("mobile-title.png"))
 	# Repeat the same content after caches warm. Persistent growth between

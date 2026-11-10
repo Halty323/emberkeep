@@ -19,8 +19,9 @@ func test_policy() -> void:
 	settings = root.get_node("Settings")
 	var affected := RenderPolicy.for_device("Android", "Imagination Technologies", "PowerVR D-Series DXT-48-1536", "gl_compatibility")
 	check(not affected.msaa, "Android GLES never requests the unsupported MSAA render target")
-	for key in ["post_processing", "glow", "reflections", "refraction"]:
+	for key in ["post_processing", "reflections", "refraction"]:
 		check(not affected[key], "PowerVR Android omits the incompatible pass: " + key)
+	check(affected.glow, "bloom runs on PowerVR too")
 	check(affected.lightweight_surfaces, "PowerVR Android selects the bounded surface shader")
 	check(affected.reflection_limit == Vector2i(640, 360), "mobile reflection target has a fixed upper bound")
 	check(affected.max_3d_pixels == 1280 * 720, "PowerVR main 3D target has a fixed pixel budget")
@@ -61,7 +62,10 @@ func test_policy() -> void:
 	game.set_physics_process(false)
 	game.screen_fx.apply_quality()
 	check(game.vignette.shader.resource_path.ends_with("/vignette.gdshader"), "affected title uses the screen-copy-free vignette")
-	check(not game.room_environment.environment.glow_enabled, "affected title does not allocate glow buffers")
+	check(game.room_environment.environment.glow_enabled, "affected title blooms like every device")
+	settings.set_value("bloom", "off")
+	check(not game.room_environment.environment.glow_enabled, "bloom off allocates no glow buffers")
+	settings.set_value("bloom", "soft")
 	check(settings.values.effects_detail == "high" and settings.values.small_details == "high" and settings.values.fps_limit == 120, "device safeguards preserve the player's saved preferences")
 	game.mirror.follow(true, Vector2(2424, 1080))
 	check(game.mirror.render_target_update_mode == SubViewport.UPDATE_DISABLED, "requesting water reflection cannot bypass the device safeguard")

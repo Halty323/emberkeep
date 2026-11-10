@@ -25,7 +25,10 @@ static func for_device(platform: String, vendor: String, adapter: String, method
 		# path that failed on PowerVR; keep a smaller finite sampling budget.
 		"ambient_occlusion": true,
 		"ssao_samples": Vector2i(6,8) if conservative else Vector2i(8,12),
-		"glow": not conservative,
+		# Bloom runs on every device: the PowerVR failure was the MSAA buffer
+		# (kept off above), not the glow pass. The player's Bloom setting
+		# (Off / Soft / Strong) is the only switch.
+		"glow": true,
 		"reflections": not conservative,
 		"refraction": not conservative,
 		"lightweight_surfaces": conservative,
