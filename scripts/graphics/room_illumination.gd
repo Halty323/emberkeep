@@ -4,6 +4,10 @@ extends Node3D
 ## visual: separate seed stream, no collision, loot or gameplay light zones.
 const MAX_FIXTURES := 4
 const MAX_LIGHTS := 4
+const MAX_FLAME_LIGHTS := 6
+var flame_sources: Array[Dictionary] = []
+var flame_lights: Array[OmniLight3D] = []
+var flame_clock := 0.0
 const PALETTES := {
 	"cellar": ["edc28e", "8aafcf", "chain"],
 	"cistern": ["a4d8d7", "deb98e", "cage"],
@@ -200,7 +204,36 @@ func apply_quality() -> void:
 		volumes[i].visible = quality != "low" and i < (3 if quality == "balanced" else MAX_LIGHTS)
 		volumes[i].material_override.set_shader_parameter("steps",6 if quality == "balanced" else 10)
 
+## Real surface illumination for ordinary candles and furniture fires. Nearby
+## candle clusters share one source; only a bounded nearest pool is rendered.
+func register_flame(at: Vector3, large := false) -> void:
+	for source in flame_sources:
+		if source.at.distance_to(at) < .65:
+			if large: source.energy = 1.1; source.reach = 4.5
+			return
+	flame_sources.append({"at":at,"energy":1.1 if large else .65,"reach":4.5 if large else 2.8})
+
+func select_flames(focus: Vector3) -> void:
+	var ordered := flame_sources.duplicate()
+	ordered.sort_custom(func(a,b): return a.at.distance_squared_to(focus) < b.at.distance_squared_to(focus))
+	while flame_lights.size() < mini(MAX_FLAME_LIGHTS,ordered.size()):
+		var lamp := Geo.light(self,Vector3.ZERO,Color("ffd09a"),0.0,2.8)
+		lamp.omni_attenuation = 1.5
+		lamp.light_size = .12
+		flame_lights.append(lamp)
+	for i in flame_lights.size():
+		var source: Dictionary = ordered[i]
+		var lamp := flame_lights[i]
+		lamp.position = source.at
+		lamp.light_energy = source.energy
+		lamp.omni_range = source.reach
+
 func _process(delta: float) -> void:
 	clock += delta
+	flame_clock -= delta
+	if flame_clock <= 0.0:
+		flame_clock = .2
+		var camera := get_viewport().get_camera_3d()
+		select_flames(to_local(camera.global_position) if camera else Vector3.ZERO)
 	apply_quality()
 	for i in lamps.size(): lamps[i].light_energy = float(lamps[i].get_meta("base_energy"))*(1.0+sin(clock*1.65+i*2.13)*.035)

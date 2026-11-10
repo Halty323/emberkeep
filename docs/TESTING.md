@@ -183,3 +183,13 @@ On a Pixel 10 (PowerVR D-Series DXT-48-1536, Android 17) that APK crashed 14–1
 - **Device performance.** Profile a representative Android phone and iPhone with `tools/render_stress.sh` (frame-time distribution, draw calls, texture residency, room-transition stalls) and tune effects budgets, the Balanced mobile preset and the 60/30 FPS target on a named device.
 - **Touch ergonomics** of the Item/Bomb/Dash cluster, safe-area layout on notched screens, Android Back, suspend/resume, and the physical keyboard path for the hidden code.
 - **Desktop VSync** reports the driver's effective mode; llvmpipe under Xvfb refuses VSync changes, so the On/Off switch could not be observed taking effect.
+
+## Ordinary flame illumination
+
+Candles (including authored interior vignettes) and furniture braziers now
+register real flame positions with a six-light nearest-source pool. Focused
+regressions passed: `room_illumination` 169, `lighting_centered` 55 and
+`themed_interiors` 3,205 checks. The native local-atmosphere capture also
+compares an opaque surface with flame illumination enabled and disabled,
+requiring measurable surface lighting independent of glow. All checks pass
+on Godot 4.7.2; native rendering used Mesa Compatibility, not phone hardware.

@@ -16,6 +16,19 @@ func exercise() -> void:
 	var game = load("res://scenes/main.tscn").instantiate()
 	root.add_child(game); current_scene = game
 	game.set_process(false); game.set_physics_process(false)
+	var pool = type.new()
+	root.add_child(pool)
+	for i in 20: pool.register_flame(Vector3(i*3,0,0))
+	pool.register_flame(Vector3(.1,0,0))
+	check(pool.flame_sources.size() == 20, "nearby candles share a light source")
+	pool.select_flames(Vector3(57,0,0))
+	check(pool.flame_lights.size() == type.MAX_FLAME_LIGHTS, "ordinary flame lights have a fixed rendering budget")
+	check(pool.flame_lights[0].position == Vector3(57,0,0), "light selection follows the nearest visible flames")
+	check(pool.flame_lights.all(func(lamp): return lamp.light_energy > 0 and not lamp.shadow_enabled), "candles illuminate real surfaces without cube shadows")
+	pool.register_flame(Vector3(57,3.2,0),true)
+	pool.select_flames(Vector3(57,3.2,0))
+	check(is_equal_approx(pool.flame_lights[0].position.y,3.2) and pool.flame_lights[0].omni_range == 4.5, "upper floor braziers keep their actual elevation and larger light reach")
+	pool.free()
 	var colors := {}
 	for theme in type.PALETTES:
 		game.start_run("candle",72913504,false)
@@ -25,6 +38,7 @@ func exercise() -> void:
 		game.room.resume_build(true)
 		var room = game.room
 		var illumination = room.illumination
+		check(not illumination.flame_sources.is_empty(), "room candles register real illumination")
 		check(illumination.theme == theme, "fixture theme follows the actual floor, not the furniture layout")
 		check(not illumination.fixtures.is_empty() and illumination.fixtures.size() <= type.MAX_FIXTURES, "each theme receives a bounded fixture composition")
 		check(illumination.lamps.size() <= type.MAX_LIGHTS, "colored lights stay inside their own fixed budget")

@@ -863,6 +863,7 @@ func make_candle(p: Vector3, height: float) -> void:
 		flame.layers = Geo.FLAME_LAYER
 		add_child(flame)
 		ScreenFx.add_flame_bloom(flame, .8)
+		if illumination: illumination.register_flame(flame.position)
 	else:
 		var flame = Geo.sphere(self, p + Vector3(0, height + .1, 0), .11, Color("ffe0a1"), 2.0)
 		flame.scale = Vector3(.7, 1.5, .7)

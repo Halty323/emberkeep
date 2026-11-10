@@ -165,6 +165,8 @@ static func corridor_material(family: String, look: Dictionary = {}) -> ShaderMa
 static func dress_props(room) -> void:
 	for entry in room.props.values():
 		var brazier: bool = entry.definition.recipe == "brazier"
+		if brazier and room.illumination:
+			room.illumination.register_flame(room.to_local(entry.node.to_global(Vector3(0,1.34,0))),true)
 		for mesh in entry.node.find_children("*", "MeshInstance3D", true, false):
 			var source = mesh.material_override
 			if brazier:

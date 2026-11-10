@@ -1,8 +1,8 @@
 class_name ThemedInteriors
 extends RefCounted
 ## Authored story vignettes assembled in safe visual layers: shallow wall
-## reliefs, existing furniture tops and ankle-low scatter. No new collision,
-## lights or gameplay state. Primitive surfaces merge into four material
+## reliefs, existing furniture tops and ankle-low scatter. No new collision
+## or gameplay state; candle positions feed the bounded room light pool. Primitive surfaces merge into four material
 ## batches, so many small details do not become hundreds of draw calls.
 const THEMES := ["cellar", "cistern", "halls", "crypt", "archive", "kiln", "belfry", "hearth"]
 const TOP_RECIPES := ["table", "workbench", "crate", "barrel", "cupboard", "pillar", "bench"]
@@ -15,6 +15,7 @@ const LINEN := Color("c8b995")
 static var primitive_arrays: Dictionary = {}
 static var finishes: Dictionary = {}
 var groups: Dictionary = {}
+var flame_sources: Array[Vector3] = []
 var vertex_count := 0
 var piece_count := 0
 var limit := 24000
@@ -72,6 +73,8 @@ static func decorate(room) -> Dictionary:
 			builder.report.scatter.append(anchor)
 		if paced: await room.pace()
 	builder.finish(room)
+	if room.illumination:
+		for source in builder.flame_sources: room.illumination.register_flame(source)
 	builder.report["vertices"] = builder.vertex_count
 	builder.report["pieces"] = builder.piece_count
 	builder.report["batches"] = builder.groups.size()
@@ -316,6 +319,7 @@ func floor_scene(theme: String, frame: Transform3D, variant: int) -> void:
 			for i in 3: bar(frame,Vector3(-.3,.02,-.13+i*.13),Vector3(.2,.02,-.07+i*.13),.025,WOOD)
 
 func candle(frame: Transform3D, at: Vector3, height: float) -> void:
+	if not probe_only: flame_sources.append(frame*(at+Vector3.UP*(height+.045)))
 	cylinder(frame,at+Vector3.UP*height/2,Vector3(.065,height,.065),LINEN)
 	sphere(frame,at+Vector3.UP*(height+.045),Vector3(.035,.065,.035),Color("ffc679"),"ember")
 

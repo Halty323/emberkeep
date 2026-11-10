@@ -75,6 +75,25 @@ func exercise() -> void:
 	var interior := difference(inside,inside_clear)
 	check(interior > .002 and interior < .22,"walking into the medium keeps thin scattering without a white flash")
 	print("LOCAL FOG GLES: %d failures; outside %.5f; wall leak %.6f; inside %.5f" % [failures,presence,leak,interior])
+	# A real opaque surface must brighten under ordinary flame lights, even
+	# without bloom or a volumetric cone.
+	camera.position = Vector3(0,2.5,4)
+	camera.look_at(Vector3.ZERO)
+	var ground := MeshInstance3D.new()
+	var ground_mesh := BoxMesh.new(); ground_mesh.size = Vector3(8,.1,8)
+	ground.mesh = ground_mesh
+	var ground_material := StandardMaterial3D.new()
+	ground_material.albedo_color = Color(.5,.5,.5)
+	ground.material_override = ground_material
+	world.add_child(ground)
+	fog.show()
+	fog.register_flame(Vector3(0,1,0),true)
+	fog.select_flames(Vector3.ZERO)
+	var fire_lit: Image = await frame_image("flame-lit-surface")
+	for lamp in fog.flame_lights: lamp.visible = false
+	fog.set_process(false)
+	var fire_dark: Image = await frame_image("flame-unlit-surface")
+	check(difference(fire_lit,fire_dark) > .003,"ordinary fire casts measurable illumination onto opaque surfaces")
 	world.queue_free()
 	await process_frame
 	quit(0 if failures == 0 else 1)
