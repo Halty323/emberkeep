@@ -724,9 +724,9 @@ func lantern_near(flat: Vector2, reach: float, burning: bool) -> int:
 	return best
 
 func make_fill_lights() -> void:
-	# Unshadowed fills preserve warm lantern pools in both quality modes. A
-	# small pool serves big rooms; it moves only when the selection changes.
-	for i in mini(MAX_ACTIVE_FILLS, lantern_points.size()):
+	# First-person rooms retain every burning lantern fill. The legacy
+	# overhead view alone keeps the original moving light budget.
+	for i in (lantern_points.size() if first_person_room else mini(MAX_ACTIVE_FILLS, lantern_points.size())):
 		lamps.append(make_fill_light(lantern_points[i]))
 		lamp_assignment.append(i)
 	# Keep one warm key shadow; the other lanterns are inexpensive fills. Four
@@ -737,7 +737,7 @@ func make_fill_lights() -> void:
 ## After a lantern changes: as many fills as burning lanterns allow, the
 ## shadow lamp on a burning one or dark when none burn.
 func refresh_fill_lights() -> void:
-	var wanted = mini(MAX_ACTIVE_FILLS, lantern_points.size())
+	var wanted = lantern_points.size() if first_person_room else mini(MAX_ACTIVE_FILLS, lantern_points.size())
 	while lamps.size() > wanted:
 		lamps.pop_back().queue_free()
 	while lamps.size() < wanted:
@@ -769,6 +769,8 @@ func lantern_distance(index: int, focus: Vector3) -> float:
 ## Chooses the lanterns nearest the view. A lantern replaces a selected one
 ## only when it is clearly closer, so lights do not flap at the boundary.
 func update_light_selection(focus: Vector3) -> bool:
+	# First-person rooms keep every burning lantern lit until the room retires.
+	if first_person_room: return false
 	if lantern_points.size() <= lamps.size():
 		return false
 	var flat = focus

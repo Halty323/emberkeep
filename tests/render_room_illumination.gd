@@ -88,7 +88,7 @@ func exercise() -> void:
 	world.add_child(ground)
 	fog.show()
 	fog.register_flame(Vector3(0,1,0),true)
-	fog.select_flames(Vector3.ZERO)
+	fog.sync_flames()
 	var fire_lit: Image = await frame_image("flame-lit-surface")
 	for lamp in fog.flame_lights: lamp.visible = false
 	fog.set_process(false)

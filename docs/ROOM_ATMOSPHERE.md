@@ -30,9 +30,9 @@ the first fixture; the new accent lights allocate no shadow maps.
 
 Ordinary wall/pillar candles, candles in interior vignettes and furniture
 braziers register actual flame positions with the room lighting system.
-Nearby candles share a source. A separate pool of at most six unshadowed
-omni lights follows the nearest sources in three dimensions, including upper
-storeys. Candle reach is 2.8 m; braziers reach 4.5 m with more energy. This
+Nearby candles share a source. Each source keeps a persistent unshadowed omni light, including upper
+storeys. Moving the camera never reassigns or disables these lights. All
+burning first-person lanterns likewise keep their own fill light. Candle reach is 2.8 m; braziers reach 4.5 m with more energy. This
 lights nearby opaque surfaces independently of bloom and volumetric effects,
 without allocating one light per candle or any additional shadow maps.
 

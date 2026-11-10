@@ -193,3 +193,14 @@ regressions passed: `room_illumination` 169, `lighting_centered` 55 and
 compares an opaque surface with flame illumination enabled and disabled,
 requiring measurable surface lighting independent of glow. All checks pass
 on Godot 4.7.2; native rendering used Mesa Compatibility, not phone hardware.
+
+## Persistent room light sources
+
+Camera-distance reassignment is removed from first-person candle/fire lights
+and lantern fills. All sources remain allocated at their original positions
+for the room lifetime, across graphics quality levels. Nearby candle clusters
+still share a stable source; snuffing lanterns still removes their light.
+The revised `room_illumination` suite passes 210 checks, including twenty
+simultaneous flame sources and more than twelve burning lanterns, movement
+without reassignment, and independent upper-storey lights. Existing
+`lighting_centered` (55) and legacy `lighting` (409) checks also pass.

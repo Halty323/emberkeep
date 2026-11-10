@@ -21,13 +21,13 @@ func exercise() -> void:
 	for i in 20: pool.register_flame(Vector3(i*3,0,0))
 	pool.register_flame(Vector3(.1,0,0))
 	check(pool.flame_sources.size() == 20, "nearby candles share a light source")
-	pool.select_flames(Vector3(57,0,0))
-	check(pool.flame_lights.size() == type.MAX_FLAME_LIGHTS, "ordinary flame lights have a fixed rendering budget")
-	check(pool.flame_lights[0].position == Vector3(57,0,0), "light selection follows the nearest visible flames")
+	pool.sync_flames()
+	check(pool.flame_lights.size() == 20, "all room flame sources retain real lights")
+	check(pool.flame_lights[0].position == Vector3.ZERO, "light assignments stay fixed at their flame")
 	check(pool.flame_lights.all(func(lamp): return lamp.light_energy > 0 and not lamp.shadow_enabled), "candles illuminate real surfaces without cube shadows")
 	pool.register_flame(Vector3(57,3.2,0),true)
-	pool.select_flames(Vector3(57,3.2,0))
-	check(is_equal_approx(pool.flame_lights[0].position.y,3.2) and pool.flame_lights[0].omni_range == 4.5, "upper floor braziers keep their actual elevation and larger light reach")
+	pool.sync_flames()
+	check(is_equal_approx(pool.flame_lights[20].position.y,3.2) and pool.flame_lights[20].omni_range == 4.5, "upper floor braziers keep their actual elevation and larger light reach")
 	pool.free()
 	var colors := {}
 	for theme in type.PALETTES:
@@ -38,6 +38,19 @@ func exercise() -> void:
 		game.room.resume_build(true)
 		var room = game.room
 		var illumination = room.illumination
+		if theme == "cellar":
+			var saved_points: Array[Vector3] = room.lantern_points.duplicate()
+			for i in 20: room.lantern_points.append(Vector3(i,0,0))
+			room.refresh_fill_lights()
+			check(room.lamps.size() == room.lantern_points.size() and room.lamps.size() > 12, "large first-person rooms are not capped at twelve lantern fills")
+			room.lantern_points.assign(saved_points)
+			room.refresh_fill_lights()
+		var positions: Array = illumination.flame_lights.map(func(lamp): return lamp.position)
+		for focus in [Vector3(-100,0,0),Vector3(100,3.2,100)]:
+			check(not room.update_light_selection(focus), "camera movement does not reassign room lanterns")
+		check(room.lamps.size() == room.lantern_points.size(), "every burning lantern has a persistent fill")
+		check(positions == illumination.flame_lights.map(func(lamp): return lamp.position), "flame lights stay at their original sources")
+		check(illumination.flame_lights.size() == illumination.flame_sources.size(), "no room flame is omitted by a camera-distance budget")
 		check(not illumination.flame_sources.is_empty(), "room candles register real illumination")
 		check(illumination.theme == theme, "fixture theme follows the actual floor, not the furniture layout")
 		check(not illumination.fixtures.is_empty() and illumination.fixtures.size() <= type.MAX_FIXTURES, "each theme receives a bounded fixture composition")
