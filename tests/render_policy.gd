@@ -15,8 +15,42 @@ func check(condition: bool, description: String) -> void:
 		failures += 1
 		push_error("FAIL: " + description)
 
+## Auto falls back to OpenGL after Vulkan launches that never got going.
+func test_renderer_choice() -> void:
+	var probe := "user://test_renderer_probe.json"
+	var override := "user://test_renderer.cfg"
+	for path in [probe, override]:
+		if FileAccess.file_exists(path): DirAccess.remove_absolute(path)
+	check(RendererChoice.method_for("auto", false) == "forward_plus" and RendererChoice.method_for("auto", true) == "mobile", "auto: Forward+ on computers, Mobile on phones")
+	check(RendererChoice.method_for("compatibility", true) == "gl_compatibility", "compatibility forces OpenGL")
+	check(str(ProjectSettings.get_setting("rendering/renderer/rendering_method")) == "forward_plus" and str(ProjectSettings.get_setting("rendering/renderer/rendering_method.mobile")) == "mobile", "project picks Forward+ and Mobile")
+	check(bool(ProjectSettings.get_setting("rendering/rendering_device/fallback_to_opengl3", false)), "Godot falls back to OpenGL without Vulkan")
+	check(str(ProjectSettings.get_setting("application/config/project_settings_override")) == RendererChoice.OVERRIDE, "the player's choice is read before the renderer starts")
+	var state := RendererChoice.begin("auto", "mobile", probe, override)
+	check(state.pending and int(state.failed) == 0 and not FileAccess.file_exists(override), "a first Vulkan launch is pending, nothing forced")
+	RendererChoice.healthy(probe)
+	state = RendererChoice.begin("auto", "mobile", probe, override)
+	check(int(state.failed) == 0, "a launch that drew frames is not a failure")
+	state = RendererChoice.begin("auto", "mobile", probe, override)
+	check(int(state.failed) == 1 and not FileAccess.file_exists(override), "one lost launch is not enough to fall back")
+	state = RendererChoice.begin("auto", "mobile", probe, override)
+	check(state.fell_back and FileAccess.file_exists(override) and "gl_compatibility" in FileAccess.get_file_as_string(override), "two lost Vulkan launches in a row: the next one uses OpenGL")
+	state = RendererChoice.begin("auto", "gl_compatibility", probe, override)
+	check(state.fell_back and FileAccess.file_exists(override), "the fallback holds on OpenGL")
+	check(RendererChoice.label("auto", "gl_compatibility", true) == "Auto · OpenGL (fallback)", "settings say why OpenGL is in use")
+	RendererChoice.choose("auto", override, probe)
+	check(not FileAccess.file_exists(override) and not RendererChoice.read_probe(probe).fell_back, "choosing Auto again retries Vulkan")
+	RendererChoice.begin("compatibility", "forward_plus", probe, override)
+	check(FileAccess.file_exists(override), "an explicit OpenGL choice is written for the next launch")
+	state = RendererChoice.begin("vulkan", "forward_plus", probe, override)
+	check(not FileAccess.file_exists(override) and not state.pending, "an explicit Vulkan choice is never guarded or overridden")
+	check(not RendererChoice.guarded(), "tests never write the real renderer files")
+	for path in [probe, override]:
+		if FileAccess.file_exists(path): DirAccess.remove_absolute(path)
+
 func test_policy() -> void:
 	settings = root.get_node("Settings")
+	test_renderer_choice()
 	var affected := RenderPolicy.for_device("Android", "Imagination Technologies", "PowerVR D-Series DXT-48-1536", "gl_compatibility")
 	check(not affected.msaa, "Android GLES never requests the unsupported MSAA render target")
 	for key in ["post_processing", "reflections", "refraction"]:
@@ -31,7 +65,9 @@ func test_policy() -> void:
 		["Android", "Samsung Electronics Co., Ltd.", "Samsung Xclipse 940", "gl_compatibility", false, false],
 		["iOS", "Apple", "Apple GPU", "gl_compatibility", false, true],
 		["Linux", "Imagination Technologies", "PowerVR", "gl_compatibility", true, true],
-		["Android", "Imagination Technologies", "PowerVR", "mobile", true, true],
+		["Android", "Imagination Technologies", "PowerVR", "mobile", false, false],
+		["Android", "QUALCOMM", "Adreno 830", "mobile", false, true],
+		["Windows", "NVIDIA", "GeForce RTX 4060", "forward_plus", true, true],
 		["Android", "imagINATION Technologies", "unknown", "gl_compatibility", false, false],
 		["Android", "unknown", "powerVR", "gl_compatibility", false, false]]
 	for fixture in fixtures:
@@ -42,6 +78,9 @@ func test_policy() -> void:
 		check(policy.lightweight_surfaces == not fixture[5], name + ": surface fallback follows the affected device")
 	var exynos := RenderPolicy.for_device("Android", "ARM", "Mali-G78", "gl_compatibility")
 	check(exynos.relaxable and exynos.ambient_occlusion and not affected.get("relaxable", false), "Exynos starts light but keeps SSAO; PowerVR's safeguard stays")
+	var vulkan_powervr := RenderPolicy.for_device("Android", "Imagination Technologies", "PowerVR D-Series DXT-48-1536", "mobile")
+	check(vulkan_powervr.relaxable and vulkan_powervr.lightweight_surfaces, "PowerVR on Vulkan starts bounded but High effects may lift it")
+	check(RenderPolicy.for_device("Linux", "AMD", "Radeon", "forward_plus").forward_plus and not RenderPolicy.for_device("Android", "QUALCOMM", "Adreno", "mobile").forward_plus, "only Forward+ gets the engine's own SSAO, SSIL and volumetric fog")
 	var chosen := RenderPolicy.relaxed(exynos)
 	check(chosen.glow and chosen.post_processing and chosen.reflections and not chosen.lightweight_surfaces, "High effects detail restores every pass on Exynos")
 	check(RenderPolicy.for_device("Linux", "Mesa", "llvmpipe", "gl_compatibility").reflection_limit == Vector2i(1280, 720), "desktop reflection target is bounded separately")

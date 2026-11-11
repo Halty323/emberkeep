@@ -35,7 +35,11 @@ const DEFAULTS := {"render_scale": 1.0, "fps_limit": 60, "vsync": true, "show_fp
 	"sound_volume": 100, "music_volume": 100,
 	# Rebound keys: {action: code}; a key's physical keycode, or a mouse
 	# button as MOUSE_CODE + its index. Empty for the defaults.
-	"keys": {}}
+	"keys": {},
+	# Which renderer the next launch uses (RendererChoice): auto (Forward+ on
+	# computers, Mobile on phones, OpenGL if Vulkan fails), vulkan or
+	# compatibility.
+	"renderer": "auto"}
 const SCREEN_EFFECTS := ["full", "reduced", "off"]
 const BLOOM_LEVELS := ["off", "soft", "strong"]
 const VOLUMES := [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
@@ -59,8 +63,11 @@ var _applied: Dictionary = {}
 var _windowed_size := Vector2i.ZERO
 var _windowed_position := Vector2i.ZERO
 
+var renderer_probe: Dictionary = {}
+
 func _ready() -> void:
 	load_settings()
+	if RendererChoice.guarded(): renderer_probe = RendererChoice.begin(values.renderer, RendererChoice.method())
 	# Apply device constraints before the scene creates any render targets.
 	apply_render_policy()
 	get_tree().root.size_changed.connect(apply_render_policy)
@@ -109,6 +116,8 @@ func validate(key: String, value) -> Variant:
 			return value if value is String and value in SCREEN_EFFECTS else null
 		"bloom":
 			return value if value is String and value in BLOOM_LEVELS else null
+		"renderer":
+			return value if value is String and value in RendererChoice.CHOICES else null
 		"sound_volume", "music_volume":
 			if not (value is int or value is float) or float(value) != floorf(float(value)): return null
 			return int(value) if int(value) in VOLUMES else null
@@ -146,6 +155,8 @@ func set_value(key: String, value) -> bool:
 		return true
 	values[key] = checked
 	save()
+	# The renderer is chosen before scripts run: saved for the next launch.
+	if key == "renderer": RendererChoice.choose(checked)
 	apply(key)
 	changed.emit(key)
 	return true
@@ -161,6 +172,7 @@ func options(key: String) -> Array:
 		"ssao": return SSAO_LEVELS
 		"screen_effects": return SCREEN_EFFECTS
 		"bloom": return BLOOM_LEVELS
+		"renderer": return RendererChoice.CHOICES
 		"sound_volume", "music_volume": return VOLUMES
 	return [false, true]
 
@@ -186,7 +198,7 @@ func apply(key: String) -> void:
 	_applied[key] = values[key]
 	match key:
 		"render_scale", "full_resolution", "adaptive_resolution":
-			# Godot's built-in Compatibility bilinear scaling: only the 3D buffer
+			# Godot's built-in 3D scaling (bilinear, or FSR on Forward+): only the 3D buffer
 			# shrinks, so canvas text, input and camera projection stay native.
 			apply_render_policy()
 		"fps_limit":
@@ -254,11 +266,14 @@ func apply_render_policy() -> void:
 	var viewport = get_tree().root
 	if not RenderPolicy.current().msaa:
 		viewport.msaa_3d = Viewport.MSAA_DISABLED
-	viewport.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
 	var requested := float(values.render_scale)
 	var scale := requested if values.full_resolution else RenderPolicy.effective_scale(requested, viewport.size)
 	if not adaptive_active(): adaptive = 1.0
 	viewport.scaling_3d_scale = maxf(.35, scale * adaptive)
+	# Forward+ (computers) sharpens a reduced 3D buffer with AMD FSR 1; phones
+	# and OpenGL keep the cheaper bilinear stretch.
+	var sharpened: bool = bool(RenderPolicy.current().get("forward_plus", false)) and viewport.scaling_3d_scale < .995
+	viewport.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if sharpened else Viewport.SCALING_3D_MODE_BILINEAR
 
 # ---------------------------------------------------------------- adaptive resolution
 # Phones measure their own frame rate in two-second windows. Falling short
@@ -274,7 +289,17 @@ var adapt_calm := 0
 func adaptive_active() -> bool:
 	return bool(values.adaptive_resolution) and (OS.has_feature("android") or OS.has_feature("ios"))
 
+## Seconds of drawn frames before a Vulkan launch counts as working (the
+## title scene and the shader warm-up have run by then).
+const RENDERER_PROOF := 8.0
+var renderer_time := 0.0
+
 func _process(delta: float) -> void:
+	if bool(renderer_probe.get("pending", false)):
+		renderer_time += delta
+		if renderer_time >= RENDERER_PROOF and Engine.get_frames_drawn() > 120:
+			RendererChoice.healthy()
+			renderer_probe.pending = false
 	if not adaptive_active(): return
 	adapt_time += delta
 	adapt_frames += 1

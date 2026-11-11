@@ -55,7 +55,7 @@ const TITLE_MODES := ["play", "menu", "armory", "coop", "lobby"]
 const REWARD_WIDTH := 340.0
 const REWARD_GAP := 26.0
 const SETTINGS_PAGES := [["display", "Display"], ["graphics", "Graphics"], ["controls", "Controls"], ["camera", "Camera"], ["sound", "Sound"], ["keys", "Keys"]]
-const SETTINGS_NOTES := {"display": "Resolution scales only the dungeon; text and controls stay sharp. Your display or device can still cap the frame rate.",
+const SETTINGS_NOTES := {"display": "Resolution scales only the dungeon; text and controls stay sharp. Renderer: Auto uses Vulkan where it works and OpenGL where it does not.",
 	"graphics": "SSAO shades surface contacts on supported GPUs. Detail changes appearance; room collision and combat stay identical.",
 	"camera": "Comfort settings affect presentation, never movement speed or spell damage.",
 	"controls": "Touch controls show the on-screen sticks and action buttons on any device.",
@@ -918,7 +918,8 @@ func settings_rows(page: String) -> Array:
 				last = ["full_resolution", "Full resolution", "On · may be slower" if Settings.values.full_resolution else "Off", true]
 			return [["render_scale", "Render resolution", "%s  ·  %d×%d" % [scale, pixels.x, pixels.y], true],
 				["fps_limit", "FPS limit", "Unlimited" if Settings.values.fps_limit == 0 else str(Settings.values.fps_limit), true],
-				vsync, ["show_fps", "Show FPS", on_off("show_fps"), true], last]
+				vsync, ["show_fps", "Show FPS", on_off("show_fps"), true], last,
+				["renderer", "Renderer (on restart)", RendererChoice.label(str(Settings.values.renderer), "", RendererChoice.fell_back()), true]]
 		"camera":
 			return [["fov", "Field of view", "%d°" % Settings.values.fov, true],
 				["mouse_sensitivity", "Mouse sensitivity", "%d%%" % roundi(float(Settings.values.mouse_sensitivity) / float(Settings.DEFAULTS.mouse_sensitivity) * 100.0), true],

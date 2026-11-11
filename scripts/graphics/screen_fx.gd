@@ -62,6 +62,11 @@ func apply_quality() -> void:
 	env.glow_strength = 1.15 if strong else 1.0
 	env.glow_bloom = .05
 	env.glow_hdr_threshold = .9 if strong else .94
+	if RendererChoice.modern(str(policy.get("renderer", RendererChoice.method()))):
+		# Vulkan keeps the full HDR range, so lanterns run hotter than under
+		# OpenGL: a higher threshold and a little less gain match the look.
+		env.glow_hdr_threshold += .12
+		env.glow_intensity *= .8
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SCREEN
 	var wide: Array = ([1, 2, 3, 4, 5] if strong else [1, 3, 5]) if level == 2 else ([2, 3, 4] if strong else [2, 4])
 	for i in 7: env.set_glow_level(i, 1.0 if i in wide else 0.0)
@@ -108,13 +113,19 @@ static func flame_blooms(tree: SceneTree) -> void:
 	if tree == null: return
 	var shown := sprite_bloom()
 	var passes: bool = Look.quality() > 0 and RenderPolicy.current().glow
-	if bloom_material: bloom_material.set_shader_parameter("strength", (.75 if str(Settings.values.get("bloom", "soft")) == "strong" else .45) * (.6 if passes else 1.0))
+	# On Vulkan the cards add onto HDR flames the glow pass already spreads.
+	var hdr := .6 if RendererChoice.modern(str(RenderPolicy.current().get("renderer", RendererChoice.method()))) else 1.0
+	var strength := (.75 if str(Settings.values.get("bloom", "soft")) == "strong" else .45) * (.6 if passes else 1.0) * hdr
+	if bloom_material: bloom_material.set_shader_parameter("strength", strength)
 	for material in colored_bloom_materials.values():
-		material.set_shader_parameter("strength", (.75 if str(Settings.values.get("bloom", "soft")) == "strong" else .45) * (.6 if passes else 1.0))
+		material.set_shader_parameter("strength", strength)
 	for card in tree.get_nodes_in_group("flame_bloom"): card.visible = shown
 
 func apply_occlusion() -> void:
 	var enabled: bool = game.first_person and Settings.ssao_supported() and Settings.values.ssao != "off"
+	var env: Environment = game.room_environment.environment
+	var native := apply_forward_plus(env, enabled)
+	if native: enabled = false
 	if enabled and not is_instance_valid(ambient_occlusion):
 		ambient_occlusion = ScreenAmbientOcclusion.create(game.camera)
 	if is_instance_valid(ambient_occlusion): ambient_occlusion.configure(Settings.values.ssao,enabled)
@@ -235,3 +246,31 @@ func advance_spell_marks(delta: float) -> void:
 	material.set_shader_parameter("chill", chill)
 	for spot in shimmers: spot.age += delta
 	shimmers = shimmers.filter(func(spot): return spot.age < spot.life)
+
+## Forward+ only (computers on Vulkan or Direct3D 12): the engine's own
+## ambient occlusion in place of the depth-only pass, bounced light between
+## surfaces at High, and volumetric fog that lanterns and spells light from
+## within. Returns whether the engine's SSAO replaces ScreenAmbientOcclusion.
+func apply_forward_plus(env: Environment, occlusion: bool) -> bool:
+	var on: bool = game.first_person and bool(RenderPolicy.current().get("forward_plus", false))
+	var level := Look.quality()
+	var high: bool = Settings.values.ssao == "high"
+	env.ssao_enabled = on and occlusion
+	env.ssao_radius = 1.4 if high else 1.0
+	env.ssao_intensity = 2.2 if high else 1.6
+	env.ssao_power = 1.4
+	env.ssao_detail = .5
+	env.ssao_light_affect = .15
+	env.ssil_enabled = on and occlusion and level == 2
+	env.ssil_radius = 3.0
+	env.ssil_intensity = .7
+	env.volumetric_fog_enabled = on and level > 0
+	env.volumetric_fog_density = .018 if level == 2 else .013
+	env.volumetric_fog_albedo = Color(.62, .64, .68)
+	env.volumetric_fog_anisotropy = .35
+	env.volumetric_fog_length = 28.0
+	env.volumetric_fog_detail_spread = 2.0
+	env.volumetric_fog_ambient_inject = .08
+	env.volumetric_fog_sky_affect = 0.0
+	env.volumetric_fog_temporal_reprojection_enabled = true
+	return env.ssao_enabled

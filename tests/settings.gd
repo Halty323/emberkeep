@@ -78,7 +78,8 @@ func test_settings() -> void:
 	# Values reach the engine only through supported, real setters.
 	for scale in settings.RENDER_SCALES:
 		check(settings.set_value("render_scale", scale), "render scale accepted: %s" % scale)
-		check(root.scaling_3d_mode == Viewport.SCALING_3D_MODE_BILINEAR, "Compatibility uses built-in bilinear 3D scaling")
+		var sharpened: bool = RenderPolicy.current().forward_plus and root.scaling_3d_scale < .995
+		check(root.scaling_3d_mode == (Viewport.SCALING_3D_MODE_FSR if sharpened else Viewport.SCALING_3D_MODE_BILINEAR), "a reduced buffer is sharpened with FSR on Forward+, bilinear elsewhere")
 		check(is_equal_approx(root.scaling_3d_scale, scale), "root viewport 3D scale follows the setting")
 	for limit in settings.FPS_LIMITS:
 		settings.set_value("fps_limit", limit)
@@ -118,6 +119,11 @@ func test_settings() -> void:
 	check(pixels == Vector2i(roundi(native.x * .5), roundi(native.y * .5)), "reported pixel dimensions match the scale")
 	check(not game.ui.settings_rows("display").any(func(row): return row[0] == "bloom"), "Display leaves bloom to Graphics")
 	check(game.ui.settings_rows("graphics").filter(func(row): return row[0] == "bloom").size() == 1, "Graphics contains the bloom setting once")
+	var renderer_row: Array = game.ui.settings_rows("display").filter(func(row): return row[0] == "renderer")
+	check(renderer_row.size() == 1 and renderer_row[0][3] and str(renderer_row[0][2]).begins_with("Auto"), "Display offers the renderer, Auto by default")
+	check(not settings.set_value("renderer", "directx"), "unknown renderers are rejected")
+	check(settings.set_value("renderer", "compatibility") and FileAccess.file_exists(RendererChoice.OVERRIDE), "choosing OpenGL saves it for the next launch")
+	check(settings.set_value("renderer", "auto") and not FileAccess.file_exists(RendererChoice.OVERRIDE), "Auto removes the override again")
 	# All settings pages have rows that own their background and target.
 	game.ui.open_settings("pause")
 	for page in game.ui.SETTINGS_PAGES:
